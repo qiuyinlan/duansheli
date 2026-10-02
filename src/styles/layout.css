@@ -65,6 +65,20 @@
   line-height: 1.9;
 }
 
+/*
+ * 桌面端的语言开关落在这里。
+ *
+ * 为什么不在顶栏：`.topbar` 在 ≥768px 时是 display:none —— 它只是手机端的
+ * 标题条，桌面用页面内的 page-header 表达「你在哪一屏」。开关放进去的话，
+ * 桌面用户永远看不到它（这个坑真踩过一次）。
+ * 所以侧栏底部放一个（桌面可见），顶栏放一个（手机可见），
+ * 两者由媒体查询互斥，任何宽度下恰好有一个在。
+ */
+.sidebar__lang {
+  margin-top: var(--gap-4);
+  padding-bottom: var(--gap-1);
+}
+
 /* 导航项（侧栏与底部 Tab 共用） */
 .nav-item {
   display: flex;

@@ -569,6 +569,45 @@ await test('确认框不传按钮文字时，也要跟着语言走（13 个调�
   }
 })
 
+await test('语言开关在两种布局里各有一个，任何屏幕宽度下都看得见', () => {
+  // ⚠️ 这一条守的是一个**只有真实浏览器才暴露**的坑，而且真踩过：
+  // jsdom **不执行 CSS 媒体查询**，所以「元素在 DOM 里」不等于「用户看得见」。
+  // 当初把开关只放进 `.topbar`，而 `.topbar` 在 ≥768px 是 display:none ——
+  // 桌面用户打开网站，什么都看不到，可这里的所有断言却是绿的。
+  //
+  // 所以这里不去断言「有个 .lang-switch」，而是断言**两个互斥的容器里各有一个**：
+  //   · `.sidebar` 在 ≥768px 显示、<768px 隐藏  → 管桌面
+  //   · `.topbar`  在 <768px 显示、≥768px 隐藏  → 管手机
+  // 只要这两个容器各自都有一个，任何宽度下就必然至少有一个可见。
+  // 哪天有人把开关挪到别的容器里，这条会立刻红。
+  const data = fixture()
+  const page = mountForSwitch('/', data)
+  try {
+    const sidebar = must(page.container.querySelector('.sidebar'), '应该有侧栏')
+    const topbar = must(page.container.querySelector('.topbar'), '应该有顶栏')
+
+    const inSidebar = sidebar.querySelectorAll('.lang-switch').length
+    const inTopbar = topbar.querySelectorAll('.lang-switch').length
+
+    ok(
+      inSidebar === 1,
+      `侧栏底部该有一个语言开关（桌面端只有它可见），实际 ${inSidebar} 个`,
+    )
+    ok(inTopbar === 1, `顶栏该有一个语言开关（手机端只有它可见），实际 ${inTopbar} 个`)
+
+    // 两个都要能点，而不是只有壳子
+    for (const root of [sidebar, topbar]) {
+      eq(
+        root.querySelectorAll('.lang-switch__btn').length,
+        2,
+        '每个开关里都该有中文 / English 两个按钮',
+      )
+    }
+  } finally {
+    page.unmount()
+  }
+})
+
 /* ------------------------------------------------------------------ */
 /* 本地小工具                                                          */
 /* ------------------------------------------------------------------ */

@@ -216,6 +216,18 @@ export function AppShell() {
               </button>
             </div>
           ) : null}
+
+          {/*
+            语言开关在桌面端放在这里，**不是**放在顶栏。
+            因为顶栏在 ≥768px 时是 `display: none`（桌面用页面内的 page-header
+            表达「你在哪一屏」，顶栏只是手机端的标题条）。
+            放在顶栏的话，桌面用户永远看不到它。
+            所以两处各渲染一个：这里管桌面，顶栏那个管手机 ——
+            两者由媒体查询互斥，任何宽度下都恰好有一个可见。
+          */}
+          <div className="sidebar__lang">
+            <LanguageSwitch />
+          </div>
         </div>
       </aside>
 
@@ -233,7 +245,7 @@ export function AppShell() {
             </button>
           ) : null}
           <div className="topbar__title">{t(titleKeyForPath(pathname))}</div>
-          {/* 语言开关固定在右上角 */}
+          {/* 手机端在右上角；桌面端这个顶栏整体是隐藏的，开关在侧栏底部（见上面） */}
           <LanguageSwitch />
         </header>
 
