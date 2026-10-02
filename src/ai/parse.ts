@@ -303,9 +303,12 @@ export interface RawRevisedItem extends RawExtractedItem {
 
 export interface ParsedChatResponse {
   reply: string
+  /** 只有**新增或改动过**的条目 */
   items: RawRevisedItem[]
-  /** AI 没给 items 字段（可能是纯问答）。这时草稿应原样保留。 */
-  missingItems: boolean
+  /** 要删掉的物品 id */
+  removedIds: string[]
+  /** AI 既没给 items 也没给 removedIds（纯问答），草稿应原样保留 */
+  noChanges: boolean
 }
 
 function normalizeRevisedItem(raw: unknown): RawRevisedItem | null {
@@ -321,8 +324,11 @@ function normalizeRevisedItem(raw: unknown): RawRevisedItem | null {
 /**
  * 解析对话模式的回复。
  *
- * 这里刻意**宽容**：AI 偶尔会只回一句话不带 items（比如用户只是问了个问题）。
- * 那种情况不该报错 —— 草稿保持原样就好，由上层决定怎么提示。
+ * 两类宽容是刻意的：
+ *   · AI 只回一句话、不带任何改动（用户只是问了个问题）→ 不算错
+ *   · AI 偷懒把整份草稿都返回了 → 也能正常处理，只是多花点 token
+ *
+ * `removedIds` 里可能混进 AI 编的 id，合并层会忽略掉，不用在这里挡。
  */
 export function parseChatResponse(payload: unknown): ParsedChatResponse {
   if (!isRecord(payload)) {
@@ -330,18 +336,25 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
   }
 
   const reply = asString(payload.reply ?? payload.说明 ?? payload.message)
-  const candidate = payload.items ?? payload.物品 ?? payload.list
+  const rawItems = payload.items ?? payload.物品 ?? payload.list
+  const rawRemoved = payload.removedIds ?? payload.removed ?? payload.删除的id
 
-  if (!Array.isArray(candidate)) {
-    if (reply !== '') return { reply, items: [], missingItems: true }
+  const removedIds = Array.isArray(rawRemoved)
+    ? rawRemoved.map(asString).filter((id) => id !== '')
+    : []
+
+  if (!Array.isArray(rawItems) && removedIds.length === 0) {
+    if (reply !== '') return { reply, items: [], removedIds: [], noChanges: true }
     throw new AiError('bad_response', 'AI 的回复里既没有说明也没有物品列表。')
   }
 
   const items: RawRevisedItem[] = []
-  for (const raw of candidate) {
-    const item = normalizeRevisedItem(raw)
-    if (item) items.push(item)
+  if (Array.isArray(rawItems)) {
+    for (const raw of rawItems) {
+      const item = normalizeRevisedItem(raw)
+      if (item) items.push(item)
+    }
   }
 
-  return { reply, items, missingItems: false }
+  return { reply, items, removedIds, noChanges: false }
 }

@@ -1,16 +1,30 @@
 /**
  * 对话整理。
  *
- * 和「批量录入」的区别：草稿会**跨轮次保留**，你可以用自然语言让 AI 反复修改，
+ * 和「一次性录入」的区别：草稿会**跨轮次保留**，你可以用自然语言让 AI 反复修改，
  * 每一轮都告诉你改了什么，最后再决定采纳哪些。
  *
- * 安全底线：
- *   · AI 每轮必须返回**完整**的物品列表，漏掉的条目会被我们**保留**而不是删掉
- *   · 删除只能由 AI 显式标 removed 触发
+ * ── 省 token 的三个设计（都很重要） ──────────────────────────────
+ *
+ * 1. **AI 只返回改动过的条目**，不是每轮把整份草稿吐回来。
+ *    33 条物品时这一项就能把每轮的输出 token 从 ~2500 降到几十。
+ *    顺带还有个好处：语义更清楚了 ——「没提到」=「不用动」，
+ *    不再有「AI 是忘了写还是想删掉」的歧义。
+ *
+ * 2. **已有的分类 / 位置 / 属性清单放进 system 消息**，而不是放在每轮的用户消息里。
+ *    DeepSeek 有前缀缓存：请求开头那段如果和上一轮完全一样，命中的部分会便宜很多。
+ *    system + 历史 构成稳定的前缀，只有草稿和指令在变。用户的数据不变，前缀就不变。
+ *
+ * 3. **草稿里的空字段直接不发**（空数组、空对象、空字符串、数量为 1）。
+ *    一整批里大部分条目没有标签、没有属性、没有备注，省下来很可观。
+ *
+ * ── 安全底线 ─────────────────────────────────────────────────
+ *   · AI 没提到的条目**一律保持原样**，绝不因为「没提到」就删掉
+ *   · 删除只能由 AI 显式放进 removedIds 触发
  *   · 无论如何都不会自动写进数据库，必须用户点「采纳」
  */
 
-import type { RawRevisedItem } from './parse'
+import type { ParsedChatResponse, RawRevisedItem } from './parse'
 import type { ChatMessage } from './deepseek'
 import type { AiContext } from './prompts'
 import { renderContextBlock } from './prompts'
@@ -67,6 +81,22 @@ export function serializeDrafts(drafts: ItemDraft[], derived: DerivedContext): D
   return drafts.map((draft) => ({ id: draft.key, ...effectiveContent(draft, derived) }))
 }
 
+/**
+ * 压掉空字段再发。
+ * 一整批里大多数条目没有标签、属性、备注，这些字段全发一遍很浪费。
+ * 缺省值由解析层负责补回来（数量默认 1、其余默认空），所以不会丢信息。
+ */
+function compactDraft(item: DraftForAi): Record<string, unknown> {
+  const out: Record<string, unknown> = { id: item.id, name: item.name }
+  if (item.quantity !== 1) out.quantity = item.quantity
+  if (item.categoryPaths.length > 0) out.categories = item.categoryPaths
+  if (item.location && item.location.length > 0) out.location = item.location
+  if (item.tags.length > 0) out.tags = item.tags
+  if (Object.keys(item.attributes).length > 0) out.attributes = item.attributes
+  if (item.note !== '') out.note = item.note
+  return out
+}
+
 /** 内容指纹：用来判断这一条到底有没有被改动 */
 function signature(content: DraftContent): string {
   return [
@@ -92,21 +122,22 @@ function signature(content: DraftContent): string {
 
 const CHAT_SYSTEM = `你是「断舍离」这款个人物品整理工具里的助手。
 用户正在和你来回沟通，一起把一批待录入的物品整理好。
+下面【已有分类】【已有位置】【已有属性】【已有标签】列出了用户目前的体系。
 
 每条用户消息里你会看到：
-【已有分类】【已有位置】【已有属性】【已有标签】—— 用户目前的体系
-【当前的物品草稿】—— 一个 json，每条带 id
+【当前的物品草稿】—— 一个 json，每条带 id，代表这批东西"现在长什么样"
 【用户的指令】—— 用户这一轮想让你做什么
 
 你要输出一个 json 对象：
 {
   "reply": "用中文简短说明你这一轮改了什么",
-  "items": [ ...完整的物品列表... ]
+  "items": [ ...只需要给出**新增或改动过**的物品... ],
+  "removedIds": [ "要删掉的物品 id" ]
 }
 
-每条物品长这样：
+每条物品长这样（值为空的字段可以省略）：
 {
-  "id": "草稿里原来的 id，必须原样保留",
+  "id": "改已有物品时原样填草稿里的 id；新增时自己起一个，例如 new-1",
   "name": "长管油口红",
   "quantity": 1,
   "categories": [["化妆品", "唇妆"]],
@@ -116,29 +147,34 @@ const CHAT_SYSTEM = `你是「断舍离」这款个人物品整理工具里的�
   "note": ""
 }
 
-硬性规则：
-1. **items 必须是完整的列表**，包含你没有改动的那些，id 原样保留。
-   漏掉某条等于告诉程序「这条不要了」，所以除非用户让你删，否则一条都不能省。
-2. 用户让你新增物品时，给它一个你自己起的新 id，例如 "new-1"。
-3. 用户让你删掉某条时，不要直接省略它，而是在那一项上加 "removed": true。
-   这样程序才分得清「你是要删它」还是「你忘了写它」。
-4. 如果【当前的物品草稿】是空的，说明这是第一轮 —— 用户的指令里通常是一段
-   自然语言描述，你要把它拆成一件件物品。
-5. categories 的优先级：
+**最重要的规则：只返回改动过的。**
+- 没有改动的物品**不要**写进 items —— 程序会让它们保持原样。这样又快又省。
+- 新增物品：id 自己起一个，例如 "new-1"
+- 修改已有物品：id 必须原样填草稿里的那个
+- 删除物品：把 id 放进 removedIds，**不要**直接省略它
+
+其他规则：
+1. 如果【当前的物品草稿】是空的，说明这是第一轮 —— 用户的指令里通常是一段
+   自然语言描述，你要把它拆成一件件物品，全部放进 items。
+2. categories 的优先级：
    a) 用户明确说了某个分类名 → 就用它，**即使不在【已有分类】里**
    b) 否则找【已有分类】里语义相符的
    c) 都没有才新建
    **绝对不要把物品塞进不相干的已有分类。** 把「口红」归到「日用品」是错的，
    正确做法是新建「化妆品」。清单里的名字只是"可以复用的选项"。
    分类是多级的，物品可以挂在任意一级，所以 [["化妆品"]] 也是合法的。
-6. location 只能从【已有位置】里挑，输出名称路径。拿不准就填 null，不要猜。
-7. attributes 的 key 只能用【已有属性】里的名字，没有的不要写。
-8. reply 里要说清楚**你改动了哪几条、怎么改的**，用户才知道该检查哪里。
+3. location 只能从【已有位置】里挑，输出名称路径。拿不准就填 null，不要猜。
+4. attributes 的 key 只能用【已有属性】里的名字，没有的不要写。
+5. reply 里说清楚你改动了哪几条、怎么改的，用户才知道该检查哪里。
    简短一点，不要客套话，不要 Markdown 标题。
-9. 如果用户的指令跟物品整理无关，就在 reply 里说明，并保持 items 原样返回。`
+6. 如果用户的指令跟物品整理无关，就在 reply 里说明，items 和 removedIds 都给空数组。`
 
-/** 只保留最近若干轮，免得历史无限膨胀把上下文撑爆 */
-const MAX_HISTORY_MESSAGES = 12
+/**
+ * 只保留最近若干轮。
+ * 草稿本身就是完整状态，历史主要是用来理解「刚才那个」「上面说的」这类指代，
+ * 不需要留太长 —— 留太长每轮都要重发，纯粹烧 token。
+ */
+const MAX_HISTORY_MESSAGES = 8
 
 export interface ChatTurn {
   role: 'user' | 'assistant'
@@ -151,7 +187,14 @@ export function buildChatMessages(
   drafts: DraftForAi[],
   instruction: string,
 ): ChatMessage[] {
-  const messages: ChatMessage[] = [{ role: 'system', content: CHAT_SYSTEM }]
+  const messages: ChatMessage[] = [
+    {
+      role: 'system',
+      // 用户体系放在 system 里，是为了让 system + 历史 构成稳定的前缀，
+      // 好命中 DeepSeek 的前缀缓存。放进每轮的用户消息就没有这个好处了。
+      content: `${CHAT_SYSTEM}\n\n---\n\n${renderContextBlock(context)}`,
+    },
+  ]
 
   // 历史只放「用户说了什么 + AI 回了什么」，不放历史草稿快照 ——
   // 草稿永远用最新的一份附在最后那条用户消息里，避免旧快照造成混乱。
@@ -159,18 +202,13 @@ export function buildChatMessages(
     messages.push({ role: turn.role, content: turn.content })
   }
 
-  const draftText =
-    drafts.length > 0
-      ? JSON.stringify({ items: drafts })
-      : '（空的，还没有任何物品）'
-
   messages.push({
     role: 'user',
     content: [
-      renderContextBlock(context),
-      '',
       '【当前的物品草稿】',
-      draftText,
+      drafts.length > 0
+        ? JSON.stringify({ items: drafts.map(compactDraft) })
+        : '（空的，还没有任何物品）',
       '',
       '【用户的指令】',
       instruction,
@@ -181,75 +219,77 @@ export function buildChatMessages(
 }
 
 /* ------------------------------------------------------------------ */
-/* 合并 AI 返回的草稿                                                  */
+/* 合并 AI 返回的改动                                                  */
 /* ------------------------------------------------------------------ */
 
 export interface MergeOutcome {
   drafts: ItemDraft[]
-  /** AI 新加的 */
+  /** 新增的 */
   added: number
-  /** 内容真的变了 */
+  /** 内容真的变了的 */
   updated: number
-  /** AI 返回了但内容没变 */
+  /** 没被提到、原样保留的 */
   unchanged: number
-  /** AI 明确标了 removed */
+  /** 被删掉的 */
   removed: number
-  /** AI 漏掉、被我们保留下来的 —— 绝不静默丢东西 */
-  kept: number
   /** 内容有变化的草稿 key，用于在预览里高亮 */
   changedKeys: string[]
+  /** AI 报了个本地不存在的 id 要删（大概率是它自己编的） */
+  unknownIds: number
 }
 
 /**
- * 把 AI 返回的完整草稿合并进当前草稿。
+ * 把 AI 这一轮的改动合并进当前草稿。
  *
  * 合并规则（保守优先）：
- *   · id 命中 → 更新内容，但**保留用户之前勾选的采纳/包含状态**
- *   · id 没命中 → 当作新增
- *   · removed: true → 删掉
- *   · 当前有、但 AI 没返回的 → **保留**，并计入 kept（大概率是 AI 漏写了）
+ *   · items 里 id 命中 → 更新内容，但**保留用户之前勾选的采纳/包含状态**
+ *   · items 里 id 没命中 → 当作新增
+ *   · removedIds 命中 → 删掉
+ *   · **其余一律原样保留** —— AI 没提到 ≠ 要删，这是最要紧的一条
+ *
+ * 顺序也保持不变：被改过的条目就地更新，新增的追加到末尾。
+ * 否则每改一次整个列表就重排一次，根本没法看。
  */
-export function mergeRevisedDrafts(
-  revised: RawRevisedItem[],
+export function mergeChatResponse(
+  response: ParsedChatResponse,
   current: ItemDraft[],
   matchCtx: MatchContext,
   derived: DerivedContext,
 ): MergeOutcome {
   const byKey = new Map(current.map((draft) => [draft.key, draft]))
-  const usedKeys = new Set<string>()
+  const removedSet = new Set(response.removedIds)
   const seenIds = new Set<string>()
+  const usedKeys = new Set<string>()
 
-  const drafts: ItemDraft[] = []
+  /** 改动后的条目，按 key 暂存，最后按原顺序拼回去 */
+  const replaced = new Map<string, ItemDraft>()
+  const appended: ItemDraft[] = []
   const changedKeys: string[] = []
   let added = 0
   let updated = 0
-  let unchanged = 0
-  let removed = 0
 
-  for (const item of revised) {
+  for (const item of response.items) {
     // AI 可能重复返回同一个 id，只认第一条
     if (seenIds.has(item.id)) continue
     seenIds.add(item.id)
 
-    const existing = byKey.get(item.id)
-
+    // 单条上的 removed 标记也认（AI 有时会这么写）
     if (item.removed) {
-      if (existing) removed++
+      if (byKey.has(item.id)) removedSet.add(item.id)
       continue
     }
 
+    const existing = byKey.get(item.id)
     const fresh = toItemDraft(item, matchCtx, derived)
 
     if (existing) {
       const before = signature(effectiveContent(existing, derived))
       const after = signature(effectiveContent(fresh, derived))
-      if (before === after) unchanged++
-      else {
+      if (before !== after) {
         updated++
         changedKeys.push(existing.key)
       }
-
-      drafts.push({
+      replaced.set(existing.key, {
         ...fresh,
         key: existing.key,
         // 用户手动做过的选择要保留 —— AI 改内容不该把他勾的东西清掉
@@ -264,22 +304,37 @@ export function mergeRevisedDrafts(
     // 新增：优先沿用 AI 给的 id（下一轮才能对上），冲突了才另起一个
     const key = !usedKeys.has(item.id) && !byKey.has(item.id) ? item.id : uid()
     usedKeys.add(key)
-    drafts.push({ ...fresh, key })
+    appended.push({ ...fresh, key })
     added++
     changedKeys.push(key)
   }
 
-  // AI 漏掉的条目一律保留，绝不静默丢
-  const keptDrafts = current.filter((draft) => !seenIds.has(draft.key))
-  for (const draft of keptDrafts) drafts.push(draft)
-
-  return {
-    drafts,
-    added,
-    updated,
-    unchanged,
-    removed,
-    kept: keptDrafts.length,
-    changedKeys,
+  // 按原顺序拼：改过的就地替换，没提到的原样保留，被删的丢掉
+  const drafts: ItemDraft[] = []
+  let removed = 0
+  for (const draft of current) {
+    if (removedSet.has(draft.key)) {
+      removed++
+      continue
+    }
+    drafts.push(replaced.get(draft.key) ?? draft)
   }
+  drafts.push(...appended)
+
+  // AI 报了个本地根本没有的 id
+  let unknownIds = 0
+  for (const id of removedSet) {
+    if (!byKey.has(id)) unknownIds++
+  }
+
+  const unchanged = drafts.length - added - updated
+
+  return { drafts, added, updated, unchanged, removed, changedKeys, unknownIds }
 }
+
+/** 供测试与调试用：看看一条草稿发出去大概长什么样 */
+export function previewDraftPayload(drafts: DraftForAi[]): string {
+  return JSON.stringify({ items: drafts.map(compactDraft) })
+}
+
+export type { RawRevisedItem }

@@ -19,7 +19,7 @@ import {
 } from '../ai/convert'
 import {
   buildChatMessages,
-  mergeRevisedDrafts,
+  mergeChatResponse,
   serializeDrafts,
   type ChatTurn,
 } from '../ai/chat'
@@ -88,6 +88,8 @@ export function Ai() {
   const [chatDrafts, setChatDrafts] = useState<ItemDraft[]>([])
   const [chatChangedKeys, setChatChangedKeys] = useState<string[]>([])
   const [chatError, setChatError] = useState<string | null>(null)
+  /** 上一轮的 token 消耗 —— 让人看得出这轮贵不贵，好决定要不要开新对话 */
+  const [lastTurnUsage, setLastTurnUsage] = useState<AiUsage>(EMPTY_USAGE)
 
   /* ---------------- 批量录入 ---------------- */
   const [text, setText] = useState('')
@@ -349,6 +351,7 @@ export function Ai() {
     setChatDrafts([])
     setChatChangedKeys([])
     setChatError(null)
+    setLastTurnUsage(EMPTY_USAGE)
   }
 
   const runChat = async (instruction: string) => {
@@ -376,6 +379,7 @@ export function Ai() {
         signal: controller.signal,
       })
       setUsage((prev) => addUsage(prev, result.usage))
+      setLastTurnUsage(result.usage)
 
       const parsed = parseChatResponse(extractJson(result.content))
       const matchCtx = createMatchContext(fresh.data, fresh.derived)
@@ -386,8 +390,8 @@ export function Ai() {
         { role: 'assistant', content: parsed.reply || '（这一轮没有说明）' },
       ])
 
-      // 纯问答：AI 只回了一句话没给 items，草稿保持原样
-      if (parsed.missingItems) {
+      // 纯问答：AI 只回了一句话、没给任何改动，草稿保持原样
+      if (parsed.noChanges) {
         setChatBubbles((prev) => [
           ...prev,
           {
@@ -400,7 +404,7 @@ export function Ai() {
         return
       }
 
-      const outcome = mergeRevisedDrafts(parsed.items, chatDrafts, matchCtx, fresh.derived)
+      const outcome = mergeChatResponse(parsed, chatDrafts, matchCtx, fresh.derived)
       setChatDrafts(outcome.drafts)
       setChatChangedKeys(outcome.changedKeys)
 
@@ -408,7 +412,13 @@ export function Ai() {
       if (outcome.added > 0) parts.push(`新增 ${outcome.added}`)
       if (outcome.updated > 0) parts.push(`修改 ${outcome.updated}`)
       if (outcome.removed > 0) parts.push(`删除 ${outcome.removed}`)
-      if (outcome.kept > 0) parts.push(`保留 ${outcome.kept}（AI 没提到，已帮你留着）`)
+
+      if (parts.length === 0) {
+        parts.push('没有改动')
+      } else if (outcome.unchanged > 0) {
+        parts.push(`其余 ${outcome.unchanged} 条未动`)
+      }
+      if (outcome.unknownIds > 0) parts.push(`忽略 ${outcome.unknownIds} 个不存在的 id`)
 
       setChatBubbles((prev) => [
         ...prev,
@@ -416,7 +426,7 @@ export function Ai() {
           id: uid(),
           role: 'assistant',
           text: parsed.reply || '（这一轮没有说明）',
-          meta: parts.length > 0 ? parts.join(' · ') : '草稿没有变化',
+          meta: parts.join(' · '),
         },
       ])
     } catch (err) {
@@ -507,6 +517,7 @@ export function Ai() {
             running={running}
             error={chatError}
             usage={usage}
+            lastTurnUsage={lastTurnUsage}
             draftCount={chatDrafts.length}
             onSend={(text) => void runChat(text)}
             onCancel={cancel}
@@ -562,6 +573,10 @@ export function Ai() {
 
                 <div className="dim small">
                   采纳之后草稿会清空，想继续录下一批就再跟 AI 说。你的数据只有点了这个按钮才会被写入。
+                  <br />
+                  省 tokens 的窍门：<strong>AI 每轮只返回改动过的条目</strong>，
+                  所以放心多问几轮；但对话越长、草稿越大，每轮要重发的内容也越多 ——
+                  收拾完一批就点「采纳」再来个「新对话」，最划算。
                 </div>
               </div>
             )}

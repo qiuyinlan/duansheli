@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AiUsage } from '../ai/deepseek'
 import { IconAlert, IconSparkle } from './ui/icons'
-import { Button } from './ui/primitives'
+import { Button, ConfirmDialog } from './ui/primitives'
 
 export interface ChatBubble {
   id: string
@@ -15,7 +15,10 @@ interface Props {
   bubbles: ChatBubble[]
   running: boolean
   error: string | null
+  /** 本次对话累计消耗 */
   usage: AiUsage
+  /** 上一轮消耗 —— 用来判断「是不是该开新对话了」 */
+  lastTurnUsage: AiUsage
   draftCount: number
   onSend: (text: string) => void
   onCancel: () => void
@@ -39,12 +42,14 @@ export function AiChatPanel({
   running,
   error,
   usage,
+  lastTurnUsage,
   draftCount,
   onSend,
   onCancel,
   onReset,
 }: Props) {
   const [draft, setDraft] = useState('')
+  const [confirmReset, setConfirmReset] = useState(false)
   const streamRef = useRef<HTMLDivElement>(null)
 
   // 新消息进来时滚到底部
@@ -60,6 +65,11 @@ export function AiChatPanel({
     setDraft('')
   }
 
+  const askReset = () => {
+    if (draftCount > 0 || bubbles.length > 0) setConfirmReset(true)
+    else onReset()
+  }
+
   return (
     <div className="chat-panel">
       <div className="chat-panel__head">
@@ -67,15 +77,20 @@ export function AiChatPanel({
           <IconSparkle size={14} />
           <span className="small">和 AI 商量</span>
         </span>
-        <span className="row" style={{ gap: 'var(--gap-2)' }}>
+        <span className="row" style={{ gap: 'var(--gap-3)' }}>
           {usage.totalTokens > 0 ? (
-            <span className="tiny dim numeric">已用 {usage.totalTokens} tokens</span>
+            <span className="tiny numeric" title="上一轮消耗 / 本次对话累计">
+              上轮 {lastTurnUsage.totalTokens} · 共 {usage.totalTokens}
+            </span>
           ) : null}
-          {bubbles.length > 0 ? (
-            <Button size="sm" variant="ghost" onClick={onReset} disabled={running}>
-              重来
-            </Button>
-          ) : null}
+          <Button
+            size="sm"
+            onClick={askReset}
+            disabled={running}
+            title="清空对话和草稿，重新开始"
+          >
+            新对话
+          </Button>
         </span>
       </div>
 
@@ -162,6 +177,36 @@ export function AiChatPanel({
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmReset}
+        title="重新开一个对话？"
+        confirmLabel="开始新对话"
+        cancelLabel="继续当前对话"
+        message={
+          draftCount > 0 ? (
+            <>
+              当前草稿里的 <strong>{draftCount}</strong> 条会全部丢掉 ——
+              它们<strong>还没有写进数据库</strong>，所以是真的没了。
+              <br />
+              <br />
+              想保留就先点「采纳选中的」，再开新对话。
+              <br />
+              <br />
+              <span className="dim">
+                重新开一轮的好处：历史清空，每轮要重发的内容更少，也更省 tokens。
+              </span>
+            </>
+          ) : (
+            <>会清空当前的对话记录，重新开始。</>
+          )
+        }
+        onConfirm={() => {
+          setConfirmReset(false)
+          onReset()
+        }}
+        onCancel={() => setConfirmReset(false)}
+      />
     </div>
   )
 }

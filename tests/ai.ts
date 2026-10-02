@@ -9,7 +9,7 @@
  * 网络请求不测（那是在测 DeepSeek），只测我们自己写的那部分。
  */
 
-import type { RawExtractedItem, RawRevisedItem } from '../src/ai/parse'
+import type { ParsedChatResponse, RawExtractedItem, RawRevisedItem } from '../src/ai/parse'
 import {
   createMatchContext,
   draftsToBulkAddItems,
@@ -19,7 +19,8 @@ import {
 } from '../src/ai/convert'
 import {
   buildChatMessages,
-  mergeRevisedDrafts,
+  mergeChatResponse,
+  previewDraftPayload,
   serializeDrafts,
   type ChatTurn,
 } from '../src/ai/chat'
@@ -932,10 +933,20 @@ function revisedItem(
   }
 }
 
+function botReply(
+  items: RawRevisedItem[],
+  removedIds: string[] = [],
+  reply = '改好了',
+): ParsedChatResponse {
+  return { reply, items, removedIds, noChanges: false }
+}
+
+/* ---- 合并 ---- */
+
 await test('id 命中且内容没变 → 计入 unchanged，草稿不变', () => {
   const base = toItemDraft(raw({ name: '口红', categoryPaths: [['衣物']] }), chatMatch, ctx)
-  const outcome = mergeRevisedDrafts(
-    [revisedItem({ id: base.key, name: '口红', categoryPaths: [['衣物']] })],
+  const outcome = mergeChatResponse(
+    botReply([revisedItem({ id: base.key, name: '口红', categoryPaths: [['衣物']] })]),
     [base],
     chatMatch,
     ctx,
@@ -949,8 +960,10 @@ await test('id 命中且内容没变 → 计入 unchanged，草稿不变', () =>
 
 await test('id 命中且内容变了 → 计入 updated 并高亮', () => {
   const base = toItemDraft(raw({ name: '口红', categoryPaths: [['衣物']] }), chatMatch, ctx)
-  const outcome = mergeRevisedDrafts(
-    [revisedItem({ id: base.key, name: '长管油口红', categoryPaths: [['化妆品', '唇妆']] })],
+  const outcome = mergeChatResponse(
+    botReply([
+      revisedItem({ id: base.key, name: '长管油口红', categoryPaths: [['化妆品', '唇妆']] }),
+    ]),
     [base],
     chatMatch,
     ctx,
@@ -961,8 +974,8 @@ await test('id 命中且内容变了 → 计入 updated 并高亮', () => {
 })
 
 await test('AI 新加的物品 → added，并沿用 AI 给的 id', () => {
-  const outcome = mergeRevisedDrafts(
-    [revisedItem({ id: 'new-1', name: '眼影盘', categoryPaths: [['化妆品', '眼妆']] })],
+  const outcome = mergeChatResponse(
+    botReply([revisedItem({ id: 'new-1', name: '眼影盘', categoryPaths: [['化妆品']] })]),
     [],
     chatMatch,
     ctx,
@@ -971,10 +984,17 @@ await test('AI 新加的物品 → added，并沿用 AI 给的 id', () => {
   eq(outcome.drafts[0].key, 'new-1', '沿用 AI 的 id，下一轮还能对上')
 })
 
-await test('removed: true → 真的删掉', () => {
+await test('removedIds → 真的删掉', () => {
   const base = toItemDraft(raw({ name: '卸妆膏' }), chatMatch, ctx)
-  const outcome = mergeRevisedDrafts(
-    [revisedItem({ id: base.key, name: '卸妆膏', removed: true })],
+  const outcome = mergeChatResponse(botReply([], [base.key]), [base], chatMatch, ctx)
+  eq(outcome.removed, 1)
+  eq(outcome.drafts.length, 0)
+})
+
+await test('单条上的 removed: true 也认（AI 有时会这么写）', () => {
+  const base = toItemDraft(raw({ name: '卸妆膏' }), chatMatch, ctx)
+  const outcome = mergeChatResponse(
+    botReply([revisedItem({ id: base.key, name: '卸妆膏', removed: true })]),
     [base],
     chatMatch,
     ctx,
@@ -983,48 +1003,90 @@ await test('removed: true → 真的删掉', () => {
   eq(outcome.drafts.length, 0)
 })
 
-await test('AI 漏写的条目会被保留，绝不静默丢东西', () => {
+/**
+ * 这是整个对话模式最要紧的一条。
+ * AI 每轮只返回改动过的条目，其余都没提到 —— 那些**必须原样保留**。
+ * 早期版本要求 AI 返回完整列表，漏写就会丢东西。
+ */
+await test('AI 没提到的条目一律原样保留 —— 绝不静默丢东西', () => {
   const a = toItemDraft(raw({ name: '口红' }), chatMatch, ctx)
   const b = toItemDraft(raw({ name: '眼影盘' }), chatMatch, ctx)
+  const c = toItemDraft(raw({ name: '卸妆水' }), chatMatch, ctx)
 
-  const outcome = mergeRevisedDrafts(
-    [revisedItem({ id: a.key, name: '口红' })],
+  // AI 只改了一条，另外两条压根没提
+  const outcome = mergeChatResponse(
+    botReply([revisedItem({ id: b.key, name: '眼影盘', categoryPaths: [['衣物']] })]),
+    [a, b, c],
+    chatMatch,
+    ctx,
+  )
+
+  eq(outcome.drafts.length, 3, '一条都不能少')
+  eq(outcome.updated, 1)
+  eq(outcome.unchanged, 2, '没被提到的两条要算作未改动')
+  deepEq(
+    outcome.drafts.map((d) => d.key),
+    [a.key, b.key, c.key],
+    '顺序也要保持原样，不能每改一次就重排',
+  )
+})
+
+await test('顺序：改过的就地更新，新增的追加到末尾', () => {
+  const a = toItemDraft(raw({ name: 'A' }), chatMatch, ctx)
+  const b = toItemDraft(raw({ name: 'B' }), chatMatch, ctx)
+
+  const outcome = mergeChatResponse(
+    botReply([
+      revisedItem({ id: a.key, name: 'A 改过了' }),
+      revisedItem({ id: 'new-1', name: 'C' }),
+    ]),
     [a, b],
     chatMatch,
     ctx,
   )
-  eq(outcome.kept, 1, 'AI 只返回了一条，另一条要保住并如实报告')
-  eq(outcome.drafts.length, 2)
-  ok(
-    outcome.drafts.some((d) => d.key === b.key),
-    '被漏掉的那条必须还在草稿里',
-  )
+
+  deepEq(outcome.drafts.map((d) => d.name), ['A 改过了', 'B', 'C'])
 })
 
-await test('AI 改内容时，用户取消的勾选状态要保留', () => {
-  const base = { ...toItemDraft(raw({ name: '口红' }), chatMatch, ctx), include: false }
-  const outcome = mergeRevisedDrafts(
-    [revisedItem({ id: base.key, name: '口红', categoryPaths: [['化妆品']] })],
+await test('removedIds 里混进不存在的 id 时，只计数不崩', () => {
+  const base = toItemDraft(raw({ name: '口红' }), chatMatch, ctx)
+  const outcome = mergeChatResponse(
+    botReply([], [base.key, 'ai-编的-id']),
     [base],
     chatMatch,
     ctx,
   )
-  eq(outcome.drafts[0].include, false, 'AI 改了名字，不该把用户取消的勾选又打开')
+  eq(outcome.removed, 1)
+  eq(outcome.unknownIds, 1, 'AI 编的 id 要如实计数，但不该影响别的')
+  eq(outcome.drafts.length, 0)
+})
+
+await test('AI 改内容时，用户取消的勾选状态要保留', () => {
+  const base = { ...toItemDraft(raw({ name: '口红' }), chatMatch, ctx), include: false }
+  const outcome = mergeChatResponse(
+    botReply([revisedItem({ id: base.key, name: '口红', categoryPaths: [['衣物']] })]),
+    [base],
+    chatMatch,
+    ctx,
+  )
+  eq(outcome.drafts[0].include, false, 'AI 改了内容，不该把用户取消的勾选又打开')
 })
 
 await test('AI 重复返回同一个 id 时只认第一条，不会造出重复项', () => {
   const base = toItemDraft(raw({ name: '口红' }), chatMatch, ctx)
-  const outcome = mergeRevisedDrafts(
-    [
+  const outcome = mergeChatResponse(
+    botReply([
       revisedItem({ id: base.key, name: '口红' }),
       revisedItem({ id: base.key, name: '口红的副本' }),
-    ],
+    ]),
     [base],
     chatMatch,
     ctx,
   )
   eq(outcome.drafts.length, 1, '同一个 id 只该有一条')
 })
+
+/* ---- 发给 AI 的内容（省 token 相关） ---- */
 
 await test('发给 AI 的草稿用的是人话（名称路径），不是 id', () => {
   const base = toItemDraft(
@@ -1047,19 +1109,81 @@ await test('未采纳的新分类不该发给 AI（否则它会以为已经生�
   deepEq(serializeDrafts([adopted], ctx)[0].categoryPaths, [['户外装备']], '采纳后才该出现')
 })
 
-await test('解析对话回复：标准结构 / 纯问答 / 全不合法', () => {
+await test('空字段不发出去（省 token）', () => {
+  const bare = toItemDraft(raw({ name: '一张纸' }), chatMatch, ctx)
+  const payload = previewDraftPayload(serializeDrafts([bare], ctx))
+
+  ok(!payload.includes('"tags"'), '空标签不该发')
+  ok(!payload.includes('"attributes"'), '空属性不该发')
+  ok(!payload.includes('"note"'), '空备注不该发')
+  ok(!payload.includes('"categories"'), '没有分类时不该发')
+  ok(!payload.includes('"location"'), '没有位置时不该发')
+  ok(!payload.includes('"quantity"'), '数量为 1 时是默认值，不用发')
+  ok(payload.includes('"id"') && payload.includes('"name"'), 'id 和名称必须在')
+
+  // 有值的字段还是要发的
+  const rich = toItemDraft(
+    raw({ name: '毛衣', quantity: 3, categoryPaths: [['衣物']], tags: ['想送人'], note: '妈妈送的' }),
+    chatMatch,
+    ctx,
+  )
+  const richPayload = previewDraftPayload(serializeDrafts([rich], ctx))
+  ok(richPayload.includes('"quantity":3'), '非默认数量要发')
+  ok(richPayload.includes('"想送人"'), '有标签要发')
+  ok(richPayload.includes('妈妈送的'), '有备注要发')
+})
+
+await test('用户体系放在 system 消息里 —— 这是前缀缓存能生效的前提', () => {
+  const context = buildAiContext(fx, ctx)
+  const first = buildChatMessages(context, [], [], '第一句')
+  const second = buildChatMessages(
+    context,
+    [
+      { role: 'user', content: '第一句' },
+      { role: 'assistant', content: '好' },
+    ],
+    serializeDrafts([toItemDraft(raw({ name: '毛衣' }), chatMatch, ctx)], ctx),
+    '第二句',
+  )
+
+  eq(must(first[0], '应该有 system').role, 'system')
+  eq(
+    must(first[0], '应该有 system').content,
+    must(second[0], '应该有 system').content,
+    'system 必须逐字节一致，否则缓存命中不了',
+  )
+  ok(
+    must(first[0], '应该有 system').content.includes('【已有分类】'),
+    '用户体系应该在 system 里',
+  )
+  ok(
+    !must(first[first.length - 1], '应该有最后一条').content.includes('【已有分类】'),
+    '用户消息里不该再重复一遍体系',
+  )
+})
+
+/* ---- 解析 ---- */
+
+await test('解析对话回复：标准结构 / 纯问答 / removedIds / 全不合法', () => {
   const normal = parseChatResponse({
     reply: '改好了',
     items: [{ id: 'a', name: '口红', categories: [['化妆品', '唇妆']] }],
+    removedIds: ['b'],
   })
   eq(normal.reply, '改好了')
   eq(normal.items.length, 1)
-  eq(normal.missingItems, false)
+  eq(normal.noChanges, false)
+  deepEq(normal.removedIds, ['b'])
   deepEq(normal.items[0].categoryPaths, [['化妆品', '唇妆']])
 
-  // 只回一句话、没有 items —— 这是允许的，草稿该原样保留
+  const onlyRemoved = parseChatResponse({ reply: '删掉了', removedIds: ['x'] })
+  eq(onlyRemoved.items.length, 0)
+  eq(onlyRemoved.removedIds.length, 1)
+  eq(onlyRemoved.noChanges, false, '只有删除也算有改动')
+
+  // 只回一句话、没有任何改动 —— 这是允许的，草稿该原样保留
   const chatOnly = parseChatResponse({ reply: '这个我不太确定，你能说得更具体吗？' })
-  eq(chatOnly.missingItems, true, '要标记出来，让上层保留原草稿')
+  eq(chatOnly.noChanges, true, '要标记出来，让上层保留原草稿')
 
   // 既没有说明也没有列表 → 明确报错
   let caught: AiError | null = null
@@ -1081,7 +1205,7 @@ await test('对话的 history 不会被无限撑大', () => {
 
   ok(!content.includes('第 0 轮'), '太老的轮次应该被丢掉')
   ok(content.includes('第 39 轮'), '最近几轮要保留')
-  ok(messages.length < 20, `消息条数应该有上限，实际 ${messages.length}`)
+  ok(messages.length < 16, `消息条数应该有上限，实际 ${messages.length}`)
 })
 
 /* ------------------------------------------------------------------ */
