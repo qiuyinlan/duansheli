@@ -72,4 +72,18 @@ elementProto.detachEvent = () => {}
  */
 dom.window.localStorage.setItem('duansheli:lang', 'zh')
 
+/*
+ * ⚠️ 一个已知的环境限制，写测试之前请先知道：
+ *
+ * **在这个 Node + jsdom 组合里，React 的 onChange 收不到派发进去的输入事件。**
+ * `dispatchEvent(new Event('input'))`、`'change'`、`new InputEvent('input')`
+ * 三种都试过，全部静默无声（而 `click()` 是好的）。
+ * 所以「用户在输入框里打字 / 选日期」这条路径**没法在这里模拟**。
+ *
+ * 变通办法（现有用例就是这么做的）：
+ *   · 能靠点击走的路径就走点击 —— `click()` 可靠
+ *   · 状态更新用点击驱动的往返来间接验证（例如「点一下快捷日期，清除按钮就出现了」）
+ *   · 要验纯数据行为就直接调 store 的动作，在 store 上断言
+ */
+
 export { dom }

@@ -163,7 +163,13 @@ export function item(partial: Partial<Item> & { name: string }): Item {
 
 /** 一份有代表性的数据：多分类、闲置、未归位、未分类、带标签、带属性值 */
 export function fixture(): AppData {
-  const seed = createSeedData()
+  // 显式要中文脚手架。
+  //
+  // 不传语言的话它跟着「当前界面语言」走，于是这个夹具就变得很脆：
+  // 只要前面哪个用例 `setLang('en')` 之后没切回来，这里铺的分类名就变成英文，
+  // 而下面一堆 `cat('衣物')` 的查找会直接抛「夹具缺少分类 衣物」——
+  // 症状离病因很远，很难查。传死语言，这类污染就不可能发生。
+  const seed = createSeedData('zh')
   const cat = (name: string) =>
     must(seed.categories.find((c) => c.name === name), `夹具缺少分类 ${name}`).id
   const loc = (name: string) =>

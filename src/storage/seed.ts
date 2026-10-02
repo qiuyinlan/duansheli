@@ -1,8 +1,10 @@
 import type { AppData, AttributeDef, Category, Location } from '../types'
 import { SCHEMA_VERSION } from '../types'
 import { uid } from '../lib/id'
-import { t } from '../i18n'
+import type { Lang } from '../i18n'
+import { getLang, tIn } from '../i18n'
 
+/** 一份什么都没有的空数据 —— 不铺任何脚手架，用于「清空所有数据」 */
 export function createEmptyData(): AppData {
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -27,9 +29,16 @@ export function createEmptyData(): AppData {
  * **首次启动时的界面语言**生成一次；之后切换界面语言**不会**去动它们 ——
  * 你花时间改过的分类名被悄悄翻译掉，是最让人恼火的一类 bug。
  * 想换一套，就在管理页里自己命名，或者清空数据重新开始。
+ *
+ * ── 为什么语言是个参数而不是直接读当前语言 ──────────────────────
+ * 因为调用方有时候**必须指定**语言。最典型的是测试夹具：它铺的那套中文脚手架
+ * 后面会被一堆断言依赖，如果它跟着「当前语言」走，那么只要前面有人切了英文没切回来，
+ * 夹具就会静默变成英文，一堆断言莫名其妙地红，而且看不出原因。
+ * 显式传参就把这类跨用例污染从「靠自觉」变成了「不可能」。
  */
-export function createSeedData(): AppData {
+export function createSeedData(lang: Lang = getLang()): AppData {
   const now = new Date().toISOString()
+  const t = (key: Parameters<typeof tIn>[1]) => tIn(lang, key)
 
   // 位置树：用「名字 → 父名字」描述结构，父节点总在子节点之前出现。
   // 这里刻意不用 loc()/cat() 那种简写表，因为要保证父子引用不出错 ——

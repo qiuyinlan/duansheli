@@ -236,6 +236,24 @@ export const tc: TCountFunction = (count, stem, vars) => {
   return t(stem as DictKey, withCount)
 }
 
+/**
+ * 取**指定语言**下的文案。
+ *
+ * 和 `t()` 的区别：`t()` 读当前语言，这个是你说了算。
+ * 什么时候需要它：**要把文案写进数据里**的时候 —— 目前只有「首次启动的脚手架」
+ * 一处（分类名、位置名、标签名会变成用户自己的数据）。
+ *
+ * 为什么非要有它：那次生成是「按当前语言跑一次」，如果只能读当前语言，
+ * 那么任何**依赖语言的测试**都会变得很脆 —— 比如测试夹具里铺的那套中文分类，
+ * 只要之前有人 `setLang('en')` 没切回来，夹具就会静默变成英文，
+ * 然后一堆断言莫名其妙地红，而且看不出原因。显式传语言就没这个问题。
+ */
+export function tIn(lang: Lang, key: DictKey, vars?: VarMap): string {
+  const template = FLAT[lang][key] ?? FLAT.zh[key]
+  if (template === undefined) return key
+  return interpolate(template, vars)
+}
+
 /* ------------------------------------------------------------------ */
 /* React 绑定                                                          */
 /* ------------------------------------------------------------------ */

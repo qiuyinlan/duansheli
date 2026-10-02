@@ -37,6 +37,7 @@ import {
 import { en } from '../src/i18n/en'
 import { zh } from '../src/i18n/zh'
 import { eq, ok, suite, test } from './harness'
+import { fixture } from './harness'
 
 /* ------------------------------------------------------------------ */
 /* 工具                                                                */
@@ -220,6 +221,25 @@ await test('种子脚手架按当时的语言生成', async () => {
   })
   ok(englishCats.includes('Clothing'), `英文环境该铺英文分类：${englishCats.join(',')}`)
   ok(englishCats.length > 0, '英文脚手架不能是空的')
+})
+
+await test('可以显式指定语言，不受当前语言影响', async () => {
+  // 这一条守的是「跨用例污染」：测试夹具铺的那套中文脚手架，
+  // 只要前面有谁切了英文没切回来，夹具就会静默变成英文，
+  // 然后到处报「夹具缺少分类 衣物」，而病根离症状很远。
+  // 显式传语言之后这类问题不可能再发生。
+  await asEnglish(() => {
+    eq(createSeedData('zh').categories[0]?.name, '衣物', '显式要中文就该给中文')
+    eq(createSeedData('en').categories[0]?.name, 'Clothing', '显式要英文就给英文')
+  })
+
+  // 顺便确认测试夹具本身是免疫的
+  setLang('en')
+  try {
+    eq(fixture().categories[0]?.name, '衣物', 'fixture() 不该受当前语言影响')
+  } finally {
+    setLang('zh')
+  }
 })
 
 await test('有效期四档分组标题也跟着变', async () => {
