@@ -84,6 +84,9 @@ function withPage(
     error: null,
     data,
     derived: createDerived(data),
+    // 显式清掉 Key，让渲染结果可预期 ——
+    // 否则前面哪个测试留了个 Key，这里就会渲染成「已填入」的样子
+    aiApiKey: '',
   })
 
   renderChecked(
@@ -222,12 +225,13 @@ await test('管理页显示已有条目', () => {
   withPage('/tags', data, (_container, html) => contains(html, '想送人'))
 })
 
-await test('AI 助手页显示 Key 输入、两种模式与隐私说明', () => {
+await test('AI 助手页显示 Key 输入、三种模式与隐私说明', () => {
   withPage('/ai', data, (_container, html) => {
     contains(html, 'DeepSeek API Key', '应该有 Key 输入框')
-    contains(html, '批量录入')
+    contains(html, '对话整理')
+    contains(html, '一次性录入')
     contains(html, '整理已有物品')
-    contains(html, '只保存在内存里', '必须明确告诉用户 Key 不落盘')
+    contains(html, '保存在这台设备的浏览器里', '必须如实说明 Key 会存在本地')
     contains(html, 'api.deepseek.com', '应说明请求直连，不经过第三方')
   })
 })

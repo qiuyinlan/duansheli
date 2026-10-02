@@ -562,3 +562,157 @@
   gap: var(--gap-1);
   line-height: 1.8;
 }
+
+/* ---------------- 对话整理 ---------------- */
+
+.chat-layout {
+  display: grid;
+  gap: var(--gap-4);
+}
+
+.chat-layout__draft {
+  min-width: 0;
+}
+
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  /* 手机上给个有界高度，否则聊几句就把右边的草稿顶到看不见了 */
+  height: 62vh;
+  min-height: 380px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.chat-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  flex-shrink: 0;
+}
+
+.chat-panel__stream {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--gap-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  background: var(--bg-sub);
+}
+
+.chat-panel__empty {
+  color: var(--text-2);
+  line-height: 1.8;
+}
+
+.chat-starter {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--gap-2) var(--gap-3);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.chat-starter:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.chat-bubble {
+  max-width: 92%;
+  padding: var(--gap-2) var(--gap-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-bubble--user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: #fff;
+}
+
+.chat-bubble--assistant {
+  align-self: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.chat-bubble--note {
+  align-self: center;
+  background: transparent;
+  border: 1px dashed var(--line-strong);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.chat-bubble--pending {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+}
+
+.chat-bubble__meta {
+  margin-top: var(--gap-1);
+  padding-top: var(--gap-1);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.chat-bubble--user .chat-bubble__meta {
+  border-top-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.chat-panel__composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--gap-3);
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.chat-panel__input {
+  min-height: 72px;
+  max-height: 180px;
+  font-size: var(--fs-sm);
+}
+
+/* 这一轮刚被改过的草稿行：左侧主色竖条 + 浅底色 */
+.ai-row--changed {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+@media (min-width: 768px) {
+  .chat-layout {
+    grid-template-columns: minmax(300px, 400px) 1fr;
+    align-items: start;
+  }
+
+  .chat-panel {
+    position: sticky;
+    top: var(--gap-4);
+    height: calc(100vh - 48px);
+    max-height: 780px;
+  }
+}

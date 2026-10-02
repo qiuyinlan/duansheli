@@ -42,7 +42,8 @@ export interface AiUsage {
 }
 
 export interface ChatMessage {
-  role: 'system' | 'user'
+  /** assistant 用于多轮对话里回放上一轮 AI 的回复 */
+  role: 'system' | 'user' | 'assistant'
   content: string
 }
 

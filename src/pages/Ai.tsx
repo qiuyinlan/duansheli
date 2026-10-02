@@ -17,19 +17,28 @@ import {
   type ItemDraft,
   type TidyDraft,
 } from '../ai/convert'
+import {
+  buildChatMessages,
+  mergeRevisedDrafts,
+  serializeDrafts,
+  type ChatTurn,
+} from '../ai/chat'
 import { AiError, chat, createRequestController, type AiUsage } from '../ai/deepseek'
 import {
   extractJson,
   parseAssignments,
+  parseChatResponse,
   parseExtraction,
   type RawAssignment,
   type RawExtractedItem,
 } from '../ai/parse'
+import { AiChatPanel, type ChatBubble } from '../components/AiChatPanel'
 import { AiExtractPreview } from '../components/AiExtractPreview'
 import { AiKeyPanel } from '../components/AiKeyPanel'
 import { AiTidyPreview } from '../components/AiTidyPreview'
 import { IconAlert, IconCheck } from '../components/ui/icons'
-import { Button } from '../components/ui/primitives'
+import { Button, EmptyState } from '../components/ui/primitives'
+import { uid } from '../lib/id'
 import { liveItems } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
 import type { Item } from '../types'
@@ -43,7 +52,7 @@ const TIDY_BATCH_SIZE = 40
 /** 一次整理最多处理多少件，防止一把梭把上下文撑爆 */
 const TIDY_MAX_ITEMS = 200
 
-type Mode = 'extract' | 'tidy'
+type Mode = 'chat' | 'extract' | 'tidy'
 type TidyScope = 'active' | 'idle' | 'uncategorized' | 'unassigned' | 'category'
 
 const EMPTY_USAGE: AiUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
@@ -71,7 +80,14 @@ export function Ai() {
   const bulkUpdateItems = useAppStore((s) => s.bulkUpdateItems)
   const notify = useAppStore((s) => s.notify)
 
-  const [mode, setMode] = useState<Mode>('extract')
+  const [mode, setMode] = useState<Mode>('chat')
+
+  /* ---------------- 对话整理 ---------------- */
+  const [chatBubbles, setChatBubbles] = useState<ChatBubble[]>([])
+  const [chatHistory, setChatHistory] = useState<ChatTurn[]>([])
+  const [chatDrafts, setChatDrafts] = useState<ItemDraft[]>([])
+  const [chatChangedKeys, setChatChangedKeys] = useState<string[]>([])
+  const [chatError, setChatError] = useState<string | null>(null)
 
   /* ---------------- 批量录入 ---------------- */
   const [text, setText] = useState('')
@@ -325,6 +341,117 @@ export function Ai() {
     setTidyDrafts(null)
   }
 
+  /* ---------------- 运行：对话整理 ---------------- */
+
+  const resetChat = () => {
+    setChatBubbles([])
+    setChatHistory([])
+    setChatDrafts([])
+    setChatChangedKeys([])
+    setChatError(null)
+  }
+
+  const runChat = async (instruction: string) => {
+    if (aiApiKey.trim() === '') {
+      notify('请先填入 DeepSeek API Key', 'error')
+      return
+    }
+
+    setChatBubbles((prev) => [...prev, { id: uid(), role: 'user', text: instruction }])
+    setRunning(true)
+    setChatError(null)
+
+    const controller = createRequestController()
+    cancelRef.current = controller.cancel
+
+    try {
+      const fresh = useAppStore.getState()
+      const context = buildAiContext(fresh.data, fresh.derived)
+      const serialized = serializeDrafts(chatDrafts, fresh.derived)
+      const messages = buildChatMessages(context, chatHistory, serialized, instruction)
+
+      const result = await chat({
+        apiKey: aiApiKey,
+        messages,
+        signal: controller.signal,
+      })
+      setUsage((prev) => addUsage(prev, result.usage))
+
+      const parsed = parseChatResponse(extractJson(result.content))
+      const matchCtx = createMatchContext(fresh.data, fresh.derived)
+
+      setChatHistory((prev) => [
+        ...prev,
+        { role: 'user', content: instruction },
+        { role: 'assistant', content: parsed.reply || '（这一轮没有说明）' },
+      ])
+
+      // 纯问答：AI 只回了一句话没给 items，草稿保持原样
+      if (parsed.missingItems) {
+        setChatBubbles((prev) => [
+          ...prev,
+          {
+            id: uid(),
+            role: 'assistant',
+            text: parsed.reply,
+            meta: '这条没有改动草稿',
+          },
+        ])
+        return
+      }
+
+      const outcome = mergeRevisedDrafts(parsed.items, chatDrafts, matchCtx, fresh.derived)
+      setChatDrafts(outcome.drafts)
+      setChatChangedKeys(outcome.changedKeys)
+
+      const parts: string[] = []
+      if (outcome.added > 0) parts.push(`新增 ${outcome.added}`)
+      if (outcome.updated > 0) parts.push(`修改 ${outcome.updated}`)
+      if (outcome.removed > 0) parts.push(`删除 ${outcome.removed}`)
+      if (outcome.kept > 0) parts.push(`保留 ${outcome.kept}（AI 没提到，已帮你留着）`)
+
+      setChatBubbles((prev) => [
+        ...prev,
+        {
+          id: uid(),
+          role: 'assistant',
+          text: parsed.reply || '（这一轮没有说明）',
+          meta: parts.length > 0 ? parts.join(' · ') : '草稿没有变化',
+        },
+      ])
+    } catch (err) {
+      setChatError(errorText(err))
+    } finally {
+      setRunning(false)
+      controller.dispose()
+      cancelRef.current = null
+    }
+  }
+
+  const applyChatDrafts = () => {
+    const selected = chatDrafts.filter((draft) => draft.include && draft.name.trim() !== '')
+    if (selected.length === 0) {
+      notify('没有勾选任何条目', 'error')
+      return
+    }
+
+    const fresh = useAppStore.getState()
+    const matchCtx = createMatchContext(fresh.data, fresh.derived)
+    const plan = draftsToBulkAddItems(selected, matchCtx, fresh.derived)
+    const result = bulkAddItems(plan)
+
+    const extras: string[] = []
+    if (result.createdCategories > 0) extras.push(`新建 ${result.createdCategories} 个分类`)
+    if (result.createdLocations > 0) extras.push(`新建 ${result.createdLocations} 个位置`)
+    notify(
+      `已录入 ${result.items} 件物品${extras.length > 0 ? `，${extras.join('、')}` : ''}`,
+      'success',
+    )
+
+    resetChat()
+    navigate('/items')
+  }
+
   const cancel = () => {
     cancelRef.current?.()
   }
@@ -332,6 +459,7 @@ export function Ai() {
   /* ---------------- 渲染 ---------------- */
 
   const isExtract = mode === 'extract'
+  const isChat = mode === 'chat'
 
   return (
     <>
@@ -350,22 +478,97 @@ export function Ai() {
       <div className="segmented" style={{ marginBottom: 'var(--gap-5)' }}>
         <button
           type="button"
-          className={`segmented__item${isExtract ? ' is-active' : ''}`}
-          onClick={() => setMode('extract')}
+          className={`segmented__item${isChat ? ' is-active' : ''}`}
+          onClick={() => setMode('chat')}
         >
-          批量录入
+          对话整理
         </button>
         <button
           type="button"
-          className={`segmented__item${!isExtract ? ' is-active' : ''}`}
+          className={`segmented__item${isExtract ? ' is-active' : ''}`}
+          onClick={() => setMode('extract')}
+        >
+          一次性录入
+        </button>
+        <button
+          type="button"
+          className={`segmented__item${!isChat && !isExtract ? ' is-active' : ''}`}
           onClick={() => setMode('tidy')}
         >
           整理已有物品
         </button>
       </div>
 
-      {/* ================= 批量录入 ================= */}
-      {isExtract ? (
+      {/* ================= 对话整理 ================= */}
+      {isChat ? (
+        <div className="chat-layout">
+          <AiChatPanel
+            bubbles={chatBubbles}
+            running={running}
+            error={chatError}
+            usage={usage}
+            draftCount={chatDrafts.length}
+            onSend={(text) => void runChat(text)}
+            onCancel={cancel}
+            onReset={resetChat}
+          />
+
+          <div className="chat-layout__draft">
+            {chatDrafts.length === 0 ? (
+              <EmptyState
+                title="这里会显示 AI 整理出来的物品"
+                hint={
+                  <>
+                    在左边写下要录的东西，或者直接说你想怎么整理。
+                    <br />
+                    AI 每轮都会告诉你改了哪几条，你可以继续让它改，也可以只采纳其中一部分。
+                  </>
+                }
+              />
+            ) : (
+              <div className="stack">
+                <div className="row-between wrap">
+                  <div className="small muted">
+                    草稿共 <strong className="numeric">{chatDrafts.length}</strong> 条，已选{' '}
+                    <strong className="numeric">
+                      {chatDrafts.filter((d) => d.include).length}
+                    </strong>{' '}
+                    条
+                    {chatChangedKeys.length > 0 ? (
+                      <span className="dim">· 加粗的是这一轮改过的</span>
+                    ) : null}
+                  </div>
+                  {chatChangedKeys.length > 0 ? (
+                    <Button size="sm" variant="ghost" onClick={() => setChatChangedKeys([])}>
+                      取消高亮
+                    </Button>
+                  ) : null}
+                </div>
+
+                <AiExtractPreview
+                  drafts={chatDrafts}
+                  onChange={setChatDrafts}
+                  highlightKeys={chatChangedKeys}
+                />
+
+                <div className="row wrap" style={{ paddingTop: 'var(--gap-3)' }}>
+                  <Button variant="primary" size="lg" onClick={applyChatDrafts}>
+                    采纳选中的 {chatDrafts.filter((d) => d.include).length} 条
+                  </Button>
+                  <Button size="lg" onClick={resetChat}>
+                    全部放弃
+                  </Button>
+                </div>
+
+                <div className="dim small">
+                  采纳之后草稿会清空，想继续录下一批就再跟 AI 说。你的数据只有点了这个按钮才会被写入。
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : isExtract ? (
+        /* ================= 批量录入 ================= */
         <div className="stack">
           <div className="field">
             <label className="field__label" htmlFor="ai-text">

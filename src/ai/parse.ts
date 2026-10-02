@@ -289,3 +289,59 @@ export function parseAssignments(payload: unknown): RawAssignment[] {
   }
   return out
 }
+
+/* ------------------------------------------------------------------ */
+/* 对话整理：AI 返回修改后的完整草稿                                    */
+/* ------------------------------------------------------------------ */
+
+export interface RawRevisedItem extends RawExtractedItem {
+  /** 草稿里原来的 id；新增的物品由 AI 自己起一个 */
+  id: string
+  /** AI 认为该删掉这一条 */
+  removed: boolean
+}
+
+export interface ParsedChatResponse {
+  reply: string
+  items: RawRevisedItem[]
+  /** AI 没给 items 字段（可能是纯问答）。这时草稿应原样保留。 */
+  missingItems: boolean
+}
+
+function normalizeRevisedItem(raw: unknown): RawRevisedItem | null {
+  const base = normalizeExtractedItem(raw)
+  if (!base || !isRecord(raw)) return null
+
+  const id = asString(raw.id ?? raw.标识)
+  if (id === '') return null
+
+  return { ...base, id, removed: raw.removed === true || raw.删除 === true }
+}
+
+/**
+ * 解析对话模式的回复。
+ *
+ * 这里刻意**宽容**：AI 偶尔会只回一句话不带 items（比如用户只是问了个问题）。
+ * 那种情况不该报错 —— 草稿保持原样就好，由上层决定怎么提示。
+ */
+export function parseChatResponse(payload: unknown): ParsedChatResponse {
+  if (!isRecord(payload)) {
+    throw new AiError('bad_response', 'AI 的回复不是预期的结构。')
+  }
+
+  const reply = asString(payload.reply ?? payload.说明 ?? payload.message)
+  const candidate = payload.items ?? payload.物品 ?? payload.list
+
+  if (!Array.isArray(candidate)) {
+    if (reply !== '') return { reply, items: [], missingItems: true }
+    throw new AiError('bad_response', 'AI 的回复里既没有说明也没有物品列表。')
+  }
+
+  const items: RawRevisedItem[] = []
+  for (const raw of candidate) {
+    const item = normalizeRevisedItem(raw)
+    if (item) items.push(item)
+  }
+
+  return { reply, items, missingItems: false }
+}

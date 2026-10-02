@@ -9,7 +9,7 @@
  * 网络请求不测（那是在测 DeepSeek），只测我们自己写的那部分。
  */
 
-import type { RawExtractedItem } from '../src/ai/parse'
+import type { RawExtractedItem, RawRevisedItem } from '../src/ai/parse'
 import {
   createMatchContext,
   draftsToBulkAddItems,
@@ -17,8 +17,19 @@ import {
   toItemDraft,
   toTidyDraft,
 } from '../src/ai/convert'
+import {
+  buildChatMessages,
+  mergeRevisedDrafts,
+  serializeDrafts,
+  type ChatTurn,
+} from '../src/ai/chat'
 import { AiError } from '../src/ai/deepseek'
-import { extractJson, parseAssignments, parseExtraction } from '../src/ai/parse'
+import {
+  extractJson,
+  parseAssignments,
+  parseChatResponse,
+  parseExtraction,
+} from '../src/ai/parse'
 import {
   buildAiContext,
   buildExtractionMessages,
@@ -835,23 +846,56 @@ await test('抽取指令要求 json 模式（DeepSeek 的硬性要求）', () =>
 })
 
 /* ------------------------------------------------------------------ */
-/* 10. API Key 的安全边界                                              */
+/* 10. API Key 的存放边界                                              */
 /* ------------------------------------------------------------------ */
 
-suite('API Key 只存在内存里')
+suite('API Key：存在本地，但不外泄')
 
-const SECRET = 'sk-test-this-must-never-be-persisted-1234'
+const SECRET = 'sk-test-this-must-never-be-exported-1234'
 
-await test('Key 不会被写进导出的备份文件', () => {
+await test('Key 会保存到 localStorage —— 这是刻意的，刷新不该丢', () => {
+  seedStore()
+  useAppStore.getState().setAiApiKey(SECRET)
+  eq(
+    localStorage.getItem('duansheli:ai-key'),
+    SECRET,
+    '用户要求存本地，刷新后还能直接用',
+  )
+  eq(useAppStore.getState().aiApiKey, SECRET)
+})
+
+await test('清除后 localStorage 里也一并删掉', () => {
+  seedStore()
+  useAppStore.getState().setAiApiKey(SECRET)
+  useAppStore.getState().setAiApiKey('')
+
+  eq(localStorage.getItem('duansheli:ai-key'), null, '清除要真的删掉，不能只清内存')
+  eq(useAppStore.getState().aiApiKey, '')
+})
+
+await test('Key 只会存在一个地方，不会散落到别的键上', () => {
+  seedStore()
+  useAppStore.getState().setAiApiKey(SECRET)
+
+  const holders = Object.keys(localStorage).filter((key) =>
+    (localStorage.getItem(key) ?? '').includes(SECRET),
+  )
+  deepEq(holders, ['duansheli:ai-key'], '只该有一个地方存着它，手动清理时才找得到')
+})
+
+await test('Key 绝不会进导出的备份文件', () => {
   seedStore()
   useAppStore.getState().setAiApiKey(SECRET)
 
   const exported = JSON.stringify(buildExportFile(useAppStore.getState().data))
-  ok(!exported.includes(SECRET), 'Key 绝不能出现在导出文件里 —— 那等于把钥匙一起备份出去')
+  ok(
+    !exported.includes(SECRET),
+    '导出文件是要拿去传网盘 / 换设备的，绝不能把钥匙一起带走',
+  )
   ok(!exported.includes('aiApiKey'), '连字段名都不该出现')
 })
 
-await test('Key 不会被写进 IndexedDB', async () => {
+await test('Key 绝不会进 IndexedDB', async () => {
   seedStore()
   useAppStore.getState().setAiApiKey(SECRET)
   await flushWrites()
@@ -860,23 +904,184 @@ await test('Key 不会被写进 IndexedDB', async () => {
   ok(!persisted.includes(SECRET), 'Key 不该落进本地数据库')
 })
 
-await test('Key 不会被写进 localStorage', () => {
-  seedStore()
-  useAppStore.getState().setAiApiKey(SECRET)
+// 收尾：把 Key 清干净。否则它会留在内存和 localStorage 里，
+// 影响后面那些「页面上应该显示 Key 输入框」的渲染测试。
+useAppStore.getState().setAiApiKey('')
 
-  const dump = Object.keys(localStorage)
-    .map((key) => localStorage.getItem(key) ?? '')
-    .join('|')
-  ok(!dump.includes(SECRET), 'Key 不该落进 localStorage')
+/* ------------------------------------------------------------------ */
+/* 11. 对话整理：草稿合并                                              */
+/* ------------------------------------------------------------------ */
+
+suite('对话整理：草稿合并')
+
+const chatMatch = createMatchContext(fx, ctx)
+
+function revisedItem(
+  partial: Partial<RawRevisedItem> & { id: string; name: string },
+): RawRevisedItem {
+  return {
+    id: partial.id,
+    name: partial.name,
+    quantity: partial.quantity ?? 1,
+    categoryPaths: partial.categoryPaths ?? [],
+    location: partial.location ?? null,
+    tags: partial.tags ?? [],
+    attributes: partial.attributes ?? {},
+    note: partial.note ?? '',
+    removed: partial.removed ?? false,
+  }
+}
+
+await test('id 命中且内容没变 → 计入 unchanged，草稿不变', () => {
+  const base = toItemDraft(raw({ name: '口红', categoryPaths: [['衣物']] }), chatMatch, ctx)
+  const outcome = mergeRevisedDrafts(
+    [revisedItem({ id: base.key, name: '口红', categoryPaths: [['衣物']] })],
+    [base],
+    chatMatch,
+    ctx,
+  )
+  eq(outcome.unchanged, 1)
+  eq(outcome.updated, 0)
+  eq(outcome.drafts.length, 1)
+  eq(outcome.drafts[0].key, base.key, 'id 要保住，下一轮才认得出来')
+  deepEq(outcome.changedKeys, [], '没变就不该高亮')
 })
 
-await test('Key 只在 store 的内存字段里，清除后立刻消失', () => {
-  seedStore()
-  useAppStore.getState().setAiApiKey(SECRET)
-  eq(useAppStore.getState().aiApiKey, SECRET, '设置后内存里应该能读到')
+await test('id 命中且内容变了 → 计入 updated 并高亮', () => {
+  const base = toItemDraft(raw({ name: '口红', categoryPaths: [['衣物']] }), chatMatch, ctx)
+  const outcome = mergeRevisedDrafts(
+    [revisedItem({ id: base.key, name: '长管油口红', categoryPaths: [['化妆品', '唇妆']] })],
+    [base],
+    chatMatch,
+    ctx,
+  )
+  eq(outcome.updated, 1)
+  eq(outcome.drafts[0].name, '长管油口红')
+  deepEq(outcome.changedKeys, [base.key], '改过的要能高亮出来')
+})
 
-  useAppStore.getState().setAiApiKey('')
-  eq(useAppStore.getState().aiApiKey, '', '清除后应该立刻没了')
+await test('AI 新加的物品 → added，并沿用 AI 给的 id', () => {
+  const outcome = mergeRevisedDrafts(
+    [revisedItem({ id: 'new-1', name: '眼影盘', categoryPaths: [['化妆品', '眼妆']] })],
+    [],
+    chatMatch,
+    ctx,
+  )
+  eq(outcome.added, 1)
+  eq(outcome.drafts[0].key, 'new-1', '沿用 AI 的 id，下一轮还能对上')
+})
+
+await test('removed: true → 真的删掉', () => {
+  const base = toItemDraft(raw({ name: '卸妆膏' }), chatMatch, ctx)
+  const outcome = mergeRevisedDrafts(
+    [revisedItem({ id: base.key, name: '卸妆膏', removed: true })],
+    [base],
+    chatMatch,
+    ctx,
+  )
+  eq(outcome.removed, 1)
+  eq(outcome.drafts.length, 0)
+})
+
+await test('AI 漏写的条目会被保留，绝不静默丢东西', () => {
+  const a = toItemDraft(raw({ name: '口红' }), chatMatch, ctx)
+  const b = toItemDraft(raw({ name: '眼影盘' }), chatMatch, ctx)
+
+  const outcome = mergeRevisedDrafts(
+    [revisedItem({ id: a.key, name: '口红' })],
+    [a, b],
+    chatMatch,
+    ctx,
+  )
+  eq(outcome.kept, 1, 'AI 只返回了一条，另一条要保住并如实报告')
+  eq(outcome.drafts.length, 2)
+  ok(
+    outcome.drafts.some((d) => d.key === b.key),
+    '被漏掉的那条必须还在草稿里',
+  )
+})
+
+await test('AI 改内容时，用户取消的勾选状态要保留', () => {
+  const base = { ...toItemDraft(raw({ name: '口红' }), chatMatch, ctx), include: false }
+  const outcome = mergeRevisedDrafts(
+    [revisedItem({ id: base.key, name: '口红', categoryPaths: [['化妆品']] })],
+    [base],
+    chatMatch,
+    ctx,
+  )
+  eq(outcome.drafts[0].include, false, 'AI 改了名字，不该把用户取消的勾选又打开')
+})
+
+await test('AI 重复返回同一个 id 时只认第一条，不会造出重复项', () => {
+  const base = toItemDraft(raw({ name: '口红' }), chatMatch, ctx)
+  const outcome = mergeRevisedDrafts(
+    [
+      revisedItem({ id: base.key, name: '口红' }),
+      revisedItem({ id: base.key, name: '口红的副本' }),
+    ],
+    [base],
+    chatMatch,
+    ctx,
+  )
+  eq(outcome.drafts.length, 1, '同一个 id 只该有一条')
+})
+
+await test('发给 AI 的草稿用的是人话（名称路径），不是 id', () => {
+  const base = toItemDraft(
+    raw({ name: '毛衣', categoryPaths: [['衣物']], location: ['家', '卧室'] }),
+    chatMatch,
+    ctx,
+  )
+  const serialized = serializeDrafts([base], ctx)
+  deepEq(serialized[0].categoryPaths, [['衣物']], '要发名称路径，AI 看不懂 id')
+  deepEq(serialized[0].location, ['家', '卧室'])
+  eq(serialized[0].id, base.key, '同时要带上 id，AI 才认得出来是哪一条')
+})
+
+await test('未采纳的新分类不该发给 AI（否则它会以为已经生效了）', () => {
+  const base = toItemDraft(raw({ name: '帐篷', categoryPaths: [['户外装备']] }), chatMatch, ctx)
+  eq(base.adoptNewCategories, false)
+  eq(serializeDrafts([base], ctx)[0].categoryPaths.length, 0, '没采纳就还是未分类')
+
+  const adopted = { ...base, adoptNewCategories: true }
+  deepEq(serializeDrafts([adopted], ctx)[0].categoryPaths, [['户外装备']], '采纳后才该出现')
+})
+
+await test('解析对话回复：标准结构 / 纯问答 / 全不合法', () => {
+  const normal = parseChatResponse({
+    reply: '改好了',
+    items: [{ id: 'a', name: '口红', categories: [['化妆品', '唇妆']] }],
+  })
+  eq(normal.reply, '改好了')
+  eq(normal.items.length, 1)
+  eq(normal.missingItems, false)
+  deepEq(normal.items[0].categoryPaths, [['化妆品', '唇妆']])
+
+  // 只回一句话、没有 items —— 这是允许的，草稿该原样保留
+  const chatOnly = parseChatResponse({ reply: '这个我不太确定，你能说得更具体吗？' })
+  eq(chatOnly.missingItems, true, '要标记出来，让上层保留原草稿')
+
+  // 既没有说明也没有列表 → 明确报错
+  let caught: AiError | null = null
+  try {
+    parseChatResponse({ 说明: '' })
+  } catch (err) {
+    caught = err instanceof AiError ? err : null
+  }
+  ok(caught !== null, '什么都拿不到时应该报错')
+})
+
+await test('对话的 history 不会被无限撑大', () => {
+  const longHistory: ChatTurn[] = Array.from({ length: 40 }, (_, i) => ({
+    role: i % 2 === 0 ? 'user' : 'assistant',
+    content: `第 ${i} 轮`,
+  }))
+  const messages = buildChatMessages(buildAiContext(fx, ctx), longHistory, [], '继续改')
+  const content = messages.map((m) => m.content).join('\n')
+
+  ok(!content.includes('第 0 轮'), '太老的轮次应该被丢掉')
+  ok(content.includes('第 39 轮'), '最近几轮要保留')
+  ok(messages.length < 20, `消息条数应该有上限，实际 ${messages.length}`)
 })
 
 /* ------------------------------------------------------------------ */

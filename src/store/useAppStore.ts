@@ -43,6 +43,37 @@ function enqueueWrite(task: () => Promise<void>): Promise<void> {
 
 const UI_KEY = 'duansheli:ui'
 
+/**
+ * API Key 的存放位置。
+ *
+ * ⚠️ 这里是**唯一**会落盘保存 Key 的地方，而且是用户明确要求的行为。
+ * 刻意跟界面偏好分开用一个独立的键，好处有两个：
+ *   · 清 UI 偏好不会连 Key 一起清掉，反过来也一样
+ *   · 想手动删的时候，在浏览器里搜 duansheli 就能找到它
+ *
+ * Key **绝不会**进导出的备份文件（导出只序列化 data，Key 不在里面），
+ * 也绝不会进 IndexedDB。
+ */
+const AI_KEY_STORAGE = 'duansheli:ai-key'
+
+function loadAiKey(): string {
+  try {
+    return localStorage.getItem(AI_KEY_STORAGE) ?? ''
+  } catch {
+    // 无痕模式下 localStorage 可能被禁用
+    return ''
+  }
+}
+
+function persistAiKey(key: string): void {
+  try {
+    if (key === '') localStorage.removeItem(AI_KEY_STORAGE)
+    else localStorage.setItem(AI_KEY_STORAGE, key)
+  } catch {
+    // 存不下也不影响本次会话使用
+  }
+}
+
 function loadUiPrefs(): UiPrefs {
   try {
     const raw = localStorage.getItem(UI_KEY)
@@ -343,10 +374,18 @@ export interface AppState {
 
   /**
    * DeepSeek API Key。
-   * **只存在内存里** —— 不写 localStorage、不写 IndexedDB、不进导出文件，
-   * 刷新页面就没了。这是刻意的取舍：纯前端存 Key 有固有风险，见 README。
+   *
+   * 会保存在这台设备的 localStorage 里（用户明确要求），所以**刷新不会丢**。
+   * 但仍然：不进导出的备份文件、不进 IndexedDB。
+   *
+   * ⚠️ 纯前端存 Key 有两个固有风险，界面上必须如实告诉用户：
+   *   1. 任何能在你浏览器上执行 JS 的代码理论上都能读到它
+   *   2. `用户名.github.io` 是所有仓库共享同一个域名的 ——
+   *      同一账号下部署的其他项目页面也能读到它
+   * 所以「清除」按钮要显眼，建议单独建一个只用于这里的 Key。
    */
   aiApiKey: string
+  /** 传空字符串表示清除（同时从 localStorage 删掉） */
   setAiApiKey: (key: string) => void
 
   /* ---------------- 按名称批量写入 ---------------- */
@@ -451,12 +490,12 @@ export const useAppStore = create<AppState>()((set, get) => {
     derived: createDerived(initialData),
     ui: { ...DEFAULT_UI_PREFS },
     toasts: [],
-    aiApiKey: '',
+    aiApiKey: loadAiKey(),
 
     /* ---------------- 生命周期 ---------------- */
 
     init: async () => {
-      set({ status: 'loading', error: null, ui: loadUiPrefs() })
+      set({ status: 'loading', error: null, ui: loadUiPrefs(), aiApiKey: loadAiKey() })
       try {
         const repo = getRepository()
         let data = await repo.load()
@@ -488,9 +527,13 @@ export const useAppStore = create<AppState>()((set, get) => {
       set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }))
     },
 
-    /* ---------------- AI（Key 只在内存里） ---------------- */
+    /* ---------------- AI（Key 存在 localStorage） ---------------- */
 
-    setAiApiKey: (key) => set({ aiApiKey: key }),
+    setAiApiKey: (key) => {
+      const trimmed = key.trim()
+      persistAiKey(trimmed)
+      set({ aiApiKey: trimmed })
+    },
 
     /* ---------------- 按名称批量写入 ---------------- */
 

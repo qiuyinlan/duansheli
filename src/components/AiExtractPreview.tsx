@@ -7,6 +7,8 @@ import { Button } from './ui/primitives'
 interface Props {
   drafts: ItemDraft[]
   onChange: (drafts: ItemDraft[]) => void
+  /** 这一轮刚被改过的草稿 key —— 会加粗显示，方便看出「这次的成果」 */
+  highlightKeys?: readonly string[]
 }
 
 /**
@@ -15,8 +17,9 @@ interface Props {
  * 这一屏是整个 AI 功能里最重要的地方：AI 一定会认错、也一定会提出你不想要的分类，
  * 所以每一条都要能改、能取消，新分类/新位置必须由你点头才创建。
  */
-export function AiExtractPreview({ drafts, onChange }: Props) {
+export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
   const derived = useAppStore((s) => s.derived)
+  const highlighted = useMemo(() => new Set(highlightKeys ?? []), [highlightKeys])
   const hasNewCategories = drafts.some((d) => d.newCategoryPaths.length > 0)
   const hasNewLocations = drafts.some((d) => d.newLocationPath !== null)
 
@@ -111,7 +114,9 @@ export function AiExtractPreview({ drafts, onChange }: Props) {
         {drafts.map((draft) => (
           <div
             key={draft.key}
-            className={`ai-row${draft.include ? '' : ' ai-row--skipped'}`}
+            className={`ai-row${draft.include ? '' : ' ai-row--skipped'}${
+              highlighted.has(draft.key) ? ' ai-row--changed' : ''
+            }`}
           >
             <input
               type="checkbox"
