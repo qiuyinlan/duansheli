@@ -471,24 +471,10 @@
   transition: width 0.3s ease;
 }
 
-/* 条形图用当前板块的主色，靠透明度拉开层次 —— 同一个色系的深浅比一堆灰色好认 */
-.bar-tone-0 {
-  background: var(--accent);
-}
-
-.bar-tone-1 {
-  background: var(--accent);
-  opacity: 0.72;
-}
-
-.bar-tone-2 {
-  background: var(--accent);
-  opacity: 0.5;
-}
-
-.bar-tone-3 {
-  background: var(--accent);
-  opacity: 0.32;
+/* 条形图用每个分组自己的颜色（见 src/lib/palette.ts），
+   所以这里只需要一个兜底灰 —— 颜色由内联 style 决定 */
+.bar-row__fill {
+  background: var(--fill-3);
 }
 
 .bar-row__value {
@@ -976,13 +962,38 @@
 
 /* ---------------- 分组标题 ---------------- */
 
+/**
+ * 一个分组 = 一条彩色竖条 + 彩色标题 + 彩色分隔线。
+ * 分类一多，光靠文字排在一起根本分不清哪几行属于哪一组，颜色是最省事的解法。
+ */
+.item-group {
+  border-left: 3px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: var(--gap-4);
+  overflow: hidden;
+}
+
+/* 分组内的列表不要再自己画边框，交给外层那条彩色竖条 */
+.item-group .list {
+  border: none;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+
 .group-head {
   display: flex;
   align-items: center;
   gap: var(--gap-2);
   width: 100%;
-  padding: var(--gap-3) var(--gap-1) var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
   text-align: left;
+}
+
+.group-head__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
 .group-head__caret {
@@ -1009,8 +1020,10 @@
 
 .group-head__line {
   flex: 1;
-  height: 1px;
+  height: 2px;
+  border-radius: 1px;
   background: var(--line);
+  opacity: 0.7;
 }
 
 /* ---------------- 属性行 ---------------- */

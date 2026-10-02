@@ -18,6 +18,7 @@ import { mergeAppData } from '../src/data/importData'
 import { parseExportFile } from '../src/data/validate'
 import { buildTree, canReparent, createTreeIndex, flattenTree } from '../src/lib/tree'
 import { SECTION_THEMES, themeForPath } from '../src/lib/sections'
+import { NEUTRAL_GROUP_COLOR, assignGroupColors, colorForKey } from '../src/lib/palette'
 import { LocalRepository } from '../src/storage/localRepository'
 import { getRepository } from '../src/storage/repository'
 import { createSeedData } from '../src/storage/seed'
@@ -38,7 +39,7 @@ import {
   sortByIdleDuration,
 } from '../src/store/selectors'
 import { flushWrites, useAppStore } from '../src/store/useAppStore'
-import { SCHEMA_VERSION, UNCATEGORIZED_ID } from '../src/types'
+import { SCHEMA_VERSION, UNASSIGNED_ID, UNCATEGORIZED_ID, UNTAGGED_ID } from '../src/types'
 import type { AppData } from '../src/types'
 import { OLD_DATE, deepEq, eq, fixture, item, match, must, mustParse, ok, suite, test } from './harness'
 
@@ -598,4 +599,72 @@ await test('每个板块的三个色阶都齐全且合法', () => {
     match(theme.accentText, /^#[0-9a-f]{6}$/i, `${theme.label} 缺 accentText`)
     match(theme.accentSoft, /^#[0-9a-f]{6}$/i, `${theme.label} 缺 accentSoft`)
   }
+})
+
+/* ------------------------------------------------------------------ */
+/* 10. 分组配色                                                        */
+/* ------------------------------------------------------------------ */
+
+suite('分组配色')
+
+const HEX = /^#[0-9a-f]{6}$/i
+
+await test('同一个 key 的基础颜色是稳定的（刷新、换筛选都不变）', () => {
+  eq(colorForKey('cat-clothing').bar, colorForKey('cat-clothing').bar)
+  eq(colorForKey('家 / 卧室 / 衣柜').bar, colorForKey('家 / 卧室 / 衣柜').bar)
+  eq(colorForKey('想送人').bar, colorForKey('想送人').bar)
+})
+
+await test('分配一批分组颜色时，相邻两组绝不撞色', () => {
+  const keys = Array.from({ length: 24 }, (_, i) => `cat-${i}`)
+  const colors = assignGroupColors(keys)
+
+  for (let i = 1; i < keys.length; i++) {
+    const current = must(colors.get(keys[i]), `第 ${i} 组没拿到颜色`).bar
+    const previous = must(colors.get(keys[i - 1]), `第 ${i - 1} 组没拿到颜色`).bar
+    ok(current !== previous, `第 ${i} 组和上一组撞色了：${current}`)
+  }
+})
+
+await test('同样的输入得到同样的结果（可重复，不能用随机）', () => {
+  const keys = ['a', 'b', 'c', 'd']
+  const first = assignGroupColors(keys)
+  const second = assignGroupColors(keys)
+  for (const key of keys) deepEq(first.get(key), second.get(key))
+})
+
+await test('虚拟分组用中性灰，不跟真实分类抢眼', () => {
+  eq(colorForKey(UNCATEGORIZED_ID).bar, NEUTRAL_GROUP_COLOR.bar, '未分类')
+  eq(colorForKey(UNASSIGNED_ID).bar, NEUTRAL_GROUP_COLOR.bar, '未归位')
+  eq(colorForKey(UNTAGGED_ID).bar, NEUTRAL_GROUP_COLOR.bar, '未加标签')
+  eq(colorForKey('__all__').bar, NEUTRAL_GROUP_COLOR.bar, '不分组时的「全部」')
+  eq(colorForKey('__others__').bar, NEUTRAL_GROUP_COLOR.bar, '图表里的「其他」')
+})
+
+await test('状态分组用固定语义色，不走哈希', () => {
+  eq(colorForKey('idle').bar, '#d97706', '闲置应该是琥珀色，和「闲置」板块一致')
+  eq(colorForKey('active').bar, '#059669', '在用是绿色')
+  ok(colorForKey('active').bar !== colorForKey('idle').bar)
+})
+
+await test('每个配色都包含四个合法色阶', () => {
+  const keys = Array.from({ length: 20 }, (_, i) => `key-${i}`)
+  for (const key of keys) {
+    const color = colorForKey(key)
+    match(color.bar, HEX, `${key} 的 bar`)
+    match(color.text, HEX, `${key} 的 text`)
+    match(color.soft, HEX, `${key} 的 soft`)
+    match(color.line, HEX, `${key} 的 line`)
+  }
+})
+
+await test('示例数据的分类分下来，相邻不撞色且大部分互不相同', () => {
+  const names = createSeedData().categories.map((c) => c.name)
+  const colors = assignGroupColors(names)
+  const bars = names.map((name) => must(colors.get(name), `${name} 没拿到颜色`).bar)
+
+  for (let i = 1; i < bars.length; i++) {
+    ok(bars[i] !== bars[i - 1], `${names[i]} 和 ${names[i - 1]} 撞色了`)
+  }
+  ok(new Set(bars).size >= 8, `10 个分类只分出了 ${new Set(bars).size} 种颜色，太少了`)
 })

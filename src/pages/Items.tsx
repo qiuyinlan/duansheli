@@ -5,15 +5,9 @@ import { ItemRow } from '../components/ItemRow'
 import { LocationPicker, TagInput } from '../components/pickers'
 import { IconChevronRight, IconTrash } from '../components/ui/icons'
 import { Button, ConfirmDialog, EmptyState, Modal, SearchInput } from '../components/ui/primitives'
-import {
-  EMPTY_FILTER,
-  countByLocationIncludingDescendants,
-  filterItems,
-  groupAndSort,
-  liveItems,
-  type ItemFilter,
-} from '../store/selectors'
+import { EMPTY_FILTER, countByLocationIncludingDescendants, filterItems, groupAndSort, liveItems, type ItemFilter } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
+import { assignGroupColors, NEUTRAL_GROUP_COLOR } from '../lib/palette'
 import type { GroupBy, ItemStatus, SortBy, SortDir } from '../types'
 import { UNASSIGNED_ID } from '../types'
 
@@ -133,6 +127,12 @@ export function Items() {
   const locationCounts = useMemo(
     () => countByLocationIncludingDescendants(liveItems(data), derived),
     [data, derived],
+  )
+
+  // 每个分组一种颜色，方便一眼区分；同一个分类的颜色是稳定的（由 key 哈希决定）
+  const groupColors = useMemo(
+    () => assignGroupColors(groups.map((group) => group.key)),
+    [groups],
   )
 
   const activeConditionCount =
@@ -419,29 +419,36 @@ export function Items() {
       ) : (
         groups.map((group) => {
           const collapsed = ui.collapsedGroups.includes(group.key)
+          const color = groupColors.get(group.key) ?? NEUTRAL_GROUP_COLOR
+          const showItems = !collapsed || groupBy === 'none'
+
           return (
-            <div key={group.key}>
+            <div key={group.key} className="item-group" style={{ borderLeftColor: color.bar }}>
               <button
                 type="button"
                 className="group-head"
+                style={{ background: color.soft }}
                 onClick={() => toggleGroupCollapsed(group.key)}
-                aria-expanded={!collapsed}
+                aria-expanded={showItems}
               >
                 {groupBy !== 'none' ? (
                   <span className={`group-head__caret${collapsed ? '' : ' is-open'}`}>
                     <IconChevronRight size={10} />
                   </span>
                 ) : null}
-                <span className="group-head__label">{group.label}</span>
+                <span className="group-head__dot" style={{ background: color.bar }} />
+                <span className="group-head__label" style={{ color: color.text }}>
+                  {group.label}
+                </span>
                 {group.sublabel && group.sublabel !== group.label ? (
                   <span className="group-head__count">{group.sublabel}</span>
                 ) : null}
                 <span className="group-head__count numeric">{group.items.length} 件</span>
-                <span className="group-head__line" />
+                <span className="group-head__line" style={{ background: color.line }} />
               </button>
 
-              {!collapsed || groupBy === 'none' ? (
-                <ul className="list">
+              {showItems ? (
+                <ul className="list item-group__list">
                   {group.items.map((item) => (
                     <ItemRow
                       key={`${group.key}-${item.id}`}

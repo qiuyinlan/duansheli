@@ -1,12 +1,5 @@
 import type { BarDatum } from '../../store/selectors'
-
-/** 按排名决定灰度 —— 越靠上越深，跟设计文档里「灰度条形图」的约定一致 */
-function toneClass(index: number): string {
-  if (index === 0) return 'bar-tone-0'
-  if (index <= 2) return 'bar-tone-1'
-  if (index <= 5) return 'bar-tone-2'
-  return 'bar-tone-3'
-}
+import { colorForKey } from '../../lib/palette'
 
 interface BarChartProps {
   data: BarDatum[]
@@ -17,6 +10,13 @@ interface BarChartProps {
   limit?: number
 }
 
+/**
+ * 条形图。
+ *
+ * 每条用**自己那个分类 / 位置的颜色**，跟下面分组列表的颜色对得上 ——
+ * 图表里看到「化妆品」是蓝的，列表里那一组也是蓝的，一眼能连起来。
+ * 颜色由 key 哈希决定，所以是稳定的，不会每刷新一次就换个色。
+ */
 export function BarChart({ data, onSelect, emptyText = '暂无数据', limit }: BarChartProps) {
   let rows = data
 
@@ -37,9 +37,10 @@ export function BarChart({ data, onSelect, emptyText = '暂无数据', limit }: 
 
   return (
     <div className="bar-chart">
-      {rows.map((datum, index) => {
+      {rows.map((datum) => {
         const width = Math.max(1.5, (datum.value / max) * 100)
         const clickable = Boolean(onSelect && datum.target)
+        const color = colorForKey(datum.key)
 
         const inner = (
           <>
@@ -48,8 +49,8 @@ export function BarChart({ data, onSelect, emptyText = '暂无数据', limit }: 
             </span>
             <span className="bar-row__track">
               <span
-                className={`bar-row__fill ${toneClass(index)}`}
-                style={{ width: `${width}%` }}
+                className="bar-row__fill"
+                style={{ width: `${width}%`, background: color.bar }}
               />
             </span>
             <span className="bar-row__value">{datum.value}</span>
