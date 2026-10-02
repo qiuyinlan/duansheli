@@ -49,6 +49,15 @@ export const SECTION_THEMES: Record<string, SectionTheme> = {
     accentText: '#b45309',
     accentSoft: '#fffbeb',
   },
+  expiry: {
+    key: 'expiry',
+    label: '有效期',
+    // 独立的一档颜色，跟闲置的橙拉开：闲置是「想想怎么处理」，
+    // 有效期是「有截止日期」，后者更急，所以用了偏红的琥珀
+    accent: '#e11d48',
+    accentText: '#be123c',
+    accentSoft: '#fff1f2',
+  },
   ai: {
     key: 'ai',
     label: 'AI 助手',
@@ -94,6 +103,7 @@ export function sectionKeyForPath(pathname: string): string {
   if (pathname.startsWith('/items')) return 'items'
   if (pathname.startsWith('/locations')) return 'locations'
   if (pathname.startsWith('/idle')) return 'idle'
+  if (pathname.startsWith('/expiry')) return 'expiry'
   if (pathname.startsWith('/ai')) return 'ai'
   if (pathname.startsWith('/categories')) return 'categories'
   if (pathname.startsWith('/attributes')) return 'attributes'

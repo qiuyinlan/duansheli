@@ -62,4 +62,14 @@ const elementProto = dom.window.Element.prototype as unknown as LegacyElement
 elementProto.attachEvent = () => false
 elementProto.detachEvent = () => {}
 
+/**
+ * 语言固定成中文。
+ *
+ * jsdom 的 navigator.language 是 'en-US'，而 i18n 是「跟着浏览器语言走」的，
+ * 不锁的话所有断言中文文案的测试都会莫名其妙变成英文。
+ * 想测英文的用例自己调 setLang('en')，用完全部记得切回来 ——
+ * 语言是模块级状态，会污染后面的用例，跟 API Key 那个坑一模一样。
+ */
+dom.window.localStorage.setItem('duansheli:lang', 'zh')
+
 export { dom }

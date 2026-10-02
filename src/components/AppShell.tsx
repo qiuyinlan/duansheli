@@ -3,9 +3,13 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { computeStats } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
 import { applySectionTheme, themeForPath } from '../lib/sections'
+import type { DictKey } from '../i18n'
+import { useT } from '../i18n'
+import { LanguageSwitch } from './LanguageSwitch'
 import { ToastStack } from './ui/primitives'
 import {
   IconArrowLeft,
+  IconClock,
   IconFolder,
   IconGear,
   IconIdle,
@@ -25,29 +29,46 @@ import {
 
 interface NavEntry {
   to: string
-  label: string
+  /**
+   * 存的是 **词典 key**，不是显示文字。
+   *
+   * 因为这些数组是模块级的常量，如果在模块加载时就把 t() 的结果存进来，
+   * 语言一换它们不会跟着变 —— 会变成「页面标题是英文、侧栏还是中文」这种
+   * 半截状态。存 key、渲染时再查表，就没这个问题。
+   */
+  labelKey: DictKey
   Icon: (props: { size?: number }) => JSX.Element
-  /** 用闲置件数做徽标 */
-  badge?: 'idle'
+  /** 用计数做徽标 */
+  badge?: 'idle' | 'expiry'
 }
 
 const PRIMARY_NAV: NavEntry[] = [
-  { to: '/', label: '概览', Icon: IconOverview },
-  { to: '/items', label: '物品', Icon: IconItems },
-  { to: '/locations', label: '位置', Icon: IconLocations },
-  { to: '/idle', label: '闲置', Icon: IconIdle, badge: 'idle' },
-  { to: '/ai', label: 'AI 助手', Icon: IconSparkle },
+  { to: '/', labelKey: 'nav.overview', Icon: IconOverview },
+  { to: '/items', labelKey: 'nav.items', Icon: IconItems },
+  { to: '/locations', labelKey: 'nav.locations', Icon: IconLocations },
+  { to: '/idle', labelKey: 'nav.idle', Icon: IconIdle, badge: 'idle' },
+  { to: '/expiry', labelKey: 'nav.expiry', Icon: IconClock, badge: 'expiry' },
+  { to: '/ai', labelKey: 'nav.ai', Icon: IconSparkle },
 ]
 
 const MANAGE_NAV: NavEntry[] = [
-  { to: '/categories', label: '分类', Icon: IconFolder },
-  { to: '/attributes', label: '属性', Icon: IconSettings },
-  { to: '/tags', label: '标签', Icon: IconTag },
-  { to: '/settings', label: '设置', Icon: IconGear },
+  { to: '/categories', labelKey: 'nav.categories', Icon: IconFolder },
+  { to: '/attributes', labelKey: 'nav.attributes', Icon: IconSettings },
+  { to: '/tags', labelKey: 'nav.tags', Icon: IconTag },
+  { to: '/settings', labelKey: 'nav.settings', Icon: IconGear },
 ]
 
-/** 手机底部 Tab：4 个主入口 + 「更多」（AI 助手放在「更多」里） */
-const BOTTOM_NAV: NavEntry[] = [...PRIMARY_NAV.slice(0, 4), { to: '/more', label: '更多', Icon: IconMore }]
+/**
+ * 手机底部 Tab：4 个主入口 + 「更多」。
+ *
+ * 只放 4 个是因为 5 格已经是手机上的极限了，再多每一格都太窄。
+ * 「有效期」和「AI 助手」都在「更多」里 —— 尤其加上英文之后，
+ * 标签一长就会挤成两行。
+ */
+const BOTTOM_NAV: NavEntry[] = [
+  ...PRIMARY_NAV.slice(0, 4),
+  { to: '/more', labelKey: 'nav.more', Icon: IconMore },
+]
 
 /** 这些路由是手机端的一级页面，不需要返回按钮 */
 const ROOT_ROUTES = new Set([
@@ -55,6 +76,7 @@ const ROOT_ROUTES = new Set([
   '/items',
   '/locations',
   '/idle',
+  '/expiry',
   '/ai',
   '/more',
   '/categories',
@@ -63,20 +85,21 @@ const ROOT_ROUTES = new Set([
   '/settings',
 ])
 
-function resolveTitle(pathname: string): string {
-  if (pathname === '/') return '概览'
-  if (pathname === '/items') return '物品'
-  if (pathname === '/items/new') return '录入物品'
-  if (/^\/items\/[^/]+$/.test(pathname)) return '物品详情'
-  if (pathname === '/locations') return '位置'
-  if (pathname === '/idle') return '闲置'
-  if (pathname === '/ai') return 'AI 助手'
-  if (pathname === '/more') return '更多'
-  if (pathname === '/categories') return '分类'
-  if (pathname === '/attributes') return '属性'
-  if (pathname === '/tags') return '标签'
-  if (pathname === '/settings') return '设置'
-  return '断舍离'
+function titleKeyForPath(pathname: string): DictKey {
+  if (pathname === '/') return 'nav.titleOverview'
+  if (pathname === '/items') return 'nav.titleItems'
+  if (pathname === '/items/new') return 'nav.titleItemNew'
+  if (/^\/items\/[^/]+$/.test(pathname)) return 'nav.titleItemDetail'
+  if (pathname === '/locations') return 'nav.titleLocations'
+  if (pathname === '/idle') return 'nav.titleIdle'
+  if (pathname === '/expiry') return 'nav.titleExpiry'
+  if (pathname === '/ai') return 'nav.titleAi'
+  if (pathname === '/more') return 'nav.titleMore'
+  if (pathname === '/categories') return 'nav.titleCategories'
+  if (pathname === '/attributes') return 'nav.titleAttributes'
+  if (pathname === '/tags') return 'nav.titleTags'
+  if (pathname === '/settings') return 'nav.titleSettings'
+  return 'nav.titleFallback'
 }
 
 function isRouteActive(pathname: string, to: string): boolean {
@@ -94,8 +117,13 @@ export function AppShell() {
   const navigate = useNavigate()
   const data = useAppStore((s) => s.data)
   const lastExportAt = useAppStore((s) => s.ui.lastExportAt)
+  const expirySoonDays = useAppStore((s) => s.ui.expirySoonDays)
+  const { t, lang } = useT()
 
-  const stats = useMemo(() => computeStats(data), [data])
+  const stats = useMemo(
+    () => computeStats(data, expirySoonDays),
+    [data, expirySoonDays],
+  )
 
   const pathname = location.pathname
 
@@ -110,23 +138,34 @@ export function AppShell() {
     applySectionTheme(themeForPath(pathname))
   }, [pathname])
 
-  const badgeValue = (entry: NavEntry): number | null =>
-    entry.badge === 'idle' && stats.idleCount > 0 ? stats.idleCount : null
+  // 标签页标题跟着语言和当前页面走。lang 在依赖里是因为 t() 是个
+  // 读模块级状态的普通函数，不显式依赖它就不会重跑。
+  useEffect(() => {
+    document.title = `${t(titleKeyForPath(pathname))} · ${t('nav.brand')}`
+  }, [pathname, lang, t])
+
+  const badgeValue = (entry: NavEntry): number | null => {
+    if (entry.badge === 'idle') return stats.idleCount > 0 ? stats.idleCount : null
+    if (entry.badge === 'expiry') {
+      const urgent = stats.expiredCount + stats.expiringSoonCount
+      return urgent > 0 ? urgent : null
+    }
+    return null
+  }
 
   // 录入页和详情页不显示悬浮按钮，避免遮住表单
   const showFab = pathname !== '/items/new' && !/^\/items\/[^/]+$/.test(pathname)
   const showBack = !ROOT_ROUTES.has(pathname)
 
-  const backupHint =
-    stats.totalItems > 0 && lastExportAt === null ? '尚未导出过备份' : null
+  const backupHint = stats.totalItems > 0 && lastExportAt === null ? t('nav.neverBackedUp') : null
 
   return (
     <div className="app-shell">
       {/* ---------------- 桌面侧栏 ---------------- */}
       <aside className="sidebar">
         <div className="sidebar__brand">
-          <div className="sidebar__brand-name">断舍离</div>
-          <div className="sidebar__brand-sub">整理你的家当</div>
+          <div className="sidebar__brand-name">{t('nav.brand')}</div>
+          <div className="sidebar__brand-sub">{t('nav.tagline')}</div>
         </div>
 
         <nav className="sidebar__nav">
@@ -139,13 +178,13 @@ export function AppShell() {
                 className={`nav-item${isRouteActive(pathname, entry.to) ? ' is-active' : ''}`}
               >
                 <entry.Icon />
-                <span className="nav-item__label">{entry.label}</span>
+                <span className="nav-item__label">{t(entry.labelKey)}</span>
                 {badge !== null ? <span className="nav-item__badge">{badge}</span> : null}
               </NavLink>
             )
           })}
 
-          <div className="sidebar__group-label">管理</div>
+          <div className="sidebar__group-label">{t('nav.manage')}</div>
           {MANAGE_NAV.map((entry) => (
             <NavLink
               key={entry.to}
@@ -153,15 +192,17 @@ export function AppShell() {
               className={`nav-item${isRouteActive(pathname, entry.to) ? ' is-active' : ''}`}
             >
               <entry.Icon />
-              <span className="nav-item__label">{entry.label}</span>
+              <span className="nav-item__label">{t(entry.labelKey)}</span>
             </NavLink>
           ))}
         </nav>
 
         <div className="sidebar__footer">
           <div>
-            共 <span className="numeric">{stats.totalItems}</span> 件 · 闲置{' '}
-            <span className="numeric">{stats.idleCount}</span> 件
+            {t('nav.footerCounts', {
+              items: stats.totalItems,
+              idle: stats.idleCount,
+            })}
           </div>
           {backupHint ? (
             <div>
@@ -185,13 +226,15 @@ export function AppShell() {
             <button
               type="button"
               className="btn btn--icon"
-              aria-label="返回"
+              aria-label={t('nav.ariaBack')}
               onClick={() => navigate(-1)}
             >
               <IconArrowLeft size={18} />
             </button>
           ) : null}
-          <div className="topbar__title">{resolveTitle(pathname)}</div>
+          <div className="topbar__title">{t(titleKeyForPath(pathname))}</div>
+          {/* 语言开关固定在右上角 */}
+          <LanguageSwitch />
         </header>
 
         <div className="main__inner">
@@ -210,7 +253,7 @@ export function AppShell() {
               className={`bottom-nav__item${isRouteActive(pathname, entry.to) ? ' is-active' : ''}`}
             >
               <entry.Icon size={19} />
-              <span>{entry.label}</span>
+              <span>{t(entry.labelKey)}</span>
               {badge !== null ? <span className="bottom-nav__badge">{badge}</span> : null}
             </NavLink>
           )
@@ -221,7 +264,7 @@ export function AppShell() {
         <button
           type="button"
           className="fab"
-          aria-label="录入物品"
+          aria-label={t('nav.ariaAddItem')}
           onClick={() => navigate('/items/new')}
         >
           <IconPlus size={22} />

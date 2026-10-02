@@ -1,6 +1,7 @@
 import type { AppData, AttributeDef, Category, Location } from '../types'
 import { SCHEMA_VERSION } from '../types'
 import { uid } from '../lib/id'
+import { t } from '../i18n'
 
 export function createEmptyData(): AppData {
   return {
@@ -14,62 +15,81 @@ export function createEmptyData(): AppData {
   }
 }
 
-/** 首页位置树的定义：家长什么样，用名字描述层级 */
-const LOCATION_TREE: Array<{ name: string; parent: string | null }> = [
-  { name: '家', parent: null },
-  { name: '卧室', parent: '家' },
-  { name: '客厅', parent: '家' },
-  { name: '厨房', parent: '家' },
-  { name: '书房', parent: '家' },
-  { name: '卫生间', parent: '家' },
-  { name: '阳台', parent: '家' },
-  { name: '储物间', parent: '家' },
-  { name: '衣柜', parent: '卧室' },
-  { name: '床头柜', parent: '卧室' },
-  { name: '床下收纳', parent: '卧室' },
-  { name: '电视柜', parent: '客厅' },
-  { name: '储物柜', parent: '客厅' },
-  { name: '鞋柜', parent: '客厅' },
-  { name: '书桌', parent: '书房' },
-  { name: '书架', parent: '书房' },
-  { name: '橱柜', parent: '厨房' },
-  { name: '冰箱', parent: '厨房' },
-  { name: '收纳箱', parent: '储物间' },
-  { name: '货架', parent: '储物间' },
-]
-
-const CATEGORY_NAMES = [
-  '衣物',
-  '电子',
-  '书籍',
-  '厨房',
-  '日用品',
-  '药品',
-  '文具',
-  '工具',
-  '纪念品',
-  '其他',
-]
-
-const ATTRIBUTE_DEFS: Array<Pick<AttributeDef, 'name' | 'type' | 'options' | 'unit'>> = [
-  { name: '品牌', type: 'text', options: [], unit: '' },
-  { name: '购入日期', type: 'date', options: [], unit: '' },
-  { name: '价格', type: 'number', options: [], unit: '元' },
-  { name: '颜色', type: 'select', options: ['黑', '白', '灰', '木色', '彩色'], unit: '' },
-  { name: '尺寸', type: 'text', options: [], unit: '' },
-]
-
-const TAG_NAMES = ['想送人', '舍不得扔', '待维修']
-
 /**
  * 首次使用的起步数据。
  *
  * 只铺「脚手架」——常用分类、属性库、一套居家位置树，以及几个常用标签；
  * **不放任何示例物品**，因为物品列表应该是你自己的东西，从空开始最干净。
  * 这些脚手架都可以在对应管理页里随意改名或删除。
+ *
+ * ── 关于语言 ────────────────────────────────────────────────────
+ * 这些名字会**真的写进数据库**，成为你自己的数据。所以它们按
+ * **首次启动时的界面语言**生成一次；之后切换界面语言**不会**去动它们 ——
+ * 你花时间改过的分类名被悄悄翻译掉，是最让人恼火的一类 bug。
+ * 想换一套，就在管理页里自己命名，或者清空数据重新开始。
  */
 export function createSeedData(): AppData {
   const now = new Date().toISOString()
+
+  // 位置树：用「名字 → 父名字」描述结构，父节点总在子节点之前出现。
+  // 这里刻意不用 loc()/cat() 那种简写表，因为要保证父子引用不出错 ——
+  // 名字写错时下面的代码会如实跳过该节点，而不是造出一个孤儿。
+  const LOCATION_TREE: Array<{ name: string; parent: string | null }> = [
+    { name: t('seed.home'), parent: null },
+    { name: t('seed.bedroom'), parent: t('seed.home') },
+    { name: t('seed.livingRoom'), parent: t('seed.home') },
+    { name: t('seed.kitchen'), parent: t('seed.home') },
+    { name: t('seed.study'), parent: t('seed.home') },
+    { name: t('seed.bathroom'), parent: t('seed.home') },
+    { name: t('seed.balcony'), parent: t('seed.home') },
+    { name: t('seed.storage'), parent: t('seed.home') },
+    { name: t('seed.wardrobe'), parent: t('seed.bedroom') },
+    { name: t('seed.nightstand'), parent: t('seed.bedroom') },
+    { name: t('seed.underBed'), parent: t('seed.bedroom') },
+    { name: t('seed.tvStand'), parent: t('seed.livingRoom') },
+    { name: t('seed.sideboard'), parent: t('seed.livingRoom') },
+    { name: t('seed.shoeCabinet'), parent: t('seed.livingRoom') },
+    { name: t('seed.desk'), parent: t('seed.study') },
+    { name: t('seed.bookshelf'), parent: t('seed.study') },
+    { name: t('seed.cupboard'), parent: t('seed.kitchen') },
+    { name: t('seed.fridge'), parent: t('seed.kitchen') },
+    { name: t('seed.storageBox'), parent: t('seed.storage') },
+    { name: t('seed.shelf'), parent: t('seed.storage') },
+  ]
+
+  const CATEGORY_NAMES = [
+    t('seed.catClothing'),
+    t('seed.catElectronics'),
+    t('seed.catBooks'),
+    t('seed.catKitchen'),
+    t('seed.catDaily'),
+    t('seed.catMedicine'),
+    t('seed.catStationery'),
+    t('seed.catTools'),
+    t('seed.catKeepsake'),
+    t('seed.catOther'),
+  ]
+
+  const ATTRIBUTE_DEFS: Array<Pick<AttributeDef, 'name' | 'type' | 'options' | 'unit'>> = [
+    { name: t('seed.attrBrand'), type: 'text', options: [], unit: '' },
+    { name: t('seed.attrPurchaseDate'), type: 'date', options: [], unit: '' },
+    { name: t('seed.attrPrice'), type: 'number', options: [], unit: t('seed.attrPriceUnit') },
+    {
+      name: t('seed.attrColor'),
+      type: 'select',
+      options: [
+        t('seed.colorBlack'),
+        t('seed.colorWhite'),
+        t('seed.colorGrey'),
+        t('seed.colorWood'),
+        t('seed.colorColorful'),
+      ],
+      unit: '',
+    },
+    { name: t('seed.attrSize'), type: 'text', options: [], unit: '' },
+  ]
+
+  const TAG_NAMES = [t('seed.tagGiveAway'), t('seed.tagReluctant'), t('seed.tagToRepair')]
 
   const categories: Category[] = CATEGORY_NAMES.map((name, i) => ({
     id: uid(),

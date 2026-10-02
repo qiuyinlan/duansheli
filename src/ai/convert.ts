@@ -11,6 +11,7 @@
  */
 
 import type { AppData, Item, TreeItem } from '../types'
+import { EXPIRY_SOON_DEFAULT_DAYS, isExpired, isExpiring } from '../lib/expiry'
 import type { DerivedContext } from '../store/selectors'
 import { itemsInCategory, itemsInLocation } from '../store/selectors'
 import type { DraftApplyItem } from '../store/useAppStore'
@@ -137,6 +138,8 @@ export interface ItemDraft {
   /** 被丢掉的属性名（本地没有这个属性），界面上如实提示 */
   droppedAttrs: string[]
   note: string
+  /** 有效期至（YYYY-MM-DD）；null = 没设置 */
+  expiresAt: string | null
 
   include: boolean
   /** 是否采纳 AI 建议的新分类（默认否 —— 分类是受控词表，得你点头） */
@@ -191,6 +194,7 @@ export function toItemDraft(
     attrs,
     droppedAttrs,
     note: raw.note,
+    expiresAt: raw.expiresAt,
     include: true,
     adoptNewCategories: false,
     adoptNewLocation: false,
@@ -235,6 +239,7 @@ export function draftsFromItems(
         tags: item.tags,
         attributes: attrNamesOf(item, derived),
         note: item.note,
+        expiresAt: item.expiresAt,
       },
       ctx,
       derived,
@@ -272,6 +277,9 @@ function effectiveSignable(draft: ItemDraft, derived: DerivedContext): string {
       .map(([key, value]) => `${key}=${value}`)
       .join('|'),
     draft.note.trim(),
+    // 有效期也要进指纹。漏了它就会出这种鬼事：
+    // AI 只把有效期改了，指纹没变 → 判定「没改动」→ 跳过 → 用户的修改凭空消失。
+    draft.expiresAt ?? '',
   ].join('\u0000')
 }
 
@@ -292,6 +300,7 @@ function itemSignature(item: Item, derived: DerivedContext): string {
       .map(([key, value]) => `${derived.attrDefById.get(key)?.name ?? key}=${String(value)}`)
       .join('|'),
     item.note.trim(),
+    item.expiresAt ?? '',
   ].join('\u0000')
 }
 
@@ -352,6 +361,7 @@ export function draftsToApply(
       tags: draft.tags,
       attrs: draft.attrs,
       note: draft.note,
+      expiresAt: draft.expiresAt,
     }
 
     if (draft.sourceItemId) {
@@ -410,6 +420,8 @@ export function itemsForLoadScope(
   scope: LoadScopeRequest,
   data: AppData,
   derived: DerivedContext,
+  /** 「快过期」的天数阈值。从界面偏好传进来，默认 30 —— 见 lib/expiry.ts */
+  soonDays: number = EXPIRY_SOON_DEFAULT_DAYS,
 ): Item[] {
   const live = data.items.filter((item) => item.status !== 'discarded')
   const picked = new Map<string, Item>()
@@ -424,6 +436,11 @@ export function itemsForLoadScope(
   }
   if (scope.unassigned) {
     add(live.filter((item) => !item.locationId || !derived.index.has(item.locationId)))
+  }
+  if (scope.hasExpiry) add(live.filter((item) => item.expiresAt !== null))
+  if (scope.expired) add(live.filter((item) => isExpired(item.expiresAt)))
+  if (scope.expiring) {
+    add(live.filter((item) => isExpiring(item.expiresAt, soonDays)))
   }
 
   for (const path of scope.categoryPaths ?? []) {

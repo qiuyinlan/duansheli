@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { AttrType, ItemStatus } from '../types'
 import { UNASSIGNED_ID, UNCATEGORIZED_ID, UNTAGGED_ID } from '../types'
 import type { AttrFilter, AttrOp, DerivedContext, ItemFilter } from '../store/selectors'
-import { EMPTY_FILTER, STATUS_LABEL, STATUS_ORDER } from '../store/selectors'
+import { EMPTY_FILTER, STATUS_ORDER, statusLabel } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
 import { TreeView } from './TreeView'
 import { Button, Modal, Switch } from './ui/primitives'
@@ -140,7 +140,7 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
                   aria-pressed={active}
                   onClick={() => toggleIn('statuses', status)}
                 >
-                  {STATUS_LABEL[status]}
+                  {statusLabel(status)}
                 </button>
               )
             })}

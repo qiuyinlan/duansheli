@@ -426,6 +426,114 @@
   font-weight: 600;
 }
 
+/* ---------------- 有效期页 ---------------- */
+
+/* 每行的有效期徽章。语义色是固定的，不走分组配色 —— 含义不能被哈希打乱 */
+.expiry-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: var(--fs-tiny);
+  line-height: 1.6;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* 已过期：这里用实心红，是全站唯一一处「重」的提示 —— 因为它真的要紧 */
+.expiry-badge--expired {
+  background: #fee2e2;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.expiry-badge--soon {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+/* 还早的用中性灰：它只是「有个日期」，不需要你做什么 */
+.expiry-badge--ok {
+  background: var(--bg-soft);
+  color: var(--text-3);
+}
+
+.expiry-summary {
+  padding: var(--gap-4);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.expiry-summary__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+.expiry-summary__pill {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--fs-sm);
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.expiry-summary__pill--expired {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.expiry-summary__pill--soon {
+  background: #fef3c7;
+  border-color: #fde68a;
+  color: #b45309;
+}
+
+.expiry-summary__pill--none {
+  color: var(--text-3);
+}
+
+.expiry-summary__settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-4);
+}
+
+.expiry-group__title {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.expiry-group__title--expired {
+  color: #b91c1c;
+}
+
+.expiry-group__title--soon {
+  color: #b45309;
+}
+
+/* 表单里「有效期至」那一段 */
+.expiry-field__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+  margin-top: var(--gap-2);
+}
+
+.expiry-field__warning {
+  color: #b45309;
+}
+
 /* ---------------- AI 助手 ---------------- */
 
 /* Key 的隐私说明 —— 这段话很重要，所以给它一块独立的浅底区域 */

@@ -585,13 +585,29 @@ suite('CSV 导出')
 await test('带 BOM、含自定义属性列、值被正确转义', () => {
   const data = fixture()
   data.items[0].note = '带,逗号 和 "引号"'
+  data.items[0].expiresAt = '2026-03-15'
   const csv = buildCsv(data, createDerived(data))
 
   eq(csv.charCodeAt(0), 0xfeff, '开头必须是 BOM，否则 Excel 打开中文乱码')
-  match(csv, /名称,数量,状态,分类,位置,标签,备注/, '表头不对')
+  match(csv, /名称,数量,状态,有效期至,分类,位置,标签,备注/, '表头不对')
   match(csv, /品牌/, '自定义属性应成为一列')
   match(csv, /家 \/ 卧室 \/ 衣柜/, '位置应输出完整路径')
+  match(csv, /2026-03-15/, '有效期要导出成一列')
   match(csv, /"带,逗号 和 ""引号"""/, '含逗号和引号的值应按 RFC 4180 转义')
+})
+
+await test('没设置有效期的物品，那一格是空的（不要写「—」，表格软件里空着才好筛）', () => {
+  const data = fixture()
+  const csv = buildCsv(data, createDerived(data))
+  // 这里能放心用 split(',')：夹具里的值都不含逗号（含逗号的转义那条另有用例守）
+  const rows = csv.split('\r\n')
+  const header = must(rows[0], '应该有表头').split(',')
+  const expiryIndex = header.indexOf('有效期至')
+  ok(expiryIndex >= 0, '表头里应该有有效期至这一列')
+
+  const firstRow = must(rows[1], '应该有一行数据').split(',')
+  eq(firstRow[expiryIndex], '', '没填就应该是空格子')
+  ok(!csv.includes('—'), '整份 CSV 里不该出现「—」这种占位符')
 })
 
 /* ------------------------------------------------------------------ */

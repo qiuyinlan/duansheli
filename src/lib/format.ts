@@ -1,5 +1,7 @@
 /** 日期与数字格式化工具 */
 
+import { formatLocalDate, formatNumber, t, tc } from '../i18n'
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -10,11 +12,25 @@ function toDate(iso: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-/** 2025-01-15 */
+/**
+ * 2025-01-15
+ *
+ * 两种语言都用这个格式，**刻意不做本地化**：
+ * 它没有歧义（不会有人把 03-04 读成 4 月 3 日），而且按字符串排序就是按时间排序。
+ * 想要「2025年1月15日」那种读法，用 formatDateLong。
+ */
 export function formatDate(iso: string | null | undefined): string {
   const d = toDate(iso)
   if (!d) return '—'
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** 给人读的本地化日期：2025年1月15日 / Jan 15, 2025 */
+export function formatDateLong(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = toDate(iso)
+  if (!d) return '—'
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(d)
 }
 
 /** 2025-01-15 10:30 */
@@ -48,19 +64,24 @@ export function daysSince(iso: string | null | undefined): number {
 /** 3 天前 / 2 个月前 / 1 年前 —— 用于列表里的次要信息 */
 export function formatRelative(iso: string | null | undefined): string {
   const days = daysSince(iso)
-  if (days === 0) return '今天'
-  if (days === 1) return '昨天'
-  if (days < 30) return `${days} 天前`
+  if (days === 0) return t('format.today')
+  if (days === 1) return t('format.yesterday')
+  if (days < 30) return tc(days, 'format.daysAgo')
   const months = Math.floor(days / 30)
-  if (months < 12) return `${months} 个月前`
-  return `${Math.floor(days / 365)} 年前`
+  if (months < 12) return tc(months, 'format.monthsAgo')
+  return tc(Math.floor(days / 365), 'format.yearsAgo')
 }
 
 /** 「已闲置 47 天」里那个数字 */
 export function formatDays(days: number): string {
-  if (days === 0) return '不到 1 天'
-  if (days < 365) return `${days} 天`
-  return `${Math.floor(days / 365)} 年多`
+  if (days === 0) return t('format.lessThanOneDay')
+  if (days < 365) return tc(days, 'format.days')
+  return tc(Math.floor(days / 365), 'format.overYears')
+}
+
+/** 件数：1 件 / 3 件；英文会自动变成 1 item / 3 items */
+export function formatItemCount(count: number): string {
+  return tc(count, 'format.countItems')
 }
 
 /** 百分比，保留一位小数；分母为 0 时返回 0 */
@@ -70,5 +91,8 @@ export function percent(part: number, total: number): number {
 }
 
 export function formatPercent(part: number, total: number): string {
-  return `${percent(part, total)}%`
+  return `${formatNumber(percent(part, total))}%`
 }
+
+/** 导出的 JSON 是给人看也机器读的，这里统一用 formatDate 的口径 */
+export { formatLocalDate }

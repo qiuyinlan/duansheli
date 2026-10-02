@@ -237,6 +237,7 @@ function raw(partial: Partial<RawExtractedItem> & { name: string }): RawExtracte
     tags: partial.tags ?? [],
     attributes: partial.attributes ?? {},
     note: partial.note ?? '',
+    expiresAt: partial.expiresAt ?? null,
   }
 }
 
@@ -559,6 +560,7 @@ function draftOf(patch: Partial<ItemDraft> & { name: string }): ItemDraft {
     attrs: {},
     droppedAttrs: [],
     note: '',
+    expiresAt: null,
     include: true,
     adoptNewCategories: false,
     adoptNewLocation: false,
@@ -922,6 +924,7 @@ function revisedItem(
     tags: partial.tags ?? [],
     attributes: partial.attributes ?? {},
     note: partial.note ?? '',
+    expiresAt: partial.expiresAt ?? null,
     removed: partial.removed ?? false,
   }
 }

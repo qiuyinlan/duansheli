@@ -10,6 +10,7 @@ import type {
   Tag,
 } from '../types'
 import { APP_ID, SCHEMA_VERSION } from '../types'
+import { normalizeExpiryDate } from '../lib/expiry'
 
 /* ------------------------------------------------------------------ */
 /* 取值助手：导入的文件可能被手工改过，这里做防御性归一化               */
@@ -109,6 +110,9 @@ function normalizeItem(raw: unknown, now: string, warn: string[], index: number)
     updatedAt: isoDate(raw.updatedAt, now),
     idleAt: typeof raw.idleAt === 'string' ? isoDate(raw.idleAt, now) : null,
     discardedAt: typeof raw.discardedAt === 'string' ? isoDate(raw.discardedAt, now) : null,
+    // 有效期过一遍归一化：备份文件可能被手工改过，也可能来自只会写日期的工具。
+    // 认不出来就当成「没设置」，比塞一个坏字符串进去强。
+    expiresAt: normalizeExpiryDate(raw.expiresAt),
   }
 }
 

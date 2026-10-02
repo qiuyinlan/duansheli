@@ -158,6 +158,23 @@ export const IconClock = (p: IconProps) => (
   </Svg>
 )
 
+/** 有效期：一个日历，顶部有两个小挂钩 */
+export const IconCalendar = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="2.25" y="3.5" width="11.5" height="10.25" rx="1.5" />
+    <path d="M2.25 6.5h11.5M5.5 2.25v2.5M10.5 2.25v2.5" />
+  </Svg>
+)
+
+/** 语言：一个地球，中英切换按钮旁边配它 */
+export const IconGlobe = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="8" cy="8" r="5.75" />
+    <path d="M2.25 8h11.5" />
+    <path d="M8 2.25c1.6 1.8 2.4 3.7 2.4 5.75S9.6 12.2 8 13.75C6.4 11.95 5.6 10.05 5.6 8S6.4 4.05 8 2.25Z" />
+  </Svg>
+)
+
 export const IconUndo = (p: IconProps) => (
   <Svg {...p}>
     <path d="M3 8a5 5 0 1 1 1.6 3.67" />

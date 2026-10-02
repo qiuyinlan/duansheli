@@ -1,6 +1,6 @@
 import type { AppData, AttributeDef, Item } from '../types'
 import type { DerivedContext } from '../store/selectors'
-import { STATUS_LABEL, formatAttrValue } from '../store/selectors'
+import { formatAttrValue, statusLabel } from '../store/selectors'
 import { downloadText } from '../lib/download'
 import { formatDateTime, formatForFilename } from '../lib/format'
 
@@ -28,6 +28,7 @@ export function buildCsv(data: AppData, ctx: DerivedContext): string {
     '名称',
     '数量',
     '状态',
+    '有效期至',
     '分类',
     '位置',
     '标签',
@@ -47,7 +48,9 @@ export function buildCsv(data: AppData, ctx: DerivedContext): string {
     return [
       item.name,
       item.quantity,
-      STATUS_LABEL[item.status],
+      statusLabel(item.status),
+      // 没设置就是空单元格，不要写「—」：表格软件里空着才好排序和筛选
+      item.expiresAt ?? '',
       categoryNames.join(' / '),
       item.locationId ? ctx.index.pathString(item.locationId, ' / ') : '未归位',
       item.tags.join(' / '),

@@ -14,6 +14,7 @@ import type {
 } from '../types'
 import { DEFAULT_UI_PREFS, SCHEMA_VERSION } from '../types'
 import { mergeAppData } from '../data/importData'
+import { normalizeExpiryDate } from '../lib/expiry'
 import { uid } from '../lib/id'
 import { canReparent, type TreeItem } from '../lib/tree'
 import { getRepository } from '../storage/repository'
@@ -199,6 +200,8 @@ export interface ItemInput {
   tags?: string[]
   attrs?: Record<string, AttrValue>
   note?: string
+  /** 有效期至（YYYY-MM-DD）；null 或 undefined 都是「没设置」 */
+  expiresAt?: string | null
 }
 
 /* ------------------------------------------------------------------ */
@@ -220,6 +223,8 @@ export interface DraftApplyItem {
   tags: string[]
   attrs: Record<string, string>
   note: string
+  /** 有效期至（YYYY-MM-DD）；null = 没设置 */
+  expiresAt: string | null
 }
 
 export interface ApplyDraftResult {
@@ -406,6 +411,8 @@ export interface AppState {
   restoreItem: (id: string) => void
   purgeItem: (id: string) => void
   batchSetStatus: (ids: string[], status: ItemStatus) => void
+  /** 批量设/清有效期。传 null 就是清掉。 */
+  setExpiry: (ids: string[], expiresAt: string | null) => void
   batchMoveToLocation: (ids: string[], locationId: string | null) => void
   batchAddTag: (ids: string[], tag: string) => void
   purgeAllDiscarded: () => void
@@ -558,6 +565,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         const tags = uniq((entry.tags ?? []).map((t) => t.trim()).filter(Boolean))
         const name = entry.name.trim()
         const quantity = Math.max(1, Math.round(entry.quantity || 1))
+        const expiresAt = normalizeExpiryDate(entry.expiresAt)
 
         const index = entry.existingId ? indexById.get(entry.existingId) : undefined
 
@@ -572,6 +580,7 @@ export const useAppStore = create<AppState>()((set, get) => {
             tags,
             attrs,
             note: entry.note ?? '',
+            expiresAt,
             updatedAt: now,
           }
           updated++
@@ -593,6 +602,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           updatedAt: now,
           idleAt: null,
           discardedAt: null,
+          expiresAt,
         })
         added++
       }
@@ -691,6 +701,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         updatedAt: now,
         idleAt: status === 'idle' ? now : null,
         discardedAt: status === 'discarded' ? now : null,
+        expiresAt: normalizeExpiryDate(input.expiresAt ?? null),
       }
 
       commit(
@@ -727,6 +738,10 @@ export const useAppStore = create<AppState>()((set, get) => {
             : prev.tags,
         attrs: patch.attrs !== undefined ? cleanAttrs(patch.attrs) : prev.attrs,
         note: patch.note !== undefined ? patch.note : prev.note,
+        expiresAt:
+          patch.expiresAt !== undefined
+            ? normalizeExpiryDate(patch.expiresAt)
+            : prev.expiresAt,
         updatedAt: now,
       }
 
@@ -777,6 +792,25 @@ export const useAppStore = create<AppState>()((set, get) => {
           updatedAt: now,
         }
       })
+      replaceItems(items, 'auto')
+    },
+
+    /**
+     * 批量设有效期。
+     *
+     * 只动 expiresAt 和 updatedAt，别的字段一概不碰 —— 特别注意**不改 status**。
+     * 到期不等于闲置，更不等于要扔；用户只是想知道它什么时候到期。
+     */
+    setExpiry: (ids, expiresAt) => {
+      const idSet = new Set(ids)
+      if (idSet.size === 0) return
+      const data = get().data
+      const now = new Date().toISOString()
+      const normalized = normalizeExpiryDate(expiresAt)
+
+      const items = data.items.map((item) =>
+        idSet.has(item.id) ? { ...item, expiresAt: normalized, updatedAt: now } : item,
+      )
       replaceItems(items, 'auto')
     },
 

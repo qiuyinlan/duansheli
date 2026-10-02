@@ -5,6 +5,7 @@ import { Button } from './components/ui/primitives'
 import { Attributes } from './pages/Attributes'
 import { Ai } from './pages/Ai'
 import { Categories } from './pages/Categories'
+import { Expiry } from './pages/Expiry'
 import { Idle } from './pages/Idle'
 import { ItemEdit } from './pages/ItemEdit'
 import { Items } from './pages/Items'
@@ -29,6 +30,7 @@ export function AppRoutes() {
         <Route path="items/:id" element={<ItemEdit />} />
         <Route path="locations" element={<Locations />} />
         <Route path="idle" element={<Idle />} />
+        <Route path="expiry" element={<Expiry />} />
         <Route path="ai" element={<Ai />} />
         <Route path="more" element={<More />} />
         <Route path="categories" element={<Categories />} />

@@ -7,6 +7,7 @@
  */
 
 import { AiError } from './deepseek'
+import { normalizeExpiryDate } from '../lib/expiry'
 
 /* ------------------------------------------------------------------ */
 /* 从文本里抠出 JSON                                                   */
@@ -188,6 +189,8 @@ export interface RawExtractedItem {
   /** 属性名 → 值，只可能命中已有属性名 */
   attributes: Record<string, string>
   note: string
+  /** 有效期至（YYYY-MM-DD）；AI 没提到、或写的日期认不出来，都是 null */
+  expiresAt: string | null
 }
 
 export interface ParsedExtraction {
@@ -212,6 +215,12 @@ function normalizeExtractedItem(raw: unknown): RawExtractedItem | null {
     tags: uniq(asStringList(raw.tags ?? raw.标签 ?? raw.tag)),
     attributes: asAttributeMap(raw.attributes ?? raw.属性 ?? raw.attrs),
     note: asString(raw.note ?? raw.备注 ?? raw.remark),
+    // 有效期：AI 可能写成 expiresAt / expires / 有效期 / 过期时间，
+    // 也可能写成「明年3月」这种认不出来的东西 —— 认不出来就是 null，
+    // 绝不能把坏字符串塞进数据库，更不能瞎猜一个日期。
+    expiresAt: normalizeExpiryDate(
+      raw.expiresAt ?? raw.expires ?? raw.有效期 ?? raw.过期时间 ?? raw.expiryDate,
+    ),
   }
 }
 
@@ -272,6 +281,12 @@ export interface LoadScopeRequest {
   idle?: boolean
   uncategorized?: boolean
   unassigned?: boolean
+  /** 已过期 + 快过期的（快过期的天数阈值由界面偏好决定） */
+  expiring?: boolean
+  /** 只看已过期的 */
+  expired?: boolean
+  /** 设置了有效期的（不管过没过期） */
+  hasExpiry?: boolean
   /** 这些分类下的（含子分类） */
   categoryPaths?: string[][]
   /** 这些位置下的（含子位置） */
@@ -308,6 +323,9 @@ function normalizeLoadScope(raw: unknown): LoadScopeRequest | null {
   if (raw.idle === true) scope.idle = true
   if (raw.uncategorized === true) scope.uncategorized = true
   if (raw.unassigned === true) scope.unassigned = true
+  if (raw.expiring === true) scope.expiring = true
+  if (raw.expired === true) scope.expired = true
+  if (raw.hasExpiry === true) scope.hasExpiry = true
 
   const categories = asPathListOfLists(raw.categoryPaths ?? raw.categories)
   if (categories.length > 0) scope.categoryPaths = categories
@@ -321,6 +339,9 @@ function normalizeLoadScope(raw: unknown): LoadScopeRequest | null {
     !scope.idle &&
     !scope.uncategorized &&
     !scope.unassigned &&
+    !scope.expiring &&
+    !scope.expired &&
+    !scope.hasExpiry &&
     !scope.categoryPaths &&
     !scope.locationPaths
   return empty ? null : scope

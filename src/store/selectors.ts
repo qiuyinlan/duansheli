@@ -15,6 +15,9 @@ import { UNASSIGNED_ID, UNCATEGORIZED_ID, UNTAGGED_ID } from '../types'
 import type { TreeIndex, TreeNode } from '../lib/tree'
 import { buildTree, createTreeIndex, flattenTree } from '../lib/tree'
 import { daysSince } from '../lib/format'
+import type { ExpiryState } from '../lib/expiry'
+import { EXPIRY_SOON_DEFAULT_DAYS, compareExpiry, expiryState } from '../lib/expiry'
+import { t } from '../i18n'
 
 /* ------------------------------------------------------------------ */
 /* 派生上下文 —— 每次数据变化时算一次，供所有筛选/分组/统计复用         */
@@ -37,9 +40,21 @@ export interface DerivedContext {
   categoryById: Map<string, Category>
 
   attrDefById: Map<string, AttributeDef>
+
+  /**
+   * 「快过期」的天数阈值，从界面偏好带进来。
+   *
+   * 为什么塞进派生上下文：筛选、分组、统计都要用它，
+   * 一层层往下传参数会污染一大串签名。它是个纯数值、不影响数据本身，
+   * 放在这里最省事。改了它记得重建 ctx（store 里已经这么做了）。
+   */
+  expirySoonDays: number
 }
 
-export function createDerived(data: AppData): DerivedContext {
+export function createDerived(
+  data: AppData,
+  expirySoonDays: number = EXPIRY_SOON_DEFAULT_DAYS,
+): DerivedContext {
   // ---- 位置 ----
   const index = createTreeIndex(data.locations)
   const tree = buildTree(data.locations)
@@ -69,17 +84,18 @@ export function createDerived(data: AppData): DerivedContext {
     categoryOrder,
     categoryById,
     attrDefById,
+    expirySoonDays,
   }
 }
 
 /** 位置路径，未归位时返回「未归位」 */
 export function locationPath(ctx: DerivedContext, id: string | null, sep = ' / '): string {
-  return ctx.index.pathString(id, sep, '未归位')
+  return ctx.index.pathString(id, sep, t('status.unassigned'))
 }
 
 /** 分类路径，未分类时返回「未分类」 */
 export function categoryPath(ctx: DerivedContext, id: string | null, sep = ' / '): string {
-  return ctx.categoryIndex.pathString(id, sep, '未分类')
+  return ctx.categoryIndex.pathString(id, sep, t('status.uncategorized'))
 }
 
 /* ------------------------------------------------------------------ */
@@ -101,14 +117,26 @@ export interface Stats {
   topLocationCount: number
   tagCount: number
   attributeDefCount: number
+  /** 已过期（不含已舍弃） */
+  expiredCount: number
+  /** 还有 expirySoonDays 天以内到期，且还没过期 */
+  expiringSoonCount: number
+  /** 填了有效期的件数 —— 用来提示「你还没给任何东西记有效期」 */
+  hasExpiryCount: number
 }
 
-export function computeStats(data: AppData): Stats {
+export function computeStats(
+  data: AppData,
+  soonDays: number = EXPIRY_SOON_DEFAULT_DAYS,
+): Stats {
   let activeCount = 0
   let idleCount = 0
   let discardedCount = 0
   let unassignedCount = 0
   let uncategorizedCount = 0
+  let expiredCount = 0
+  let expiringSoonCount = 0
+  let hasExpiryCount = 0
 
   for (const item of data.items) {
     if (item.status === 'discarded') {
@@ -120,6 +148,13 @@ export function computeStats(data: AppData): Stats {
 
     if (!item.locationId) unassignedCount++
     if (item.categoryIds.length === 0) uncategorizedCount++
+
+    if (item.expiresAt !== null) {
+      hasExpiryCount++
+      const state = expiryState(item.expiresAt, soonDays)
+      if (state === 'expired') expiredCount++
+      else if (state === 'soon') expiringSoonCount++
+    }
   }
 
   return {
@@ -129,6 +164,9 @@ export function computeStats(data: AppData): Stats {
     discardedCount,
     unassignedCount,
     uncategorizedCount,
+    expiredCount,
+    expiringSoonCount,
+    hasExpiryCount,
     categoryCount: data.categories.length,
     topCategoryCount: data.categories.filter((c) => c.parentId === null).length,
     locationCount: data.locations.length,
@@ -201,7 +239,7 @@ export function countByCategory(items: Item[], ctx: DerivedContext): BarDatum[] 
   )
 
   if (uncategorized > 0) {
-    out.push({ key: UNCATEGORIZED_ID, label: '未分类', value: uncategorized })
+    out.push({ key: UNCATEGORIZED_ID, label: t('status.uncategorized'), value: uncategorized })
   }
   return out
 }
@@ -236,7 +274,7 @@ export function countByTopLocation(items: Item[], ctx: DerivedContext): BarDatum
   )
 
   if (unassigned > 0) {
-    out.push({ key: UNASSIGNED_ID, label: '未归位', value: unassigned })
+    out.push({ key: UNASSIGNED_ID, label: t('status.unassigned'), value: unassigned })
   }
   return out
 }
@@ -264,24 +302,72 @@ export function countByTag(items: Item[], _ctx: DerivedContext): BarDatum[] {
     )
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'zh-CN'))
 
-  if (untagged > 0) out.push({ key: '__untagged__', label: '未加标签', value: untagged })
+  if (untagged > 0) out.push({ key: UNTAGGED_ID, label: t('status.untagged'), value: untagged })
   return out
 }
 
-export const STATUS_LABEL: Record<ItemStatus, string> = {
-  active: '在用',
-  idle: '闲置',
-  discarded: '已舍弃',
+/**
+ * 物品状态的显示名。
+ *
+ * 注意这是个**函数**而不是常量表：语言可以在运行时切换，
+ * 常量表会在模块加载那一刻就把当时语言的文字冻住，切了语言也不变。
+ * 这类 bug 很隐蔽（其他文案都变了，就这一处没变），所以宁可多写一层函数。
+ */
+export function statusLabel(status: ItemStatus): string {
+  switch (status) {
+    case 'idle':
+      return t('status.idle')
+    case 'discarded':
+      return t('status.discarded')
+    case 'active':
+    default:
+      return t('status.active')
+  }
 }
 
 export const STATUS_ORDER: ItemStatus[] = ['active', 'idle', 'discarded']
+
+/* ------------------------------------------------------------------ */
+/* 有效期的分组与标签                                                   */
+/* ------------------------------------------------------------------ */
+
+/** 分组桶的 key。前缀 __ 会被配色逻辑识别成「虚拟分组」用中性灰。 */
+export const EXPIRY_BUCKET_KEY: Record<ExpiryState, string> = {
+  expired: '__expired__',
+  soon: '__expiring_soon__',
+  ok: '__expiry_ok__',
+  none: '__no_expiry__',
+}
+
+/** 显示顺序 = 「最该处理的排最前」 */
+export const EXPIRY_STATE_ORDER: ExpiryState[] = ['expired', 'soon', 'ok', 'none']
+
+/**
+ * 有效期分组标题。
+ *
+ * 用「已过期 / 即将过期 / 还早 / 没填有效期」这组词，而不是
+ * 「已过期 / 30 天内」—— 前者是给人看的分组名，后者更像筛选条件。
+ * 具体天数会显示在分组旁边的计数里。
+ */
+export function labelForExpiryState(state: ExpiryState, _soonDays: number): string {
+  switch (state) {
+    case 'expired':
+      return t('expiry.groupExpired')
+    case 'soon':
+      return t('expiry.groupSoon')
+    case 'ok':
+      return t('expiry.groupLater')
+    case 'none':
+      return t('expiry.groupNone')
+  }
+}
 
 export function countByStatus(items: Item[]): BarDatum[] {
   const counts: Record<ItemStatus, number> = { active: 0, idle: 0, discarded: 0 }
   for (const item of items) counts[item.status]++
   return STATUS_ORDER.filter((s) => counts[s] > 0).map((s) => ({
     key: s,
-    label: STATUS_LABEL[s],
+    label: statusLabel(s),
     value: counts[s],
     target: { kind: 'status' as const, id: s },
   }))
@@ -315,6 +401,13 @@ export interface ItemFilter {
   locationIds: string[]
   statuses: ItemStatus[]
   tags: string[]
+  /**
+   * 有效期状态。空数组 = 不按有效期筛。
+   *
+   * 注意 `none`（没设置）也是一个可选项 —— 用户经常想反过来找
+   * 「哪些东西我还没填有效期」，所以它必须能被单独筛出来。
+   */
+  expiryStates: ExpiryState[]
   attrFilters: AttrFilter[]
   /** 位置 / 分类筛选是否包含子孙节点 */
   includeDescendants: boolean
@@ -326,6 +419,7 @@ export const EMPTY_FILTER: ItemFilter = {
   locationIds: [],
   statuses: [],
   tags: [],
+  expiryStates: [],
   attrFilters: [],
   includeDescendants: true,
 }
@@ -346,7 +440,7 @@ function searchHaystack(item: Item, ctx: DerivedContext): string {
   }
   for (const value of Object.values(item.attrs)) {
     if (value === null || value === undefined) continue
-    parts.push(typeof value === 'boolean' ? (value ? '是' : '否') : String(value))
+    parts.push(typeof value === 'boolean' ? (value ? t('common.yes') : t('common.no')) : String(value))
   }
 
   return parts.join('\u0000').toLowerCase()
@@ -441,6 +535,11 @@ export function matchesFilter(item: Item, filter: ItemFilter, ctx: DerivedContex
     if (!hit) return false
   }
 
+  if (filter.expiryStates.length > 0) {
+    const state = expiryState(item.expiresAt, ctx.expirySoonDays)
+    if (!filter.expiryStates.includes(state)) return false
+  }
+
   for (const attrFilter of filter.attrFilters) {
     // 属性定义已被删除的筛选条件自动失效，不阻塞结果
     if (!ctx.attrDefById.has(attrFilter.defId)) continue
@@ -485,6 +584,14 @@ export function sortItems(
         const ao = a.locationId ? (ctx.locationOrder.get(a.locationId) ?? 1e6) : 1e6
         const bo = b.locationId ? (ctx.locationOrder.get(b.locationId) ?? 1e6) : 1e6
         cmp = ao - bo
+        break
+      }
+      case 'expiry': {
+        // 没设置有效期的固定排在最后（compareExpiry 里处理），
+        // 而且**不**乘 dir —— 否则倒序时一大片没填的会浮到最前面。
+        const e = compareExpiry(a.expiresAt, b.expiresAt)
+        if (e !== 0) return e
+        cmp = 0
         break
       }
       case 'updated':
@@ -619,7 +726,7 @@ export function groupItemsTree(
   if (loose.length > 0) {
     roots.push({
       key: dimension === 'category' ? UNCATEGORIZED_ID : UNASSIGNED_ID,
-      label: dimension === 'category' ? '未分类' : '未归位',
+      label: dimension === 'category' ? t('status.uncategorized') : t('status.unassigned'),
       items: loose,
       total: loose.length,
       children: [],
@@ -644,7 +751,7 @@ export function groupItemsFlat(
   })
 
   if (groupBy === 'none') {
-    return [leaf('__all__', '全部', items)]
+    return [leaf('__all__', t('status.all'), items)]
   }
 
   if (groupBy === 'status') {
@@ -655,7 +762,22 @@ export function groupItemsFlat(
       else buckets.set(item.status, [item])
     }
     return STATUS_ORDER.filter((s) => buckets.has(s)).map((s) =>
-      leaf(s, STATUS_LABEL[s], buckets.get(s) as Item[]),
+      leaf(s, statusLabel(s), buckets.get(s) as Item[]),
+    )
+  }
+
+  // 有效期：固定四档，顺序就是「最该处理的排最前」。
+  // 空档不显示（跟分类分组一个规矩），所以一件都没填时这里什么都不会出现。
+  if (groupBy === 'expiry') {
+    const buckets = new Map<ExpiryState, Item[]>()
+    for (const item of items) {
+      const state = expiryState(item.expiresAt, ctx.expirySoonDays)
+      const bucket = buckets.get(state)
+      if (bucket) bucket.push(item)
+      else buckets.set(state, [item])
+    }
+    return EXPIRY_STATE_ORDER.filter((s) => buckets.has(s)).map((s) =>
+      leaf(EXPIRY_BUCKET_KEY[s], labelForExpiryState(s, ctx.expirySoonDays), buckets.get(s) as Item[]),
     )
   }
 
@@ -678,7 +800,7 @@ export function groupItemsFlat(
     .map(([tag, bucket]) => leaf(tag, tag, bucket))
     .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, 'zh-CN'))
 
-  if (untagged.length > 0) out.push(leaf(UNTAGGED_ID, '未加标签', untagged))
+  if (untagged.length > 0) out.push(leaf(UNTAGGED_ID, t('status.untagged'), untagged))
   return out
 }
 
@@ -887,7 +1009,7 @@ export function formatAttrValue(def: AttributeDef, value: AttrValue | undefined)
   if (value === undefined || value === null || value === '') return ''
   switch (def.type) {
     case 'bool':
-      return value === true ? '是' : '否'
+      return value === true ? t('common.yes') : t('common.no')
     case 'number': {
       const n = Number(value)
       if (!Number.isFinite(n)) return String(value)

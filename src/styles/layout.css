@@ -204,6 +204,39 @@
   min-width: 0;
 }
 
+/* ---------------- 右上角的语言开关 ---------------- */
+
+.lang-switch {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  flex: none;
+}
+
+.lang-switch__btn {
+  padding: 3px 9px;
+  font-size: var(--fs-tiny);
+  line-height: 1.5;
+  color: var(--text-3);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lang-switch__btn:hover {
+  color: var(--text);
+}
+
+/* 选中的那个用当前板块的主色 —— 它就在顶栏上，跟着板块变色最不突兀 */
+.lang-switch__btn.is-active {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
 /* ---------------- 手机底部 Tab ---------------- */
 
 .bottom-nav {

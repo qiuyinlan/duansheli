@@ -10,11 +10,13 @@ export const APP_ID = 'duansheli'
  * 数据结构版本。
  *
  * v1 → v2：分类从扁平变成不限层级的树（Category 增加 parentId）。
- * 升版本号是为了保护老程序：它拿到 v2 的备份会**明确拒绝**并提示升级，
- * 而不是静默把分类层级丢掉。反过来 v1 的老备份能正常导入 v2 程序，
- * 那些分类会自动变成全是顶层。
+ * v2 → v3：物品增加 expiresAt（有效期至）。
+ *
+ * 升版本号是为了保护老程序：它拿到更高版本的备份会**明确拒绝**并提示升级，
+ * 而不是静默把不认识的字段丢掉 —— 静默丢字段是最糟的，用户会以为备份是完整的。
+ * 反过来老备份能正常导入新程序，缺的字段按默认值补齐（分类全是顶层、有效期为空）。
  */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 /* ------------------------------------------------------------------ */
 /* 物品                                                                */
@@ -53,6 +55,17 @@ export interface Item {
   idleAt: string | null
   /** 舍弃时间，用于回收站排序 */
   discardedAt: string | null
+  /**
+   * 有效期至，**只有日期**（`2026-03-15`），null = 没设置。
+   *
+   * 为什么只存日期不存时间点：保质期是日历概念，
+   * 「今天到期」如果带上时分秒，过了今天 00:00 就变成「已过期 1 天」，很别扭。
+   * 所以全程按本地日期的 00:00 比较。
+   *
+   * 到期**不会**自动改任何别的字段 —— 过期只是个算出来的状态，
+   * 不是数据变更。详见 src/lib/expiry.ts。
+   */
+  expiresAt: string | null
 }
 
 /* ------------------------------------------------------------------ */
@@ -213,8 +226,8 @@ export interface ImportReport {
 /* 界面偏好（存 localStorage，丢了也无所谓）                            */
 /* ------------------------------------------------------------------ */
 
-export type GroupBy = 'none' | 'category' | 'location' | 'status' | 'tag'
-export type SortBy = 'updated' | 'created' | 'name' | 'quantity' | 'location'
+export type GroupBy = 'none' | 'category' | 'location' | 'status' | 'tag' | 'expiry'
+export type SortBy = 'updated' | 'created' | 'name' | 'quantity' | 'location' | 'expiry'
 export type SortDir = 'asc' | 'desc'
 
 export interface UiPrefs {
@@ -241,7 +254,18 @@ export interface UiPrefs {
   expandedGroups: string[]
   /** 上次导出 JSON 备份的时间 —— 用于在界面上温和提醒该备份了 */
   lastExportAt: string | null
+  /**
+   * 还剩几天算「即将过期」，默认 30。
+   *
+   * 不同的东西这个数差别很大：鲜奶是 3 天，化妆品是半年。
+   * 所以做成可调的，而不是我替你定死。存 localStorage，跟着这台设备走。
+   */
+  expirySoonDays: number
+  /** 有效期页：是否把「还没到期、也不紧急」的也列出来 */
+  expiryShowLater: boolean
 }
+
+export const EXPIRY_SOON_DEFAULT_DAYS = 30
 
 export const DEFAULT_UI_PREFS: UiPrefs = {
   groupBy: 'category',
@@ -255,4 +279,6 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
   collapsedGroups: [],
   expandedGroups: [],
   lastExportAt: null,
+  expirySoonDays: EXPIRY_SOON_DEFAULT_DAYS,
+  expiryShowLater: false,
 }

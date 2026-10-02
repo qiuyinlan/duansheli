@@ -360,5 +360,6 @@ function makeItem(partial: Partial<Item> & { name: string }): Item {
     updatedAt: partial.updatedAt ?? now,
     idleAt: partial.idleAt ?? null,
     discardedAt: partial.discardedAt ?? null,
+    expiresAt: partial.expiresAt ?? null,
   }
 }

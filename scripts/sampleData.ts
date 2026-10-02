@@ -19,6 +19,13 @@ function daysAgo(days: number): string {
   return new Date(Date.now() - days * DAY).toISOString()
 }
 
+/** 有效期是纯日期（YYYY-MM-DD），按本地日算，好让「还有 N 天」符合直觉 */
+function daysFromNow(days: number): string {
+  const d = new Date(Date.now() + days * DAY)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 /**
  * 种子里只有 10 个扁平分类。这里再补一棵小的分类树，
  * 好让示例数据能演示「分类也支持不限层级」这件事。
@@ -45,6 +52,8 @@ interface Spec {
   tags?: string[]
   attrs?: Record<string, string | number>
   note?: string
+  /** 有效期还有几天。负数表示已经过期了。不填 = 没设置有效期 */
+  expiresInDays?: number
 }
 
 /**
@@ -91,13 +100,13 @@ const ITEMS: Spec[] = [
 
   // ---- 厨房 ----
   { name: '平底锅', categories: ['厨房'], location: '厨房/橱柜', attrs: { 价格: 199 } },
-  { name: '电饭煲', categories: ['厨房'], location: '厨房/橱柜', attrs: { 品牌: '美的', 价格: 399 } },
+  { name: '电饭煲', categories: ['厨房'], location: '厨房/橱柜', attrs: { 品牌: '美的', 价格: 399 }, expiresInDays: 900 },
   { name: '保温杯', categories: ['日用品'], location: '厨房/橱柜', status: 'idle', idleDays: 95, attrs: { 颜色: '黑' } },
 
   // ---- 日用品 / 药品（未归位，用来验证「未归位」这个视角） ----
-  { name: '洗发水', categories: ['日用品'] },
-  { name: '感冒药', categories: ['药品'], attrs: { 购入日期: '2024-12-01' } },
-  { name: '创可贴', categories: ['药品'], status: 'idle', idleDays: 300 },
+  { name: '洗发水', categories: ['日用品'], expiresInDays: 20 },
+  { name: '感冒药', categories: ['药品'], attrs: { 购入日期: '2024-12-01' }, expiresInDays: 45 },
+  { name: '创可贴', categories: ['药品'], status: 'idle', idleDays: 300, expiresInDays: -200 },
 
   // ---- 文具 / 工具 ----
   { name: '中性笔', quantity: 5, categories: ['文具'], location: '书房/书桌' },
@@ -122,10 +131,10 @@ const ITEMS: Spec[] = [
 
   // ---- 多级分类：化妆品 › 眼妆 / 唇妆 / 护肤 / 底妆 ----
   { name: '大地色眼影盘', categories: ['化妆品/眼妆'], attrs: { 品牌: '某品牌', 价格: 268 }, note: '用了两年，还剩一半' },
-  { name: '睫毛膏', categories: ['化妆品/眼妆'], attrs: { 价格: 89 } },
+  { name: '睫毛膏', categories: ['化妆品/眼妆'], attrs: { 价格: 89 }, expiresInDays: -30 },
   { name: '正红色口红', categories: ['化妆品/唇妆'], attrs: { 品牌: 'MAC', 价格: 190 } },
-  { name: '润唇膏', categories: ['化妆品/唇妆'], attrs: { 价格: 39 } },
-  { name: '保湿面霜', categories: ['化妆品/护肤'], status: 'idle', idleDays: 150, attrs: { 价格: 320 }, note: '开了没用完' },
+  { name: '润唇膏', categories: ['化妆品/唇妆'], attrs: { 价格: 39 }, expiresInDays: 7 },
+  { name: '保湿面霜', categories: ['化妆品/护肤'], status: 'idle', idleDays: 150, attrs: { 价格: 320 }, note: '开了没用完', expiresInDays: 12 },
   { name: '粉底液', categories: ['化妆品/底妆'], attrs: { 价格: 450 } },
   { name: '化妆包', categories: ['化妆品'], note: '挂在中间层 —— 它算不上眼妆也算不上唇妆' },
 
@@ -285,6 +294,8 @@ export function buildSampleBackup(): SampleBackupResult {
       updatedAt: createdAt,
       idleAt: status === 'idle' ? daysAgo(spec.idleDays ?? 30) : null,
       discardedAt: status === 'discarded' ? daysAgo(3) : null,
+      // 示例数据里刻意留几件带有效期的，好让「有效期」页一导入就有内容可看
+      expiresAt: spec.expiresInDays === undefined ? null : daysFromNow(spec.expiresInDays),
     }
   })
 

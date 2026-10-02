@@ -47,6 +47,8 @@ export interface DraftForAi {
   tags: string[]
   attributes: Record<string, string>
   note: string
+  /** 有效期至（YYYY-MM-DD）；没设置就是 null */
+  expiresAt: string | null
 }
 
 type DraftContent = Omit<DraftForAi, 'id'>
@@ -74,6 +76,7 @@ export function effectiveContent(draft: ItemDraft, derived: DerivedContext): Dra
     tags: [...draft.tags],
     attributes: { ...draft.attrs },
     note: draft.note.trim(),
+    expiresAt: draft.expiresAt,
   }
 }
 
@@ -94,6 +97,9 @@ function compactDraft(item: DraftForAi): Record<string, unknown> {
   if (item.tags.length > 0) out.tags = item.tags
   if (Object.keys(item.attributes).length > 0) out.attributes = item.attributes
   if (item.note !== '') out.note = item.note
+  // 有效期跟别的字段不一样：它有值就要发（AI 得知道现状才判断得出要不要改），
+  // 没值也不发（跟其他空字段一样省 token）。
+  if (item.expiresAt) out.expiresAt = item.expiresAt
   return out
 }
 
@@ -113,6 +119,7 @@ function signature(content: DraftContent): string {
       .map(([key, value]) => `${key}=${value}`)
       .join('|'),
     content.note,
+    content.expiresAt ?? '',
   ].join('\u0000')
 }
 
