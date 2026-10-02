@@ -3,6 +3,7 @@ import type { ItemDraft } from '../ai/convert'
 import { useAppStore } from '../store/useAppStore'
 import { IconAlert } from './ui/icons'
 import { Button } from './ui/primitives'
+import { useT } from '../i18n'
 
 interface Props {
   drafts: ItemDraft[]
@@ -19,6 +20,8 @@ interface Props {
  */
 export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
   const derived = useAppStore((s) => s.derived)
+  const { t } = useT()
+
   const highlighted = useMemo(() => new Set(highlightKeys ?? []), [highlightKeys])
   const hasNewCategories = drafts.some((d) => d.newCategoryPaths.length > 0)
   const hasNewLocations = drafts.some((d) => d.newLocationPath !== null)
@@ -47,15 +50,18 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
     <div className="stack">
       <div className="row-between wrap">
         <div className="small muted">
-          识别出 <strong className="numeric">{drafts.length}</strong> 条，已选{' '}
-          <strong className="numeric">{drafts.filter((d) => d.include).length}</strong> 条
+          {t('ai.foundLead')}
+          <strong className="numeric">{drafts.length}</strong>
+          {t('ai.foundMid')}
+          <strong className="numeric">{drafts.filter((d) => d.include).length}</strong>
+          {t('ai.foundTail')}
         </div>
         <div className="row wrap">
           <Button size="sm" onClick={() => mapAll(() => ({ include: true }))}>
-            全选
+            {t('common.selectAll')}
           </Button>
           <Button size="sm" onClick={() => mapAll(() => ({ include: false }))}>
-            全不选
+            {t('common.selectNone')}
           </Button>
           {hasNewCategories ? (
             <Button
@@ -64,7 +70,7 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
                 mapAll((d) => (d.newCategoryPaths.length > 0 ? { adoptNewCategories: true } : {}))
               }
             >
-              采纳全部新分类
+              {t('ai.adoptAllNewCategories')}
             </Button>
           ) : null}
           {hasNewLocations ? (
@@ -72,7 +78,7 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
               size="sm"
               onClick={() => mapAll((d) => (d.newLocationPath ? { adoptNewLocation: true } : {}))}
             >
-              采纳全部新位置
+              {t('ai.adoptAllNewLocations')}
             </Button>
           ) : null}
         </div>
@@ -90,11 +96,14 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
             <IconAlert />
           </span>
           <span className="notice__body">
-            AI 建议新建 <strong>{suggestedCategories.length}</strong> 个分类：
-            {suggestedCategories.join('、')}
+            {t('ai.suggestCategoriesLead')}
+            <strong>{suggestedCategories.length}</strong>
+            {t('ai.suggestCategoriesMid')}
+            {suggestedCategories.join(t('ai.listSeparator'))}
             <br />
-            默认<strong>没有勾选</strong> —— 你点了才会创建。
-            不想建的话，用到它们的物品会落到「未分类」里，之后可以自己再归。
+            {t('ai.suggestNotCheckedLead')}
+            <strong>{t('ai.suggestNotCheckedBold')}</strong>
+            {t('ai.suggestCategoriesTail')}
           </span>
           <span className="notice__action">
             <Button
@@ -104,7 +113,7 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
                 mapAll((d) => (d.newCategoryPaths.length > 0 ? { adoptNewCategories: true } : {}))
               }
             >
-              全部采纳
+              {t('ai.adoptAll')}
             </Button>
           </span>
         </div>
@@ -122,7 +131,7 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
               type="checkbox"
               className="row-checkbox"
               checked={draft.include}
-              aria-label={`是否录入「${draft.name}」`}
+              aria-label={t('ai.rowIncludeAria', { name: draft.name })}
               onChange={() => update(draft.key, { include: !draft.include })}
             />
 
@@ -131,14 +140,14 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
               <div className="row" style={{ gap: 'var(--gap-2)' }}>
                 {/* 已有物品要标出来 —— 采纳时是「更新」不是「新建」 */}
                 {draft.sourceItemId ? (
-                  <span className="badge badge--accent" title="这条来自数据库，采纳时会更新它">
-                    已有
+                  <span className="badge badge--accent" title={t('ai.existingBadgeTitle')}>
+                    {t('ai.existingBadge')}
                   </span>
                 ) : null}
                 <input
                   className="input grow"
                   value={draft.name}
-                  aria-label="物品名称"
+                  aria-label={t('ai.fieldNameAria')}
                   onChange={(e) => update(draft.key, { name: e.target.value })}
                 />
                 <input
@@ -147,7 +156,7 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
                   type="number"
                   min={1}
                   value={draft.quantity}
-                  aria-label="数量"
+                  aria-label={t('ai.fieldQuantityAria')}
                   onChange={(e) =>
                     update(draft.key, { quantity: Math.max(1, Number(e.target.value) || 1) })
                   }
@@ -156,7 +165,7 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
 
               {/* ---------------- 位置 ---------------- */}
               <div className="ai-row__line">
-                <span className="ai-row__label">位置</span>
+                <span className="ai-row__label">{t('ai.fieldLocation')}</span>
                 {draft.locationId ? (
                   <span>{draft.locationLabel}</span>
                 ) : draft.newLocationPath ? (
@@ -164,19 +173,20 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
                     type="button"
                     className={`chip${draft.adoptNewLocation ? ' is-active' : ''}`}
                     onClick={() => update(draft.key, { adoptNewLocation: !draft.adoptNewLocation })}
-                    title="点击切换：是否创建这个位置"
+                    title={t('ai.newLocationToggleTitle')}
                   >
-                    {draft.adoptNewLocation ? '将创建' : '新位置'}：
+                    {draft.adoptNewLocation ? t('ai.willCreate') : t('ai.newPlace')}
+                    {t('ai.labelColon')}
                     {draft.newLocationPath.join(' / ')}
                   </button>
                 ) : (
-                  <span className="dim">未归位</span>
+                  <span className="dim">{t('status.unassigned')}</span>
                 )}
               </div>
 
               {/* ---------------- 分类 ---------------- */}
               <div className="ai-row__line">
-                <span className="ai-row__label">分类</span>
+                <span className="ai-row__label">{t('ai.fieldCategories')}</span>
                 <span className="chip-list">
                   {draft.matchedCategoryIds.map((id) => (
                     <span key={id} className="chip is-active">
@@ -191,7 +201,7 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
                       onClick={() =>
                         update(draft.key, { adoptNewCategories: !draft.adoptNewCategories })
                       }
-                      title="这是 AI 建议的新分类。点击切换：是否创建"
+                      title={t('ai.newCategoryToggleTitle')}
                     >
                       {draft.adoptNewCategories ? '' : '+ '}
                       {path.join(' / ')}
@@ -199,7 +209,7 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
                   ))}
                   {draft.matchedCategoryIds.length === 0 &&
                   draft.newCategoryPaths.length === 0 ? (
-                    <span className="dim small">未分类</span>
+                    <span className="dim small">{t('status.uncategorized')}</span>
                   ) : null}
                 </span>
               </div>
@@ -226,11 +236,11 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
 
               {draft.note !== '' ? (
                 <div className="ai-row__line">
-                  <span className="ai-row__label">备注</span>
+                  <span className="ai-row__label">{t('ai.fieldNote')}</span>
                   <input
                     className="input"
                     value={draft.note}
-                    aria-label="备注"
+                    aria-label={t('ai.fieldNote')}
                     onChange={(e) => update(draft.key, { note: e.target.value })}
                   />
                 </div>
@@ -241,8 +251,9 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
                 <div className="ai-row__line">
                   <span className="ai-row__label" />
                   <span className="tiny dim">
-                    AI 还提到 {draft.droppedAttrs.join('、')}，但你的属性库里没有这些属性，已忽略。
-                    （想记录的话，去「属性」页面先定义它们）
+                    {t('ai.droppedAttrsLead')}
+                    {draft.droppedAttrs.join(t('ai.listSeparator'))}
+                    {t('ai.droppedAttrsTail')}
                   </span>
                 </div>
               ) : null}

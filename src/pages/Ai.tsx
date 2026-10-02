@@ -21,6 +21,7 @@ import { AiExtractPreview } from '../components/AiExtractPreview'
 import { AiKeyPanel } from '../components/AiKeyPanel'
 import { Button, EmptyState } from '../components/ui/primitives'
 import { uid } from '../lib/id'
+import { useT } from '../i18n'
 import { useAppStore } from '../store/useAppStore'
 
 /** AI 连续要了几轮数据还没动手，就停下来 —— 免得无限循环烧 token */
@@ -64,6 +65,10 @@ export function Ai() {
   const applyDraftItems = useAppStore((s) => s.applyDraftItems)
   const notify = useAppStore((s) => s.notify)
 
+  // send/apply 里要拼提示文案，所以 t 从这里拿；
+  // 顺便这一句也让整个页面订阅语言变化。
+  const { t, tc } = useT()
+
   const [bubbles, setBubbles] = useState<ChatBubble[]>([])
   const [history, setHistory] = useState<ChatTurn[]>([])
   const [drafts, setDrafts] = useState<ItemDraft[]>([])
@@ -99,7 +104,7 @@ export function Ai() {
 
   const send = async (instruction: string) => {
     if (aiApiKey.trim() === '') {
-      notify('请先填入 DeepSeek API Key', 'error')
+      notify(t('ai.needKey'), 'error')
       return
     }
 
@@ -141,7 +146,7 @@ export function Ai() {
         historyNow = [
           ...historyNow,
           { role: 'user', content: pending },
-          { role: 'assistant', content: parsed.reply || '（这一轮没有说明）' },
+          { role: 'assistant', content: parsed.reply || t('ai.noReplyNote') },
         ]
 
         // ---- AI 说要先看现有物品：拉进草稿，然后自动再问一轮 ----
@@ -158,17 +163,17 @@ export function Ai() {
             {
               id: uid(),
               role: 'assistant',
-              text: parsed.reply || '需要先看一下你现有的物品',
+              text: parsed.reply || t('ai.needToSeeItems'),
               meta:
                 added.length > 0
-                  ? `已把 ${added.length} 条现有物品拉进草稿（采纳时是更新，不会新建）`
-                  : '没有找到符合条件的物品',
+                  ? tc(added.length, 'ai.loadedIntoDrafts')
+                  : t('ai.noMatchingItems'),
             },
           ])
 
           if (added.length === 0) break
 
-          pending = '（上面那些物品已经拉进来了，请继续完成我刚才的指令）'
+          pending = t('ai.continueAfterLoad')
           continue
         }
 
@@ -176,7 +181,7 @@ export function Ai() {
         if (parsed.noChanges) {
           setBubbles((prev) => [
             ...prev,
-            { id: uid(), role: 'assistant', text: parsed.reply, meta: '这条没有改动草稿' },
+            { id: uid(), role: 'assistant', text: parsed.reply, meta: t('ai.noDraftChangesMeta') },
           ])
           break
         }
@@ -191,19 +196,19 @@ export function Ai() {
         setChangedKeys(outcome.changedKeys)
 
         const parts: string[] = []
-        if (outcome.added > 0) parts.push(`新增 ${outcome.added}`)
-        if (outcome.updated > 0) parts.push(`修改 ${outcome.updated}`)
-        if (outcome.removed > 0) parts.push(`移入回收站 ${outcome.removed}`)
-        if (parts.length === 0) parts.push('没有改动')
-        else if (outcome.unchanged > 0) parts.push(`其余 ${outcome.unchanged} 条未动`)
-        if (outcome.unknownIds > 0) parts.push(`忽略 ${outcome.unknownIds} 个不存在的 id`)
+        if (outcome.added > 0) parts.push(t('ai.metaAdded', { count: outcome.added }))
+        if (outcome.updated > 0) parts.push(t('ai.metaUpdated', { count: outcome.updated }))
+        if (outcome.removed > 0) parts.push(t('ai.metaDiscarded', { count: outcome.removed }))
+        if (parts.length === 0) parts.push(t('ai.metaNoChanges'))
+        else if (outcome.unchanged > 0) parts.push(t('ai.metaUnchanged', { count: outcome.unchanged }))
+        if (outcome.unknownIds > 0) parts.push(t('ai.metaUnknownIds', { count: outcome.unknownIds }))
 
         setBubbles((prev) => [
           ...prev,
           {
             id: uid(),
             role: 'assistant',
-            text: parsed.reply || '（这一轮没有说明）',
+            text: parsed.reply || t('ai.noReplyNote'),
             meta: parts.join(' · '),
           },
         ])
@@ -232,20 +237,27 @@ export function Ai() {
 
   const apply = () => {
     if (applyPlan.plan.length === 0 && applyPlan.discardIds.length === 0) {
-      notify('没有需要写入的改动', 'error')
+      notify(t('ai.nothingToApply'), 'error')
       return
     }
 
     const result = applyDraftItems({ items: applyPlan.plan, discardIds: applyPlan.discardIds })
 
     const parts: string[] = []
-    if (result.updated > 0) parts.push(`更新 ${result.updated} 条`)
-    if (result.added > 0) parts.push(`新增 ${result.added} 条`)
-    if (result.discarded > 0) parts.push(`移入回收站 ${result.discarded} 条`)
-    if (result.createdCategories > 0) parts.push(`新建 ${result.createdCategories} 个分类`)
-    if (result.createdLocations > 0) parts.push(`新建 ${result.createdLocations} 个位置`)
+    if (result.updated > 0) parts.push(t('ai.resultUpdated', { count: result.updated }))
+    if (result.added > 0) parts.push(t('ai.resultAdded', { count: result.added }))
+    if (result.discarded > 0) parts.push(t('ai.resultDiscarded', { count: result.discarded }))
+    if (result.createdCategories > 0)
+      parts.push(t('ai.resultNewCategories', { count: result.createdCategories }))
+    if (result.createdLocations > 0)
+      parts.push(t('ai.resultNewLocations', { count: result.createdLocations }))
 
-    notify(parts.length > 0 ? `已${parts.join('、')}` : '没有变化', 'success')
+    notify(
+      parts.length > 0
+        ? t('ai.appliedPrefix') + parts.join(t('ai.listSeparator'))
+        : t('ai.noChangesToast'),
+      'success',
+    )
     reset()
     if (result.added > 0 && result.updated === 0) navigate('/items')
   }
@@ -256,10 +268,8 @@ export function Ai() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-header__title">AI 助手</div>
-          <div className="page-header__sub">
-            写要录的东西，或者说要改什么 —— 它会自己去找相关的物品，改完给你过目
-          </div>
+          <div className="page-header__title">{t('nav.titleAi')}</div>
+          <div className="page-header__sub">{t('ai.subtitle')}</div>
         </div>
       </div>
 
@@ -281,18 +291,19 @@ export function Ai() {
         <div className="chat-layout__draft">
           {drafts.length === 0 ? (
             <EmptyState
-              title="这里会显示要改的东西"
+              title={t('ai.draftEmptyTitle')}
               hint={
                 <>
-                  在左边告诉 AI 你想做什么。两种都行：
+                  {t('ai.draftEmptyLead')}
                   <br />
-                  · <strong>录新的</strong>：把一段文字写在聊天框里，它拆成一条条物品
+                  · <strong>{t('ai.draftEmptyNewBold')}</strong>
+                  {t('ai.draftEmptyNewTail')}
                   <br />
-                  · <strong>改现有的</strong>：直接说「把药品改成 药品/补剂」，
-                  它会自己把你现有的物品找出来、拉到这里
+                  · <strong>{t('ai.draftEmptyEditBold')}</strong>
+                  {t('ai.draftEmptyEditTail')}
                   <br />
                   <br />
-                  不管哪种，都要你点「采纳」才会写进数据库。
+                  {t('ai.draftEmptyFoot')}
                 </>
               }
             />
@@ -300,27 +311,33 @@ export function Ai() {
             <div className="stack">
               <div className="row-between wrap">
                 <div className="small muted">
-                  草稿共 <strong className="numeric">{drafts.length}</strong> 条
+                  {t('ai.summaryLead')}
+                  <strong className="numeric">{drafts.length}</strong>
+                  {t('ai.summaryMid')}
                   {existingCount > 0 ? (
                     <>
-                      （其中 <strong className="numeric">{existingCount}</strong> 条是已有物品，
-                      采纳时<strong>更新</strong>而不是新建）
+                      {t('ai.summaryExistingLead')}
+                      <strong className="numeric">{existingCount}</strong>
+                      {t('ai.summaryExistingMid')}
+                      <strong>{t('ai.summaryExistingBold')}</strong>
+                      {t('ai.summaryExistingTail')}
                     </>
                   ) : null}
                   {newCount > 0 ? (
                     <>
-                      {existingCount > 0 ? '，' : '（'}
-                      <strong className="numeric">{newCount}</strong> 条是新录入的，采纳时创建
-                      {existingCount > 0 ? '' : '）'}
+                      {existingCount > 0 ? t('ai.summaryJoinExisting') : t('ai.summaryJoinFresh')}
+                      <strong className="numeric">{newCount}</strong>
+                      {t('ai.summaryNewTail')}
+                      {existingCount > 0 ? '' : t('ai.summaryCloseParen')}
                     </>
                   ) : null}
                   {changedKeys.length > 0 ? (
-                    <span className="dim">· 加粗的是这一轮改过的</span>
+                    <span className="dim">{t('ai.summaryChangedHint')}</span>
                   ) : null}
                 </div>
                 {changedKeys.length > 0 ? (
                   <Button size="sm" variant="ghost" onClick={() => setChangedKeys([])}>
-                    取消高亮
+                    {t('ai.clearHighlight')}
                   </Button>
                 ) : null}
               </div>
@@ -333,31 +350,37 @@ export function Ai() {
 
               <div className="row wrap" style={{ paddingTop: 'var(--gap-3)' }}>
                 <Button variant="primary" size="lg" onClick={apply} disabled={running}>
-                  采纳
-                  {applyPlan.updating > 0 ? ` · 更新 ${applyPlan.updating}` : ''}
-                  {applyPlan.creating > 0 ? ` · 新建 ${applyPlan.creating}` : ''}
-                  {applyPlan.discarding > 0 ? ` · 删除 ${applyPlan.discarding}` : ''}
+                  {t('ai.accept')}
+                  {applyPlan.updating > 0 ? t('ai.acceptUpdating', { count: applyPlan.updating }) : ''}
+                  {applyPlan.creating > 0 ? t('ai.acceptCreating', { count: applyPlan.creating }) : ''}
+                  {applyPlan.discarding > 0
+                    ? t('ai.acceptDiscarding', { count: applyPlan.discarding })
+                    : ''}
                   {applyPlan.plan.length === 0 && applyPlan.discardIds.length === 0
-                    ? '（没有改动）'
+                    ? t('ai.acceptNothing')
                     : ''}
                 </Button>
                 <Button size="lg" onClick={reset} disabled={running}>
-                  全部放弃
+                  {t('ai.discardAll')}
                 </Button>
               </div>
 
               <div className="dim small">
-                已勾选 <strong className="numeric">{selectedCount}</strong> 条。
+                {t('ai.footerSelectedLead')}
+                <strong className="numeric">{selectedCount}</strong>
+                {t('ai.footerSelectedTail')}
                 {applyPlan.untouched > 0 ? (
                   <>
                     {' '}
-                    另有 <span className="numeric">{applyPlan.untouched}</span> 条没被你改动过，
-                    采纳时会跳过 —— 不会白刷它们的修改时间。
+                    {t('ai.footerUntouchedLead')}
+                    <span className="numeric">{applyPlan.untouched}</span>
+                    {t('ai.footerUntouchedTail')}
                   </>
                 ) : null}
                 <br />
-                只有点了「采纳」才会写进数据库。删掉的已有物品是进<strong>回收站</strong>，
-                可以恢复。
+                {t('ai.footerSubmitLead')}
+                <strong>{t('ai.footerTrashBold')}</strong>
+                {t('ai.footerSubmitTail')}
               </div>
             </div>
           )}

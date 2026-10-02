@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AiUsage } from '../ai/deepseek'
 import { IconAlert, IconSparkle } from './ui/icons'
 import { Button, ConfirmDialog } from './ui/primitives'
+import { useT, type TFunction } from '../i18n'
 
 export interface ChatBubble {
   id: string
@@ -25,11 +26,19 @@ interface Props {
   onReset: () => void
 }
 
-const STARTERS = [
-  '先把这段录进去：\n\n衣柜里有一件灰色羊毛衫，两条牛仔裤，床头柜上有个旧手机。',
-  '把没分类的那些都归一下类，该新建分类就新建',
-  '把我所有的物品按分类和位置检查一遍，明显不合适的纠正过来',
-]
+/**
+ * 起步示例：点一下就把整段填进输入框。
+ *
+ * 这里**存的是 key、不是文字** —— 模块级的常量要是在模块加载时就把 t() 的结果
+ * 存下来，之后再切语言它不会变，按钮上会一直留着一开始那门语言。
+ * 所以写成函数，渲染时再求值。
+ *
+ * 英文那三条不是逐字翻译：要读起来像英语使用者真会打进去的话，
+ * 而且要对得上这个 App 的用法（一个输入框，既能录新的、也能改现有的）。
+ */
+function starters(t: TFunction): string[] {
+  return [t('ai.starter1'), t('ai.starter2'), t('ai.starter3')]
+}
 
 /**
  * 对话整理面板。
@@ -48,6 +57,8 @@ export function AiChatPanel({
   onCancel,
   onReset,
 }: Props) {
+  const { t } = useT()
+
   const [draft, setDraft] = useState('')
   const [confirmReset, setConfirmReset] = useState(false)
   const streamRef = useRef<HTMLDivElement>(null)
@@ -75,21 +86,19 @@ export function AiChatPanel({
       <div className="chat-panel__head">
         <span className="row" style={{ gap: 'var(--gap-2)' }}>
           <IconSparkle size={14} />
-          <span className="small">和 AI 商量</span>
+          <span className="small">{t('ai.panelTitle')}</span>
         </span>
         <span className="row" style={{ gap: 'var(--gap-3)' }}>
           {usage.totalTokens > 0 ? (
-            <span className="tiny numeric" title="上一轮消耗 / 本次对话累计">
-              上轮 {lastTurnUsage.totalTokens} · 共 {usage.totalTokens}
+            <span className="tiny numeric" title={t('ai.usageTitle')}>
+              {t('ai.usageLine', {
+                last: lastTurnUsage.totalTokens,
+                total: usage.totalTokens,
+              })}
             </span>
           ) : null}
-          <Button
-            size="sm"
-            onClick={askReset}
-            disabled={running}
-            title="清空对话和草稿，重新开始"
-          >
-            新对话
+          <Button size="sm" onClick={askReset} disabled={running} title={t('ai.newChatTitle')}>
+            {t('ai.newChat')}
           </Button>
         </span>
       </div>
@@ -98,13 +107,14 @@ export function AiChatPanel({
         {bubbles.length === 0 ? (
           <div className="chat-panel__empty">
             <div className="small" style={{ marginBottom: 'var(--gap-3)' }}>
-              <strong>要录新的</strong>：把东西写在这里，它拆成一条条物品。
+              <strong>{t('ai.emptyNewBold')}</strong>
+              {t('ai.emptyNewTail')}
               <br />
-              <strong>要改现有的</strong>：直接说 —— 比如「把药品改成 药品/补剂」，
-              它会自己把你现有的物品找出来放到右边。
+              <strong>{t('ai.emptyEditBold')}</strong>
+              {t('ai.emptyEditTail')}
             </div>
             <div className="stack-sm">
-              {STARTERS.map((starter) => (
+              {starters(t).map((starter) => (
                 <button
                   key={starter}
                   type="button"
@@ -128,7 +138,7 @@ export function AiChatPanel({
         {running ? (
           <div className="chat-bubble chat-bubble--assistant chat-bubble--pending">
             <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
-            <span className="small dim">正在想…</span>
+            <span className="small dim">{t('ai.thinking')}</span>
           </div>
         ) : null}
       </div>
@@ -149,8 +159,8 @@ export function AiChatPanel({
           disabled={running}
           placeholder={
             draftCount === 0
-              ? '写下要录的东西，或者说要改什么…'
-              : `继续说（右边草稿 ${draftCount} 条）。Enter 发送，Shift+Enter 换行`
+              ? t('ai.placeholderEmpty')
+              : t('ai.placeholderWithDraft', { count: draftCount })
           }
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -163,7 +173,7 @@ export function AiChatPanel({
         <div className="row">
           {running ? (
             <Button size="sm" onClick={onCancel} block>
-              取消
+              {t('common.cancel')}
             </Button>
           ) : (
             <Button
@@ -173,7 +183,7 @@ export function AiChatPanel({
               onClick={() => send(draft)}
               disabled={draft.trim() === ''}
             >
-              发送
+              {t('ai.send')}
             </Button>
           )}
         </div>
@@ -181,25 +191,26 @@ export function AiChatPanel({
 
       <ConfirmDialog
         open={confirmReset}
-        title="重新开一个对话？"
-        confirmLabel="开始新对话"
-        cancelLabel="继续当前对话"
+        title={t('ai.resetTitle')}
+        confirmLabel={t('ai.resetConfirm')}
+        cancelLabel={t('ai.resetCancel')}
         message={
           draftCount > 0 ? (
             <>
-              当前草稿里的 <strong>{draftCount}</strong> 条会全部丢掉 ——
-              它们<strong>还没有写进数据库</strong>，所以是真的没了。
+              {t('ai.resetHasDraftsLead')}
+              <strong>{draftCount}</strong>
+              {t('ai.resetHasDraftsMid')}
+              <strong>{t('ai.resetNotSavedBold')}</strong>
+              {t('ai.resetHasDraftsTail')}
               <br />
               <br />
-              想保留就先点「采纳选中的」，再开新对话。
+              {t('ai.resetKeepHint')}
               <br />
               <br />
-              <span className="dim">
-                重新开一轮的好处：历史清空，每轮要重发的内容更少，也更省 tokens。
-              </span>
+              <span className="dim">{t('ai.resetBenefit')}</span>
             </>
           ) : (
-            <>会清空当前的对话记录，重新开始。</>
+            <>{t('ai.resetEmptyBody')}</>
           )
         }
         onConfirm={() => {

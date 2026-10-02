@@ -740,10 +740,12 @@ await test('未知路由回落到默认色，而不是 undefined', () => {
 })
 
 await test('每个板块的三个色阶都齐全且合法', () => {
-  for (const theme of Object.values(SECTION_THEMES)) {
-    match(theme.accent, /^#[0-9a-f]{6}$/i, `${theme.label} 缺 accent`)
-    match(theme.accentText, /^#[0-9a-f]{6}$/i, `${theme.label} 缺 accentText`)
-    match(theme.accentSoft, /^#[0-9a-f]{6}$/i, `${theme.label} 缺 accentSoft`)
+  // 用 key 当标签，不用主题里那个已被删掉的 label 字段 ——
+  // 板块名现在只存在词典里，主题只管颜色。
+  for (const [key, theme] of Object.entries(SECTION_THEMES)) {
+    match(theme.accent, /^#[0-9a-f]{6}$/i, `${key} 缺 accent`)
+    match(theme.accentText, /^#[0-9a-f]{6}$/i, `${key} 缺 accentText`)
+    match(theme.accentSoft, /^#[0-9a-f]{6}$/i, `${key} 缺 accentSoft`)
   }
 })
 

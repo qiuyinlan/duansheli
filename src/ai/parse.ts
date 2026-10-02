@@ -7,6 +7,8 @@
  */
 
 import { AiError } from './deepseek'
+import { fill } from './promptText'
+import { t } from '../i18n'
 import { normalizeExpiryDate } from '../lib/expiry'
 
 /* ------------------------------------------------------------------ */
@@ -45,7 +47,7 @@ function tryParse(text: string): unknown {
 export function extractJson(raw: string): unknown {
   const text = raw.trim()
   if (text === '') {
-    throw new AiError('bad_response', 'DeepSeek 返回了空内容。')
+    throw new AiError('bad_response', t('data.ai.emptyResponse'))
   }
 
   const direct = tryParse(text)
@@ -71,7 +73,7 @@ export function extractJson(raw: string): unknown {
 
   throw new AiError(
     'bad_response',
-    `没能从 AI 的回复里找到 JSON。原始回复开头是：${raw.slice(0, 120)}`,
+    fill(t('data.ai.noJsonFound'), { snippet: raw.slice(0, 120) }),
   )
 }
 
@@ -242,7 +244,7 @@ export function parseExtraction(payload: unknown): ParsedExtraction {
   if (list === null) {
     throw new AiError(
       'bad_response',
-      'AI 的回复里没有找到物品列表。可能是这段文字里没有可识别的物品。',
+      t('data.ai.noItemList'),
     )
   }
 
@@ -357,7 +359,7 @@ function normalizeLoadScope(raw: unknown): LoadScopeRequest | null {
  */
 export function parseChatResponse(payload: unknown): ParsedChatResponse {
   if (!isRecord(payload)) {
-    throw new AiError('bad_response', 'AI 的回复不是预期的结构。')
+    throw new AiError('bad_response', t('data.ai.badShape'))
   }
 
   const reply = asString(payload.reply ?? payload.说明 ?? payload.message)
@@ -375,7 +377,7 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
     if (reply !== '') {
       return { reply, items: [], removedIds: [], loadScope: null, noChanges: true }
     }
-    throw new AiError('bad_response', 'AI 的回复里既没有说明也没有物品列表。')
+    throw new AiError('bad_response', t('data.ai.noReplyOrItems'))
   }
 
   const items: RawRevisedItem[] = []

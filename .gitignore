@@ -24,6 +24,7 @@ pnpm-debug.log*
 
 # 测试基础设施的临时产物
 .test-build
+.audit-build
 
 # 示例数据是生成出来的，不是手写的，改数据请改 scripts/sampleData.ts
 # （保留在仓库里也无害，所以不忽略）

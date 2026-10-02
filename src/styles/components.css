@@ -898,6 +898,22 @@
 /* 分段控件：分组维度切换 */
 .segmented {
   display: inline-flex;
+  /*
+   * 必须允许换行。
+   *
+   * 加上英文和「有效期」之后，这里已经有 6 个选项，中文约 333px、英文约 385px，
+   * 而且每项都是 nowrap、整条又不可压缩 —— 不换行就会在 375px 以下的手机上
+   * 硬生生溢出屏幕。宁可折成两行，也不能让它撑破布局。
+   */
+  flex-wrap: wrap;
+  max-width: 100%;
+  /*
+   * 分隔线用「1px 间隙 + 底色」画，而不是每条 item 一个 border-right：
+   * 后者一旦换行，每行最后一项会多出一条悬空的竖线，很显眼。
+   * 现在的写法无论折成几行，看起来都是一致的网格。
+   */
+  gap: 1px;
+  background: var(--line);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   overflow: hidden;
@@ -907,13 +923,9 @@
   padding: 6px var(--gap-3);
   font-size: var(--fs-sm);
   color: var(--text-2);
-  border-right: 1px solid var(--line);
-  transition: background 0.12s ease, color 0.12s ease;
+  background: var(--bg);
   white-space: nowrap;
-}
-
-.segmented__item:last-child {
-  border-right: none;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
 .segmented__item:hover {

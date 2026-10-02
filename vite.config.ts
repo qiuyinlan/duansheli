@@ -25,9 +25,11 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
+        // PWA 的名称是**安装时定下**的，装完就不跟着界面语言变了，
+        // 所以这里用不改的品牌名，说明用双语写。
         name: '断舍离 · 物品整理',
         short_name: '断舍离',
-        description: '整理你的物品，看清你的家当',
+        description: '整理你的物品，看清你的家当 / Declutter your things and see what you own',
         lang: 'zh-CN',
         theme_color: '#ffffff',
         background_color: '#ffffff',

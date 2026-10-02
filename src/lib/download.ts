@@ -1,3 +1,5 @@
+import { t } from '../i18n'
+
 /** 触发浏览器下载一个文本文件 */
 export function downloadText(filename: string, content: string, mime: string): void {
   const blob = new Blob([content], { type: `${mime};charset=utf-8` })
@@ -21,7 +23,7 @@ export function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result ?? ''))
-    reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'))
+    reader.onerror = () => reject(reader.error ?? new Error(t('data.storage.fileReadFailed')))
     reader.readAsText(file, 'utf-8')
   })
 }

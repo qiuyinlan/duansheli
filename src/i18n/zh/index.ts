@@ -17,6 +17,7 @@
 import { ai } from './ai'
 import { attributes } from './attributes'
 import { categories } from './categories'
+import { chart } from './chart'
 import { common } from './common'
 import { data } from './data'
 import { expiry } from './expiry'
@@ -32,6 +33,7 @@ import { seed } from './seed'
 import { settings } from './settings'
 import { status } from './status'
 import { tags } from './tags'
+import { tree } from './tree'
 
 export const zh = {
   common,
@@ -46,6 +48,8 @@ export const zh = {
   categories,
   attributes,
   tags,
+  tree,
+  chart,
   idle,
   expiry,
   settings,

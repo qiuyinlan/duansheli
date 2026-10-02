@@ -1,6 +1,8 @@
 import type { AppData, Category, ImportReport, Item, Location, TreeItem } from '../types'
 import { SCHEMA_VERSION } from '../types'
 import { uid } from '../lib/id'
+// 合并报告里的每条提示都会显示给用户，取词写在 push 的那一刻
+import { t, tc } from '../i18n'
 
 function uniq(values: string[]): string[] {
   return [...new Set(values)]
@@ -73,6 +75,7 @@ function mergeTree<T extends TreeItem>(
   current: T[],
   incomingRaw: T[],
   make: (source: T, id: string, parentId: string | null) => T,
+  /** 节点种类的说法（「位置」/「分类」），由调用方按当前语言取好传进来 */
   label: string,
   warnings: string[],
 ): { merged: T[]; idMap: Map<string, string>; added: number; matched: number; created: number } {
@@ -114,7 +117,7 @@ function mergeTree<T extends TreeItem>(
     idMap.set(node.id, built.id)
     added++
     created++
-    warnings.push(`自动补建${label}：${key.split('/').join(' / ')}`)
+    warnings.push(t('data.importReport.autoCreated', { kind: label, path: key.split('/').join(' / ') }))
   }
 
   return { merged, idMap, added, matched, created }
@@ -156,7 +159,7 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
       order: source.order,
       createdAt: source.createdAt,
     }),
-    '位置',
+    t('data.kind.location'),
     warnings,
   )
 
@@ -171,7 +174,7 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
       order: source.order,
       createdAt: source.createdAt,
     }),
-    '分类',
+    t('data.kind.category'),
     warnings,
   )
 
@@ -207,7 +210,9 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
     attrIdByName.set(created.name, created.id)
     attrIdMap.set(def.id, created.id)
     attrAdded++
-    warnings.push(`自动补建属性：${def.name}`)
+    warnings.push(
+      t('data.importReport.autoCreated', { kind: t('data.kind.attribute'), path: def.name }),
+    )
   }
 
   /* ---------------- 物品 ---------------- */
@@ -264,12 +269,13 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
   }
 
   if (lostLocations > 0) {
-    warnings.push(`${lostLocations} 件物品的位置引用无法解析，已改为「未归位」`)
+    warnings.push(tc(lostLocations, 'data.importReport.lostLocation'))
   }
 
   /* ---------------- 标签 ---------------- */
-  const tags = current.tags.map((t) => ({ ...t }))
-  const tagNames = new Set(tags.map((t) => t.name))
+  // 这里的形参别叫 t —— 上面刚用过 i18n 的 t()，同名会让人看糊涂
+  const tags = current.tags.map((tag) => ({ ...tag }))
+  const tagNames = new Set(tags.map((tag) => tag.name))
   let tagAdded = 0
 
   const addTag = (name: string) => {

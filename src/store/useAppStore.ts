@@ -19,6 +19,8 @@ import { uid } from '../lib/id'
 import { canReparent, type TreeItem } from '../lib/tree'
 import { getRepository } from '../storage/repository'
 import { createEmptyData, createSeedData } from '../storage/seed'
+import { t } from '../i18n'
+import type { ReparentBlock } from '../lib/tree'
 import { createSnapshot, getSnapshot } from '../storage/snapshots'
 import type { DerivedContext } from './selectors'
 import { createDerived } from './selectors'
@@ -154,6 +156,34 @@ function orderAmongSiblings(
     if ((node.parentId ?? null) === parentId) max = Math.max(max, node.order)
   }
   return max + 1
+}
+
+/* ------------------------------------------------------------------ */
+/* 位置 / 分类的移动与删除：把代号翻成人话                              */
+/* ------------------------------------------------------------------ */
+
+type NodeKind = 'location' | 'category'
+
+/**
+ * 「位置」还是「分类」。
+ *
+ * lib/tree.ts 的那段判断两个维度共用，所以它只返回代号；
+ * 到了这一层才知道该说哪个词 —— 句子必须在这里拼，不然就会出现
+ * 「不能移动分类」的提示里写着「位置」这种明显不对的话。
+ */
+function kindWord(kind: NodeKind): string {
+  return t(kind === 'category' ? 'data.kind.category' : 'data.kind.location')
+}
+
+function reparentReason(blocked: ReparentBlock, kind: NodeKind): string {
+  switch (blocked) {
+    case 'self':
+      return t('data.tree.moveBlockedSelf')
+    case 'missing':
+      return t('data.tree.moveBlockedMissing', { kind: kindWord(kind) })
+    case 'descendant':
+      return t('data.tree.moveBlockedDescendant')
+  }
 }
 
 /**
@@ -477,7 +507,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         set({ error: message })
-        get().notify(`保存到本地失败：${message}`, 'error')
+        get().notify(t('data.storage.saveFailed', { message }), 'error')
       }
     })
   }
@@ -889,7 +919,9 @@ export const useAppStore = create<AppState>()((set, get) => {
     moveLocation: (id, newParentId) => {
       const ctx = get().derived
       const check = canReparent(ctx.index, id, newParentId)
-      if (!check.ok) return check
+      // lib/tree.ts 只返回机器可读的代号（它不该知道界面语言），
+      // 该说「位置」还是「分类」只有这里知道，所以句子在这一层拼。
+      if (!check.ok) return { ok: false, reason: reparentReason(check.blocked, 'location') }
 
       const data = get().data
       const locations = data.locations.map((l) =>
@@ -906,7 +938,14 @@ export const useAppStore = create<AppState>()((set, get) => {
       const ctx = get().derived
 
       const node = ctx.index.byId.get(id)
-      if (!node) return { ok: false, reason: '位置不存在', childCount: 0, itemCount: 0 }
+      if (!node) {
+        return {
+          ok: false,
+          reason: t('data.tree.deleteMissing', { kind: kindWord('location') }),
+          childCount: 0,
+          itemCount: 0,
+        }
+      }
 
       const childCount = data.locations.filter((l) => l.parentId === id).length
       // 只统计**直接放在这个位置上**的物品。
@@ -915,14 +954,19 @@ export const useAppStore = create<AppState>()((set, get) => {
 
       // 有内容又没指定去处 → 拒绝删除，把情况报给界面去提示
       if ((childCount > 0 || directItems.length > 0) && reassignTo === undefined) {
+        const kind = kindWord('location')
         return {
           ok: false,
           reason:
             childCount > 0 && directItems.length > 0
-              ? `该位置下有 ${childCount} 个子位置和 ${directItems.length} 件物品`
+              ? t('data.tree.deleteHasChildrenAndItems', {
+                  kind,
+                  children: childCount,
+                  items: directItems.length,
+                })
               : childCount > 0
-                ? `该位置下有 ${childCount} 个子位置`
-                : `该位置下有 ${directItems.length} 件物品`,
+                ? t('data.tree.deleteHasChildren', { kind, children: childCount })
+                : t('data.tree.deleteHasItems', { kind, items: directItems.length }),
           childCount,
           itemCount: directItems.length,
         }
@@ -931,7 +975,12 @@ export const useAppStore = create<AppState>()((set, get) => {
       // 指定了去处 → 把直接物品和直接子节点都挪过去，再删除
       if (reassignTo !== undefined) {
         if (reassignTo !== null && !ctx.index.has(reassignTo)) {
-          return { ok: false, reason: '目标位置不存在', childCount, itemCount: directItems.length }
+          return {
+            ok: false,
+            reason: t('data.tree.moveBlockedMissing', { kind: kindWord('location') }),
+            childCount,
+            itemCount: directItems.length,
+          }
         }
         if (
           reassignTo !== null &&
@@ -939,7 +988,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         ) {
           return {
             ok: false,
-            reason: '不能把内容移动到正在删除的这个位置下面',
+            reason: t('data.tree.deleteBlockedDescendant', { kind: kindWord('location') }),
             childCount,
             itemCount: directItems.length,
           }
@@ -1023,7 +1072,7 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     moveCategory: (id, newParentId) => {
       const check = canReparent(get().derived.categoryIndex, id, newParentId)
-      if (!check.ok) return check
+      if (!check.ok) return { ok: false, reason: reparentReason(check.blocked, 'category') }
 
       const data = get().data
       const categories = data.categories.map((c) =>
@@ -1044,7 +1093,14 @@ export const useAppStore = create<AppState>()((set, get) => {
       const ctx = get().derived
 
       const node = ctx.categoryById.get(id)
-      if (!node) return { ok: false, reason: '分类不存在', childCount: 0, itemCount: 0 }
+      if (!node) {
+        return {
+          ok: false,
+          reason: t('data.tree.deleteMissing', { kind: kindWord('category') }),
+          childCount: 0,
+          itemCount: 0,
+        }
+      }
 
       const childCount = data.categories.filter((c) => c.parentId === id).length
       // 只统计**直接挂在这个分类上**的物品。
@@ -1052,14 +1108,19 @@ export const useAppStore = create<AppState>()((set, get) => {
       const directItems = data.items.filter((item) => item.categoryIds.includes(id))
 
       if ((childCount > 0 || directItems.length > 0) && reassignTo === undefined) {
+        const kind = kindWord('category')
         return {
           ok: false,
           reason:
             childCount > 0 && directItems.length > 0
-              ? `该分类下有 ${childCount} 个子分类和 ${directItems.length} 件物品`
+              ? t('data.tree.deleteHasChildrenAndItems', {
+                  kind,
+                  children: childCount,
+                  items: directItems.length,
+                })
               : childCount > 0
-                ? `该分类下有 ${childCount} 个子分类`
-                : `该分类下有 ${directItems.length} 件物品`,
+                ? t('data.tree.deleteHasChildren', { kind, children: childCount })
+                : t('data.tree.deleteHasItems', { kind, items: directItems.length }),
           childCount,
           itemCount: directItems.length,
         }
@@ -1067,12 +1128,17 @@ export const useAppStore = create<AppState>()((set, get) => {
 
       if (reassignTo !== undefined && reassignTo !== null) {
         if (!ctx.categoryById.has(reassignTo)) {
-          return { ok: false, reason: '目标分类不存在', childCount, itemCount: directItems.length }
+          return {
+            ok: false,
+            reason: t('data.tree.moveBlockedMissing', { kind: kindWord('category') }),
+            childCount,
+            itemCount: directItems.length,
+          }
         }
         if (reassignTo === id || ctx.categoryIndex.descendantIds(id).has(reassignTo)) {
           return {
             ok: false,
-            reason: '不能把内容移动到正在删除的这个分类下面',
+            reason: t('data.tree.deleteBlockedDescendant', { kind: kindWord('category') }),
             childCount,
             itemCount: directItems.length,
           }
@@ -1243,7 +1309,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     resetToSeed: async () => {
       commit(createSeedData(), 'destructive')
       await writeChain
-      get().notify('已恢复为初始的分类、位置与属性库（物品已清空）', 'success')
+      get().notify(t('data.store.scaffoldRestored'), 'success')
     },
 
     clearEverything: async () => {
@@ -1262,18 +1328,18 @@ export const useAppStore = create<AppState>()((set, get) => {
       const empty = createEmptyData()
       set({ data: empty, derived: createDerived(empty) })
       await enqueueWrite(() => getRepository().save(empty))
-      get().notify('所有数据已清空（可在快照中回退）', 'success')
+      get().notify(t('data.store.allCleared'), 'success')
     },
 
     backupNow: async () => {
       await createSnapshot(get().data, 'manual')
-      get().notify('已生成一份手动备份快照', 'success')
+      get().notify(t('data.store.manualSnapshotCreated'), 'success')
     },
 
     restoreFromSnapshot: async (snapshotId) => {
       const snapshot = await getSnapshot(snapshotId)
       if (!snapshot) {
-        get().notify('找不到这份快照', 'error')
+        get().notify(t('data.store.snapshotNotFound'), 'error')
         return false
       }
       // 回退之前再存一份当前状态 —— 所以「回退」这个动作本身也可以回退
@@ -1281,7 +1347,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const restored = normalizeShape(snapshot.data)
       set({ data: restored, derived: createDerived(restored) })
       await enqueueWrite(() => getRepository().save(restored))
-      get().notify('已回退到所选快照', 'success')
+      get().notify(t('data.store.snapshotRestored'), 'success')
       return true
     },
   }

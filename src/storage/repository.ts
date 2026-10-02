@@ -1,4 +1,5 @@
 import type { AppData } from '../types'
+import { t } from '../i18n'
 import { LocalRepository } from './localRepository'
 
 /**
@@ -23,7 +24,7 @@ let instance: Repository | null = null
 
 export function createRepository(kind: RepositoryKind = 'local'): Repository {
   if (kind === 'supabase') {
-    throw new Error('云端存储将在后续版本提供，当前版本请使用本地存储。')
+    throw new Error(t('data.storage.cloudNotReady'))
   }
   return new LocalRepository()
 }

@@ -16,8 +16,9 @@ import { App, AppRoutes } from '../src/App'
 import { createEmptyData } from '../src/storage/seed'
 import { createDerived } from '../src/store/selectors'
 import { useAppStore } from '../src/store/useAppStore'
+import { setLang } from '../src/i18n'
 import type { AppData, Item } from '../src/types'
-import { contains, eq, fixture, must, ok, suite, test } from './harness'
+import { contains, eq, fail, fixture, must, ok, suite, test } from './harness'
 
 /** React 18.3 起 act 也挂在 React 上；两个入口都兼容一下 */
 const act: typeof import('react-dom/test-utils').act =
@@ -337,6 +338,181 @@ await test('打不开本地存储时显示可读的说明与重试按钮', () =>
     })
   } finally {
     useAppStore.setState({ init: originalInit })
+  }
+})
+
+/* ------------------------------------------------------------------ */
+/* 双语：在真实 DOM 上切一次语言                                        */
+/* ------------------------------------------------------------------ */
+
+suite('渲染冒烟：切换语言真的会换掉界面文字')
+
+/**
+ * 挂一页、点右上角的语言开关、再看文字变了没有。
+ *
+ * 为什么非要在真实 DOM 上测：语言是模块级状态 + useSyncExternalStore 订阅，
+ * 「t() 能返回英文」这件事在纯函数层面早就测过了；
+ * 真正容易坏的是**组件有没有订阅**——漏了 useT() 的组件切了语言不会重渲染，
+ * 界面上就会留下半截中文。这个只能挂载才看得出来。
+ */
+function mountForSwitch(
+  path: string,
+  data: AppData,
+): { container: HTMLElement; html: () => string; unmount: () => void } {
+  useAppStore.setState({
+    status: 'ready',
+    error: null,
+    data,
+    derived: createDerived(data),
+    aiApiKey: '',
+  })
+
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+
+  act(() => {
+    root.render(
+      <MemoryRouter
+        initialEntries={[path]}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <AppRoutes />
+      </MemoryRouter>,
+    )
+  })
+
+  return {
+    container,
+    html: () => container.innerHTML.replace(/<!--.*?-->/g, ''),
+    unmount: () => {
+      act(() => {
+        root.unmount()
+      })
+      container.remove()
+    },
+  }
+}
+
+/** 找到语言开关里那个按钮并点它 */
+function clickLangButton(container: HTMLElement, label: string): void {
+  const buttons = [...container.querySelectorAll('.lang-switch__btn')]
+  const target = buttons.find((b) => b.textContent?.trim() === label)
+  ok(target !== undefined, `右上角应该有「${label}」这个按钮（实际有：${buttons.map((b) => b.textContent).join('/')}）`)
+  act(() => {
+    ;(target as HTMLButtonElement).click()
+  })
+}
+
+await test('右上角有语言开关，点了之后整页文字从中文变英文', () => {
+  const data = fixture()
+  // 用物品列表页：这一页既有界面文案（工具条、筛选），又会显示用户自己录的物品名，
+  // 正好一次把「界面要翻」和「用户数据不能翻」两件事都验了。
+  const page = mountForSwitch('/items', data)
+  try {
+    ok(page.html().includes('概览'), '一开始侧栏是中文')
+    ok(page.html().includes('物品'), '一开始侧栏是中文')
+
+    clickLangButton(page.container, 'English')
+
+    const html = page.html()
+    ok(html.includes('Overview'), '切到英文后侧栏应该是 Overview')
+    ok(html.includes('Items'), '切到英文后侧栏应该是 Items')
+    ok(!html.includes('概览'), '不该还剩中文的「概览」—— 剩了就说明那个组件没订阅语言')
+    // 用户自己的数据绝不能被翻译：这是整个双语功能最关键的一条边界
+    ok(html.includes('灰色羊毛衫'), '用户录入的物品名必须原样保留')
+    ok(html.includes('牛仔裤'), '用户录入的物品名必须原样保留')
+  } finally {
+    page.unmount()
+    setLang('zh')
+  }
+})
+
+await test('切回中文也正常，来回切不出问题', () => {
+  const data = fixture()
+  const page = mountForSwitch('/items', data)
+  try {
+    clickLangButton(page.container, 'English')
+    ok(page.html().includes('Items'), '先切到英文')
+
+    clickLangButton(page.container, '中文')
+    ok(page.html().includes('物品'), '再切回中文')
+    ok(!page.html().includes('Overview'), '中文下不该残留英文标题')
+  } finally {
+    page.unmount()
+    setLang('zh')
+  }
+})
+
+await test('语言开关在顶栏右侧，手机上也能看到', () => {
+  const data = fixture()
+  const page = mountForSwitch('/', data)
+  try {
+    const topbar = page.container.querySelector('.topbar')
+    ok(topbar !== null, '应该有顶栏')
+    const sw = must(topbar, '顶栏').querySelector('.lang-switch')
+    ok(sw !== null, '语言开关应该在顶栏里')
+    eq(sw?.querySelectorAll('.lang-switch__btn').length, 2, '两个语言各一个按钮')
+  } finally {
+    page.unmount()
+  }
+})
+
+await test('有效期页在两种语言下都能渲染出来', () => {
+  const data = fixture()
+  data.items = [
+    makeItem({ id: 'e1', name: '过期的药', expiresAt: '2020-01-01' }),
+    makeItem({ id: 'e2', name: '快过期的面霜' }),
+    makeItem({ id: 'e3', name: '没日期的锅' }),
+  ]
+
+  const page = mountForSwitch('/expiry', data)
+  try {
+    ok(page.html().includes('有效期'), '中文标题')
+    clickLangButton(page.container, 'English')
+    ok(page.html().includes('Expiry'), '英文标题')
+  } finally {
+    page.unmount()
+    setLang('zh')
+  }
+})
+
+await test('每个页面在英文下都挂得住（漏订阅语言的组件会在这里露出来）', () => {
+  const data = fixture()
+  setLang('en')
+  const paths = [
+    '/',
+    '/items',
+    '/items/new',
+    '/locations',
+    '/idle',
+    '/expiry',
+    '/ai',
+    '/more',
+    '/categories',
+    '/attributes',
+    '/tags',
+    '/settings',
+  ]
+  try {
+    for (const path of paths) {
+      const page = mountForSwitch(path, data)
+      try {
+        const html = page.html()
+        eq(html.length > 0, true, `${path} 英文下渲染成了空页面`)
+        // 页面级文案不该还留着中文。用户数据（夹具里的分类/位置名）允许是中文，
+        // 所以这里只挑几个一定来自词典的界面词。
+        for (const word of ['概览', '设置', '保存', '取消']) {
+          if (html.includes(word)) {
+            fail(`${path} 在英文下还残留中文界面词「${word}」`)
+          }
+        }
+      } finally {
+        page.unmount()
+      }
+    }
+  } finally {
+    setLang('zh')
   }
 })
 

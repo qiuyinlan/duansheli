@@ -63,4 +63,23 @@ export const common = {
   language: 'Language',
   languageSwitchTo: 'Switch to {lang}',
   languageHint: 'Only the interface changes — your own entries are never translated.',
+
+  /* Accessible labels (invisible on screen, read out by screen readers) */
+  clearSearchAria: 'Clear search',
+  closeAria: 'Close',
+  closeAlertAria: 'Dismiss message',
+
+  /* Startup: the full-screen notice shown when local data will not open */
+  openingData: 'Opening your local data…',
+  openDataFailed: 'Could not open your local data',
+  openDataReason1:
+    'Common causes: the browser is in private or incognito mode, or site data storage is turned off. Try a normal window;',
+  openDataReason2:
+    'On iPhone, check Settings → Safari → Advanced → Website Data to make sure it is not disabled.',
+
+  /* Small marker after a name, e.g. "Garage / Shelf (new)" */
+  newSuffix: ' (new)',
+
+  /* Fatal errors that should only be reachable during development */
+  mountPointMissing: 'Mount point #root not found',
 }

@@ -2,20 +2,34 @@ import { useEffect, useMemo, useState } from 'react'
 import type { AttrType, ItemStatus } from '../types'
 import { UNASSIGNED_ID, UNCATEGORIZED_ID, UNTAGGED_ID } from '../types'
 import type { AttrFilter, AttrOp, DerivedContext, ItemFilter } from '../store/selectors'
-import { EMPTY_FILTER, STATUS_ORDER, statusLabel } from '../store/selectors'
+import {
+  EMPTY_FILTER,
+  EXPIRY_STATE_ORDER,
+  STATUS_ORDER,
+  labelForExpiryState,
+  statusLabel,
+} from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
 import { TreeView } from './TreeView'
 import { Button, Modal, Switch } from './ui/primitives'
+import type { DictKey } from '../i18n'
+import { useT } from '../i18n'
 
-const OP_LABELS: Record<AttrOp, string> = {
-  contains: '包含',
-  eq: '等于',
-  gt: '大于',
-  lt: '小于',
-  isTrue: '是',
-  isFalse: '否',
-  hasValue: '已填写',
-  noValue: '未填写',
+/**
+ * 运算符的显示名存的是**词典 key**，不是文字。
+ *
+ * 这是个模块级常量：在模块加载时调用 t() 会把当时的语言冻进去，之后切语言
+ * 它不会变（docs/i18n-约定.md 第 3 条）。所以在渲染时再查表。
+ */
+const OP_KEYS: Record<AttrOp, DictKey> = {
+  contains: 'items.opContains',
+  eq: 'items.opEquals',
+  gt: 'items.opGreater',
+  lt: 'items.opLess',
+  isTrue: 'items.opIsTrue',
+  isFalse: 'items.opIsFalse',
+  hasValue: 'items.opHasValue',
+  noValue: 'items.opNoValue',
 }
 
 function opsForType(type: AttrType): AttrOp[] {
@@ -50,6 +64,11 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
   const categories = useAppStoreCategories()
   const attributeDefs = useAppStoreAttributeDefs()
   const tags = useAppStoreTags()
+  // 「即将过期」算多少天以内 —— 有效期状态的显示名要用它
+  const soonDays = useAppStore((s) => s.ui.expirySoonDays)
+
+  // useT() 既给 t/tc，也**订阅语言**：语言一换这个面板就重渲染
+  const { t, tc } = useT()
 
   const [draft, setDraft] = useState<ItemFilter>(filter)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -63,7 +82,10 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
     setExpanded(set)
   }, [open, filter, ctx.tree])
 
-  const toggleIn = (key: 'categoryIds' | 'tags' | 'statuses' | 'locationIds', value: string) => {
+  const toggleIn = (
+    key: 'categoryIds' | 'tags' | 'statuses' | 'locationIds' | 'expiryStates',
+    value: string,
+  ) => {
     setDraft((prev) => {
       const list = prev[key] as string[]
       const next = list.includes(value)
@@ -94,6 +116,7 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
       draft.categoryIds.length +
       draft.locationIds.length +
       draft.statuses.length +
+      draft.expiryStates.length +
       draft.tags.length +
       draft.attrFilters.length
     )
@@ -102,7 +125,7 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
   return (
     <Modal
       open={open}
-      title="筛选"
+      title={t('items.filter')}
       onClose={onClose}
       maxWidth={560}
       footer={
@@ -111,7 +134,7 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
             onClick={() => setDraft({ ...EMPTY_FILTER, search: draft.search })}
             disabled={activeCount === 0}
           >
-            全部重置
+            {t('items.resetAll')}
           </Button>
           <Button
             variant="primary"
@@ -120,7 +143,9 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
               onClose()
             }}
           >
-            应用{activeCount > 0 ? `（${activeCount} 项条件）` : ''}
+            {activeCount > 0
+              ? tc(activeCount, 'items.applyWithCount')
+              : t('items.apply')}
           </Button>
         </>
       }
@@ -128,7 +153,7 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
       <div className="stack" style={{ gap: 'var(--gap-5)' }}>
         {/* ---------------- 状态 ---------------- */}
         <div className="field">
-          <div className="field__label">状态</div>
+          <div className="field__label">{t('items.groupStatus')}</div>
           <div className="picker-grid">
             {STATUS_ORDER.map((status: ItemStatus) => {
               const active = draft.statuses.includes(status)
@@ -147,10 +172,33 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
           </div>
         </div>
 
+        {/* ---------------- 有效期 ---------------- */}
+        {/* 和状态一样是多选：「已过期 + 即将过期」一起看是最常见的用法。
+            `none`（没填有效期）也是可选项 —— 经常想反过来找「哪些还没填」。 */}
+        <div className="field">
+          <div className="field__label">{t('expiry.filterLabel')}</div>
+          <div className="picker-grid">
+            {EXPIRY_STATE_ORDER.map((state) => {
+              const active = draft.expiryStates.includes(state)
+              return (
+                <button
+                  key={state}
+                  type="button"
+                  className={`chip${active ? ' is-active' : ''}`}
+                  aria-pressed={active}
+                  onClick={() => toggleIn('expiryStates', state)}
+                >
+                  {labelForExpiryState(state, soonDays)}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
         {/* ---------------- 分类 ---------------- */}
         {categories.length > 0 ? (
           <div className="field">
-            <div className="field__label">分类</div>
+            <div className="field__label">{t('items.groupCategory')}</div>
             <div className="picker-grid">
               {categories.map((cat) => {
                 const active = draft.categoryIds.includes(cat.id)
@@ -172,7 +220,7 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
                 aria-pressed={draft.categoryIds.includes(UNCATEGORIZED_ID)}
                 onClick={() => toggleIn('categoryIds', UNCATEGORIZED_ID)}
               >
-                未分类
+                {t('status.uncategorized')}
               </button>
             </div>
           </div>
@@ -180,7 +228,7 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
 
         {/* ---------------- 位置 ---------------- */}
         <div className="field">
-          <div className="field__label">位置</div>
+          <div className="field__label">{t('items.groupLocation')}</div>
           <div
             style={{
               border: '1px solid var(--line)',
@@ -206,7 +254,7 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
               }
               virtualRoot={{
                 id: UNASSIGNED_ID,
-                label: '未归位',
+                label: t('status.unassigned'),
                 count: counts.get(UNASSIGNED_ID) ?? 0,
               }}
             />
@@ -215,7 +263,7 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
             <Switch
               checked={draft.includeDescendants}
               onChange={(v) => setDraft((prev) => ({ ...prev, includeDescendants: v }))}
-              label="选中位置时，连同子位置里的物品一起显示"
+              label={t('items.includeDescendants')}
             />
             {draft.locationIds.length > 0 ? (
               <button
@@ -223,7 +271,7 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
                 className="btn btn--sm btn--ghost"
                 onClick={() => setDraft((prev) => ({ ...prev, locationIds: [] }))}
               >
-                清除位置筛选（{draft.locationIds.length}）
+                {t('items.clearLocationFilter', { count: draft.locationIds.length })}
               </button>
             ) : null}
           </div>
@@ -232,7 +280,7 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
         {/* ---------------- 标签 ---------------- */}
         {tags.length > 0 ? (
           <div className="field">
-            <div className="field__label">标签</div>
+            <div className="field__label">{t('items.groupTag')}</div>
             <div className="picker-grid">
               {tags.map((tag) => {
                 const active = draft.tags.includes(tag)
@@ -254,7 +302,7 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
                 aria-pressed={draft.tags.includes(UNTAGGED_ID)}
                 onClick={() => toggleIn('tags', UNTAGGED_ID)}
               >
-                未加标签
+                {t('status.untagged')}
               </button>
             </div>
           </div>
@@ -262,9 +310,9 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
 
         {/* ---------------- 属性 ---------------- */}
         <div className="field">
-          <div className="field__label">属性</div>
+          <div className="field__label">{t('nav.titleAttributes')}</div>
           {attributeDefs.length === 0 ? (
-            <div className="dim small">还没有定义任何属性。</div>
+            <div className="dim small">{t('items.noAttributes')}</div>
           ) : (
             <div className="stack-sm">
               {attributeDefs.map((def) => {
@@ -298,11 +346,11 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
                           onChange={(e) =>
                             setAttrFilter(def.id, { op: e.target.value as AttrOp })
                           }
-                          aria-label={`${def.name} 的判断方式`}
+                          aria-label={t('items.attrOpAria', { name: def.name })}
                         >
                           {ops.map((op) => (
                             <option key={op} value={op}>
-                              {OP_LABELS[op]}
+                              {t(OP_KEYS[op])}
                             </option>
                           ))}
                         </select>
@@ -313,9 +361,9 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
                               className="select grow"
                               value={current.value}
                               onChange={(e) => setAttrFilter(def.id, { value: e.target.value })}
-                              aria-label={`${def.name} 的值`}
+                              aria-label={t('items.attrValueAria', { name: def.name })}
                             >
-                              <option value="">请选择…</option>
+                              <option value="">{t('items.selectPlaceholder')}</option>
                               {def.options.map((opt) => (
                                 <option key={opt} value={opt}>
                                   {opt}
@@ -336,15 +384,15 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
                               placeholder={def.type === 'number' && def.unit ? def.unit : ''}
                               value={current.value}
                               onChange={(e) => setAttrFilter(def.id, { value: e.target.value })}
-                              aria-label={`${def.name} 的值`}
+                              aria-label={t('items.attrValueAria', { name: def.name })}
                             />
                           )
                         ) : (
-                          <span className="grow dim small">无需填值</span>
+                          <span className="grow dim small">{t('items.opNoValueHint')}</span>
                         )}
                       </>
                     ) : (
-                      <span className="grow dim small">未筛选</span>
+                      <span className="grow dim small">{t('items.notFiltered')}</span>
                     )}
                   </div>
                 )

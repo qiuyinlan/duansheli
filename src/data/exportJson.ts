@@ -2,13 +2,14 @@ import type { AppData, ExportFile } from '../types'
 import { APP_ID, SCHEMA_VERSION } from '../types'
 import { downloadText } from '../lib/download'
 import { formatForFilename } from '../lib/format'
+import { t } from '../i18n'
 
 export function buildExportFile(data: AppData): ExportFile {
   return {
     format: APP_ID,
     schemaVersion: SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
-    generator: `断舍离 v${SCHEMA_VERSION}`,
+    generator: t('data.export.generator', { version: SCHEMA_VERSION }),
     summary: {
       items: data.items.length,
       categories: data.categories.length,
@@ -27,7 +28,7 @@ export function buildExportFile(data: AppData): ExportFile {
 }
 
 export function exportJsonFilename(date = new Date()): string {
-  return `断舍离-备份-${formatForFilename(date)}.json`
+  return t('data.export.jsonFilename', { stamp: formatForFilename(date) })
 }
 
 /** 导出完整备份并触发下载。带回退：极少数情况下 createObjectURL 被拦，改为提示用户。 */

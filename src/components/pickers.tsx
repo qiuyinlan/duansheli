@@ -4,6 +4,7 @@ import { UNASSIGNED_ID } from '../types'
 import type { DerivedContext } from '../store/selectors'
 import { countByCategoryIncludingDescendants, liveItems } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
+import { useT } from '../i18n'
 import { TreeView } from './TreeView'
 import { IconClose, IconPlus } from './ui/icons'
 import { Button, Modal } from './ui/primitives'
@@ -31,6 +32,8 @@ export function LocationPicker({
   counts,
   allowUnassigned = true,
 }: LocationPickerProps) {
+  const { t } = useT()
+
   // 打开时展开顶层 + 当前选中项的祖先路径，让人一眼看到自己在哪
   const initialExpanded = useMemo(() => {
     const set = new Set<string>()
@@ -54,17 +57,17 @@ export function LocationPicker({
     if (open) setExpanded(initialExpanded)
   }, [open, initialExpanded])
 
-  const currentPath = value ? ctx.index.pathString(value, ' / ') : '未归位'
+  const currentPath = value ? ctx.index.pathString(value, ' / ') : t('status.unassigned')
 
   return (
     <Modal
       open={open}
-      title="选择位置"
+      title={t('itemEdit.pickLocationTitle')}
       onClose={onClose}
-      footer={<Button onClick={onClose}>关闭</Button>}
+      footer={<Button onClick={onClose}>{t('common.close')}</Button>}
     >
       <div className="dim small" style={{ marginBottom: 'var(--gap-3)' }}>
-        当前：{currentPath}
+        {t('itemEdit.pickLocationCurrent', { path: currentPath })}
       </div>
 
       <TreeView
@@ -86,10 +89,14 @@ export function LocationPicker({
         }
         virtualRoot={
           allowUnassigned
-            ? { id: UNASSIGNED_ID, label: '未归位', count: counts.get(UNASSIGNED_ID) ?? 0 }
+            ? {
+                id: UNASSIGNED_ID,
+                label: t('status.unassigned'),
+                count: counts.get(UNASSIGNED_ID) ?? 0,
+              }
             : null
         }
-        emptyText="还没有位置，可以在「位置」页面里创建。"
+        emptyText={t('itemEdit.locationsEmpty')}
       />
     </Modal>
   )
@@ -111,6 +118,7 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
   const derived = useAppStore((s) => s.derived)
   const addCategory = useAppStore((s) => s.addCategory)
   const notify = useAppStore((s) => s.notify)
+  const { t } = useT()
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [newName, setNewName] = useState('')
@@ -137,7 +145,7 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
     if (name === '') return
     const created = addCategory(name, null)
     if (!created) {
-      notify(`顶层已经有一个叫「${name}」的分类了`, 'error')
+      notify(t('itemEdit.duplicateCategory', { name }), 'error')
       return
     }
     onChange([...selectedIds, created.id])
@@ -147,19 +155,19 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
   return (
     <Modal
       open={open}
-      title="选择分类"
+      title={t('itemEdit.pickCategoryTitle')}
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>关闭</Button>
+          <Button onClick={onClose}>{t('common.close')}</Button>
           <Button variant="primary" onClick={onClose}>
-            确定（已选 {selectedIds.length}）
+            {t('itemEdit.pickConfirm', { count: selectedIds.length })}
           </Button>
         </>
       }
     >
       <div className="dim small" style={{ marginBottom: 'var(--gap-3)' }}>
-        点分类名切换选中，可以选多个。分类是多级的，物品挂在哪一级都可以。
+        {t('itemEdit.pickCategoryHint')}
       </div>
 
       <div
@@ -187,19 +195,19 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
               return next
             })
           }
-          emptyText="还没有分类，在下面新建一个。"
+          emptyText={t('itemEdit.categoriesEmpty')}
         />
       </div>
 
       <div className="field" style={{ marginTop: 'var(--gap-4)' }}>
         <label className="field__label" htmlFor="new-category-name">
-          新建顶层分类
+          {t('itemEdit.newTopCategory')}
         </label>
         <div className="row">
           <input
             id="new-category-name"
             className="input grow"
-            placeholder="例如：化妆品"
+            placeholder={t('itemEdit.newCategoryPlaceholder')}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
@@ -211,12 +219,10 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
           />
           <Button onClick={createTopLevel} disabled={newName.trim() === ''}>
             <IconPlus size={13} />
-            新建
+            {t('common.create')}
           </Button>
         </div>
-        <div className="field__hint">
-          想建子分类（比如「化妆品 › 眼妆」）请到「分类」页面，那里可以建任意层级。
-        </div>
+        <div className="field__hint">{t('itemEdit.subCategoryHint')}</div>
       </div>
     </Modal>
   )
@@ -235,6 +241,7 @@ interface TagInputProps {
 
 export function TagInput({ value, onChange, suggestions }: TagInputProps) {
   const [draft, setDraft] = useState('')
+  const { t } = useT()
 
   const available = suggestions.filter((tag) => !value.includes(tag)).slice(0, 12)
 
@@ -248,7 +255,7 @@ export function TagInput({ value, onChange, suggestions }: TagInputProps) {
     setDraft('')
   }
 
-  const remove = (tag: string) => onChange(value.filter((t) => t !== tag))
+  const remove = (tag: string) => onChange(value.filter((v) => v !== tag))
 
   return (
     <div className="stack-sm">
@@ -260,7 +267,7 @@ export function TagInput({ value, onChange, suggestions }: TagInputProps) {
               <button
                 type="button"
                 className="chip__remove"
-                aria-label={`移除标签 ${tag}`}
+                aria-label={t('itemEdit.removeTagAria', { name: tag })}
                 onClick={() => remove(tag)}
               >
                 <IconClose size={11} />
@@ -272,7 +279,7 @@ export function TagInput({ value, onChange, suggestions }: TagInputProps) {
 
       <input
         className="input"
-        placeholder="输入标签后按回车，例如：想送人"
+        placeholder={t('itemEdit.tagPlaceholder')}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
@@ -319,6 +326,8 @@ export function AttributePicker({
   selectedIds,
   onChange,
 }: AttributePickerProps) {
+  const { t } = useT()
+
   const sorted = useMemo(
     () => [...defs].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'zh-CN')),
     [defs],
@@ -333,26 +342,23 @@ export function AttributePicker({
   return (
     <Modal
       open={open}
-      title="选择要填的属性"
+      title={t('itemEdit.pickAttrTitle')}
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>关闭</Button>
+          <Button onClick={onClose}>{t('common.close')}</Button>
           <Button variant="primary" onClick={onClose}>
-            确定（已选 {selectedIds.length}）
+            {t('itemEdit.pickConfirm', { count: selectedIds.length })}
           </Button>
         </>
       }
     >
       {sorted.length === 0 ? (
-        <div className="dim small">
-          属性库还是空的。去「属性」页面定义几个（比如品牌、购入日期、价格），
-          之后就能在录入时按需勾选。
-        </div>
+        <div className="dim small">{t('itemEdit.attrPickerEmpty')}</div>
       ) : (
         <>
           <div className="dim small" style={{ marginBottom: 'var(--gap-3)' }}>
-            只勾选这次真正需要的。不勾的属性不会出现在表单里，也不会占地方。
+            {t('itemEdit.attrPickerHint')}
           </div>
           <div className="attr-picker">
             {sorted.map((def) => {
@@ -363,14 +369,16 @@ export function AttributePicker({
                   <span className="attr-picker__name">{def.name}</span>
                   <span className="tiny dim">
                     {def.type === 'select'
-                      ? '单选'
+                      ? t('itemEdit.attrTypeSelect')
                       : def.type === 'bool'
-                        ? '是/否'
+                        ? t('itemEdit.attrTypeBool')
                         : def.type === 'date'
-                          ? '日期'
+                          ? t('itemEdit.attrTypeDate')
                           : def.type === 'number'
-                            ? `数字${def.unit ? `（${def.unit}）` : ''}`
-                            : '文本'}
+                            ? def.unit
+                              ? t('itemEdit.attrTypeNumberUnit', { unit: def.unit })
+                              : t('itemEdit.attrTypeNumber')
+                            : t('itemEdit.attrTypeText')}
                   </span>
                 </label>
               )

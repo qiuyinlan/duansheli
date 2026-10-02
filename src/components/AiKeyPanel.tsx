@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { IconAlert, IconCheck, IconClose } from './ui/icons'
 import { Button, ConfirmDialog } from './ui/primitives'
 import { useAppStore } from '../store/useAppStore'
+import { useT } from '../i18n'
 
 function mask(key: string): string {
   if (key.length <= 10) return '••••••'
@@ -22,6 +23,9 @@ export function AiKeyPanel() {
   const setAiApiKey = useAppStore((s) => s.setAiApiKey)
   const notify = useAppStore((s) => s.notify)
 
+  // 除了拿 t，这一句还让面板订阅语言变化
+  const { t } = useT()
+
   const [draft, setDraft] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
 
@@ -33,44 +37,44 @@ export function AiKeyPanel() {
             <IconCheck />
           </span>
           <span className="notice__body">
-            API Key 已填入（<span className="numeric">{mask(apiKey)}</span>），
-            <strong>已保存在这台设备的浏览器里</strong>，刷新和关掉重开都还在。
+            {t('ai.keyFilledBefore')}
+            <span className="numeric">{mask(apiKey)}</span>
+            {t('ai.keyFilledAfter')}
+            <strong>{t('ai.keyStoredBold')}</strong>
+            {t('ai.keyFilledTail')}
             <br />
-            <span className="tiny dim">
-              它不会进导出的备份文件，也不会进本地数据库。想彻底删掉就点右边的清除。
-            </span>
+            <span className="tiny dim">{t('ai.keyStoredScope')}</span>
           </span>
           <span className="notice__action">
             <Button
               size="sm"
               variant="danger"
               onClick={() => setConfirmClear(true)}
-              title="从这台设备的浏览器里删掉这个 Key"
+              title={t('ai.keyClearTitle')}
             >
               <IconClose size={12} />
-              清除
+              {t('common.clear')}
             </Button>
           </span>
         </div>
 
         <ConfirmDialog
           open={confirmClear}
-          title="清除这台设备上保存的 Key？"
+          title={t('ai.keyClearConfirmTitle')}
           danger
-          confirmLabel="清除"
+          confirmLabel={t('common.clear')}
           message={
             <>
-              Key 会从这台设备的浏览器里删掉。
+              {t('ai.keyClearConfirmBody')}
               <br />
               <br />
-              不影响你已经录入的数据，也不影响 DeepSeek 那边的账单 ——
-              只是下次想用 AI 功能时要重新粘贴一次。
+              {t('ai.keyClearConfirmNote')}
             </>
           }
           onConfirm={() => {
             setAiApiKey('')
             setConfirmClear(false)
-            notify('已从这台设备清除 API Key', 'success')
+            notify(t('ai.keyClearedToast'), 'success')
           }}
           onCancel={() => setConfirmClear(false)}
         />
@@ -83,14 +87,14 @@ export function AiKeyPanel() {
     if (key === '') return
     setAiApiKey(key)
     setDraft('')
-    notify('Key 已保存到这台设备', 'success')
+    notify(t('ai.keySavedToast'), 'success')
   }
 
   return (
     <div className="card" style={{ marginBottom: 'var(--gap-5)' }}>
       <div className="field">
         <label className="field__label" htmlFor="ai-key">
-          DeepSeek API Key
+          {t('ai.keyLabel')}
         </label>
         <div className="row">
           <input
@@ -99,7 +103,7 @@ export function AiKeyPanel() {
             type="password"
             autoComplete="off"
             spellCheck={false}
-            placeholder="sk-…"
+            placeholder={t('ai.keyPlaceholder')}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -110,7 +114,7 @@ export function AiKeyPanel() {
             }}
           />
           <Button variant="primary" onClick={submit} disabled={draft.trim() === ''}>
-            保存
+            {t('common.save')}
           </Button>
         </div>
       </div>
@@ -120,23 +124,34 @@ export function AiKeyPanel() {
           <IconAlert size={14} />
         </span>
         <div>
-          Key 会<strong>保存在这台设备的浏览器里</strong>，刷新和关掉重开都不会丢，
-          页面上随时可以一键清除。它<strong>不会</strong>进导出的备份文件，也不会进本地数据库。
+          {t('ai.keyStorageLead')}
+          <strong>{t('ai.keyStoredInBold')}</strong>
+          {t('ai.keyStorageTail')}
+          <strong>{t('ai.keyNeverBold')}</strong>
+          {t('ai.keyStorageEnd')}
           <br />
-          请求由你的浏览器<strong>直连 api.deepseek.com</strong>，不经过任何第三方服务器
-          （这一点已用真实请求验证过，见项目里的 <code>scripts/probe-deepseek-cors.mjs</code>）。
+          {t('ai.directLead')}
+          <strong>{t('ai.directBold')}</strong>
+          {t('ai.directTail')}
+          <code>{t('ai.probeScript')}</code>
+          {t('ai.directEnd')}
           <br />
           <br />
-          <strong>但存下来就有代价，请知情：</strong>
-          <br />① 任何能在你浏览器上执行 JS 的代码（恶意插件、其他页面的 XSS）理论上都能读到它。
-          <br />② <code>用户名.github.io</code> 是<strong>所有仓库共享同一个域名</strong>的 ——
-          如果你在同一账号下部署了别的项目，那个项目的页面也能读到它。
+          <strong>{t('ai.costBold')}</strong>
           <br />
-          所以建议到{' '}
+          {t('ai.riskCode')}
+          <br />
+          {t('ai.riskDomainLead')}
+          <code>{t('ai.riskDomainCode')}</code>
+          {t('ai.riskDomainMid')}
+          <strong>{t('ai.riskDomainBold')}</strong>
+          {t('ai.riskDomainTail')}
+          <br />
+          {t('ai.keyAdviceLead')}{' '}
           <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noreferrer">
             platform.deepseek.com
           </a>{' '}
-          单独建一个只用于这里的 Key，方便随时吊销。
+          {t('ai.keyAdviceTail')}
         </div>
       </div>
     </div>

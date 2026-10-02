@@ -28,6 +28,7 @@ import type { ParsedChatResponse, RawRevisedItem } from './parse'
 import type { ChatMessage } from './deepseek'
 import type { AiContext, InventoryDigest } from './prompts'
 import { renderContextBlock, renderInventoryDigest } from './prompts'
+import { promptText } from './promptText'
 import type { ItemDraft, MatchContext } from './convert'
 import { toItemDraft } from './convert'
 import type { DerivedContext } from '../store/selectors'
@@ -127,86 +128,6 @@ function signature(content: DraftContent): string {
 /* Prompt                                                              */
 /* ------------------------------------------------------------------ */
 
-const CHAT_SYSTEM = `你是「断舍离」这款个人物品整理工具里的助手。
-用户正在和你来回沟通，一起把一批待录入的物品整理好。
-下面【已有分类】【已有位置】【已有属性】【已有标签】列出了用户目前的体系。
-
-每条用户消息里你会看到：
-【当前的物品草稿】—— 一个 json，每条带 id。里面可能是两种情况混在一起：
-    · 用户**已经录进数据库**的物品（用户要整理现有的东西时，会把它们拉进来）
-    · 这次新录入的
-    你不需要区分、也不用知道 —— 按 id 处理就行。
-    程序自己知道哪些该更新、哪些该新建。
-【用户的指令】—— 用户这一轮想让你做什么
-
-你要输出一个 json 对象：
-{
-  "reply": "用中文简短说明你这一轮改了什么",
-  "items": [ ...只需要给出**新增或改动过**的物品... ],
-  "removedIds": [ "要删掉的物品 id" ]
-}
-
-每条物品长这样（值为空的字段可以省略）：
-{
-  "id": "改已有物品时原样填草稿里的 id；新增时自己起一个，例如 new-1",
-  "name": "长管油口红",
-  "quantity": 1,
-  "categories": [["化妆品", "唇妆"]],
-  "location": ["家", "卧室", "梳妆台"],
-  "tags": [],
-  "attributes": { "品牌": "某品牌" },
-  "note": ""
-}
-
-**最重要的规则：只返回改动过的。**
-- 没有改动的物品**不要**写进 items —— 程序会让它们保持原样。这样又快又省。
-- 新增物品：id 自己起一个，例如 "new-1"
-- 修改已有物品：id 必须原样填草稿里的那个
-- 删除物品：把 id 放进 removedIds
-  （已有物品会被**移入回收站**，可以恢复，不是真的删掉）
-
-**改动某件物品时，要给出它的完整样子。**
-省略的字段会被当成空值 —— 比如没写 location，就等于「把位置清空」。
-所以别只写改动的那个字段，把这一条**现在完整的样子**写出来，包括没改的字段。
-
-**要改现有的物品？先用 loadScope 把它们拉进来。**
-【你现有的物品】那一块只有**统计**（哪个分类有多少件），你手里并没有具体条目。
-所以当用户说「把药品改成…」「把没分类的归一下」这类话时，
-你要先请求把这些物品拉进来：
-
-  { "reply": "你「药品」下有 74 件，我先拉进来看看", "loadScope": { "categoryPaths": [["药品"]] } }
-
-程序收到 loadScope 后会把这些物品放进草稿，并**自动再问你一次**。
-那一轮你就能看到具体条目，按正常方式返回 items 去改它们。
-
-loadScope 可以这么写（几种条件可以混用）：
-  { "all": true }                         全部在用物品
-  { "idle": true }                        只要标记为闲置的
-  { "uncategorized": true }               只要未分类的
-  { "unassigned": true }                  只要未归位的
-  { "categoryPaths": [["药品"]] }          某个分类下的（含子分类）
-  { "locationPaths": [["家","卧室"]] }      某个位置下的（含子位置）
-
-**只在确实需要具体条目时才用它。** 用户只是问问题、或者要录新东西，就别用。
-一次要太多（比如全库几千件）也没必要 —— 按用户说的范围取就行。
-
-其他规则：
-1. 如果【当前的物品草稿】是空的，说明这是第一轮 —— 用户的指令里通常是一段
-   自然语言描述，你要把它拆成一件件物品，全部放进 items。
-2. categories 的优先级：
-   a) 用户明确说了某个分类名 → 就用它，**即使不在【已有分类】里**
-   b) 否则找【已有分类】里语义相符的
-   c) 都没有才新建
-   **绝对不要把物品塞进不相干的已有分类。** 把「口红」归到「日用品」是错的，
-   正确做法是新建「化妆品」。清单里的名字只是"可以复用的选项"。
-   分类是多级的，物品可以挂在任意一级，所以 [["化妆品"]] 也是合法的。
-   **把物品改成某条路径，是"换成"这条路径，不是"加在原来分类后面"。**
-3. location 只能从【已有位置】里挑，输出名称路径。拿不准就填 null，不要猜。
-4. attributes 的 key 只能用【已有属性】里的名字，没有的不要写。
-5. reply 里说清楚你改动了哪几条、怎么改的，用户才知道该检查哪里。
-   简短一点，不要客套话，不要 Markdown 标题。
-6. 如果用户的指令跟物品整理无关，就在 reply 里说明，items 和 removedIds 都给空数组。`
-
 /**
  * 只保留最近若干轮。
  * 草稿本身就是完整状态，历史主要是用来理解「刚才那个」「上面说的」这类指代，
@@ -219,6 +140,13 @@ export interface ChatTurn {
   content: string
 }
 
+/**
+ * 对话用的 messages。
+ *
+ * 提示词本身按语言分两份放在 src/ai/promptText/ 下。注意一个副作用：
+ * 切语言会让 system 前缀变化、DeepSeek 的前缀缓存失效一次 ——
+ * 这个代价可以接受，没人会一轮一轮地切语言。
+ */
 export function buildChatMessages(
   context: AiContext,
   digest: InventoryDigest,
@@ -226,6 +154,8 @@ export function buildChatMessages(
   drafts: DraftForAi[],
   instruction: string,
 ): ChatMessage[] {
+  const p = promptText()
+
   const messages: ChatMessage[] = [
     {
       role: 'system',
@@ -236,7 +166,7 @@ export function buildChatMessages(
       // 目录只放「哪个分类有多少件」，不放具体条目 ——
       // 具体条目等 AI 用 loadScope 要的时候再拉，不然 500 件就是一万多 token。
       content: [
-        CHAT_SYSTEM,
+        p.chatSystem,
         '',
         '---',
         '',
@@ -256,12 +186,12 @@ export function buildChatMessages(
   messages.push({
     role: 'user',
     content: [
-      '【当前的物品草稿】',
+      p.chatDraftLabel,
       drafts.length > 0
         ? JSON.stringify({ items: drafts.map(compactDraft) })
-        : '（空的，还没有任何物品）',
+        : p.chatEmptyDraft,
       '',
-      '【用户的指令】',
+      p.chatInstructionLabel,
       instruction,
     ].join('\n'),
   })

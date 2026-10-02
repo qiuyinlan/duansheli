@@ -1,47 +1,76 @@
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IconChevronRight, IconFolder, IconGear, IconSettings, IconSparkle, IconTag } from '../components/ui/icons'
+import {
+  IconChevronRight,
+  IconClock,
+  IconFolder,
+  IconGear,
+  IconSettings,
+  IconSparkle,
+  IconTag,
+} from '../components/ui/icons'
+import { useT } from '../i18n'
+import { computeStats } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
 
 /** 手机端的「更多」入口页。桌面端这些入口已经在侧栏里，不会走到这里。 */
 export function More() {
   const navigate = useNavigate()
   const data = useAppStore((s) => s.data)
+  const soonDays = useAppStore((s) => s.ui.expirySoonDays)
+
+  // useT() 一方面是拿 t/tc，另一方面是**订阅语言**：
+  // 语言一换这个页面就会重新渲染，下面那些文案才会跟着变。
+  const { t, tc } = useT()
+
+  const stats = useMemo(() => computeStats(data, soonDays), [data, soonDays])
+  const urgentCount = stats.expiredCount + stats.expiringSoonCount
 
   const entries = [
     {
       to: '/ai',
-      label: 'AI 助手',
-      meta: '批量录入 · 整理',
+      label: t('nav.ai'),
+      meta: t('more.aiMeta'),
       Icon: IconSparkle,
-      desc: '粘贴一段文字，让 AI 帮你拆成物品',
+      desc: t('more.aiDesc'),
+    },
+    {
+      to: '/expiry',
+      label: t('nav.expiry'),
+      meta:
+        urgentCount > 0
+          ? tc(urgentCount, 'more.expiryMetaUrgent')
+          : t('more.expiryMetaClear'),
+      Icon: IconClock,
+      desc: t('more.expiryDesc'),
     },
     {
       to: '/categories',
-      label: '分类',
-      meta: `${data.categories.length} 个`,
+      label: t('nav.categories'),
+      meta: t('more.count', { count: data.categories.length }),
       Icon: IconFolder,
-      desc: '你亲手维护的固定分类清单',
+      desc: t('more.categoriesDesc'),
     },
     {
       to: '/attributes',
-      label: '属性',
-      meta: `${data.attributeDefs.length} 个`,
+      label: t('nav.attributes'),
+      meta: t('more.count', { count: data.attributeDefs.length }),
       Icon: IconSettings,
-      desc: '品牌、购入日期、价格… 按需勾选使用',
+      desc: t('more.attributesDesc'),
     },
     {
       to: '/tags',
-      label: '标签',
-      meta: `${data.tags.length} 个`,
+      label: t('nav.tags'),
+      meta: t('more.count', { count: data.tags.length }),
       Icon: IconTag,
-      desc: '情境化标记，如「想送人」',
+      desc: t('more.tagsDesc'),
     },
     {
       to: '/settings',
-      label: '设置',
-      meta: '备份 · 导入 · 回收站',
+      label: t('nav.settings'),
+      meta: t('more.settingsMeta'),
       Icon: IconGear,
-      desc: '导出数据，防止丢失',
+      desc: t('more.settingsDesc'),
     },
   ]
 
@@ -49,7 +78,7 @@ export function More() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-header__title">更多</div>
+          <div className="page-header__title">{t('nav.titleMore')}</div>
         </div>
       </div>
 

@@ -5,6 +5,7 @@ import { TreeView } from '../components/TreeView'
 import { LocationPicker } from '../components/pickers'
 import { IconPencil, IconPlus, IconTrash } from '../components/ui/icons'
 import { Button, ConfirmDialog, EmptyState, Modal, Switch } from '../components/ui/primitives'
+import { useT } from '../i18n'
 import {
   countByLocationIncludingDescendants,
   itemsInLocation,
@@ -33,6 +34,9 @@ export function Locations() {
   const moveLocation = useAppStore((s) => s.moveLocation)
   const setIdle = useAppStore((s) => s.setIdle)
   const notify = useAppStore((s) => s.notify)
+
+  // 拿 t/tc 的同时也订阅了语言：切语言时这个页面会整个重新渲染
+  const { t, tc } = useT()
 
   const [selected, setSelected] = useState<string | null>(null)
   const [touched, setTouched] = useState(false)
@@ -70,7 +74,9 @@ export function Locations() {
     [live, activeId, ui.includeDescendants, derived],
   )
 
-  const activeLabel = activeId ? derived.index.pathString(activeId, ' / ') : '未归位'
+  const activeLabel = activeId
+    ? derived.index.pathString(activeId, ' / ')
+    : t('status.unassigned')
   const directCount = data.items.filter((i) => i.locationId === activeId).length
 
   const openAddDialog = (parentId: string | null) => {
@@ -79,7 +85,9 @@ export function Locations() {
       mode: 'add',
       parentId,
       initial: '',
-      title: parentId ? `在「${derived.index.byId.get(parentId)?.name ?? ''}」下新建位置` : '新建顶层位置',
+      title: parentId
+        ? t('locations.addChildTitle', { name: derived.index.byId.get(parentId)?.name ?? '' })
+        : t('locations.addTopTitle'),
     })
   }
 
@@ -87,7 +95,13 @@ export function Locations() {
     const loc = derived.index.byId.get(id)
     if (!loc) return
     setNameDraft(loc.name)
-    setNameDialog({ mode: 'rename', parentId: loc.parentId, targetId: id, initial: loc.name, title: '重命名位置' })
+    setNameDialog({
+      mode: 'rename',
+      parentId: loc.parentId,
+      targetId: id,
+      initial: loc.name,
+      title: t('locations.renameTitle'),
+    })
   }
 
   const submitNameDialog = () => {
@@ -97,16 +111,16 @@ export function Locations() {
     if (nameDialog.mode === 'add') {
       const created = addLocation(name, nameDialog.parentId)
       if (!created) {
-        notify('创建失败，请检查名称', 'error')
+        notify(t('locations.addFailed'), 'error')
         return
       }
       if (nameDialog.parentId) {
         setExpanded((prev) => new Set(prev).add(nameDialog.parentId as string))
       }
-      notify('已创建位置', 'success')
+      notify(t('locations.addDone'), 'success')
     } else if (nameDialog.targetId) {
       renameLocation(nameDialog.targetId, name)
-      notify('已重命名', 'success')
+      notify(t('locations.renameDone'), 'success')
     }
     setNameDialog(null)
   }
@@ -116,7 +130,7 @@ export function Locations() {
     if (!loc) return
     const result = deleteLocation(id)
     if (result.ok) {
-      notify(`已删除位置「${loc.name}」`, 'success')
+      notify(t('locations.deleteDone', { name: loc.name }), 'success')
       if (activeId === id) {
         setSelected(null)
         setTouched(true)
@@ -131,36 +145,49 @@ export function Locations() {
     })
   }
 
+  // 删除确认框里「还有 N 个子位置、M 件物品」那一段。
+  // 分隔符也走词典：中文是顿号，英文得写成 and。
+  const deleteContents = [
+    deleteProbe && deleteProbe.childCount > 0
+      ? tc(deleteProbe.childCount, 'locations.deleteChildCount')
+      : null,
+    deleteProbe && deleteProbe.itemCount > 0
+      ? tc(deleteProbe.itemCount, 'locations.deleteItemCount')
+      : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(t('locations.deleteJoin'))
+
   return (
     <>
       <div className="page-header">
         <div>
-          <div className="page-header__title">位置</div>
+          <div className="page-header__title">{t('nav.titleLocations')}</div>
           <div className="page-header__sub">
-            共 <span className="numeric">{data.locations.length}</span> 个位置，层级不限，想加多深都行
+            {tc(data.locations.length, 'locations.subtitle')}
           </div>
         </div>
         <div className="page-header__actions">
           <Button variant="primary" onClick={() => openAddDialog(null)}>
             <IconPlus size={13} />
-            新建位置
+            {t('locations.newTop')}
           </Button>
         </div>
       </div>
 
       {data.locations.length === 0 ? (
         <EmptyState
-          title="还没有创建任何位置"
+          title={t('locations.empty')}
           hint={
             <>
-              位置可以一层层往下分，比如：
+              {t('locations.emptyHint')}
               <br />
-              家 › 卧室 › 衣柜 › 第二层抽屉
+              {t('locations.emptyHintExample')}
             </>
           }
           action={
             <Button variant="primary" onClick={() => openAddDialog(null)}>
-              创建第一个位置
+              {t('locations.createFirst')}
             </Button>
           }
         />
@@ -187,7 +214,7 @@ export function Locations() {
               }
               virtualRoot={{
                 id: UNASSIGNED_ID,
-                label: '未归位',
+                label: t('status.unassigned'),
                 count: counts.get(UNASSIGNED_ID) ?? 0,
               }}
               renderActions={(node) => (
@@ -195,7 +222,7 @@ export function Locations() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    title="新建子位置"
+                    title={t('locations.addChild')}
                     onClick={() => openAddDialog(node.id)}
                   >
                     <IconPlus size={12} />
@@ -203,7 +230,7 @@ export function Locations() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    title="移动到其他位置下"
+                    title={t('locations.moveUnder')}
                     onClick={() => setMoveTarget(node.id)}
                   >
                     ↑
@@ -211,7 +238,7 @@ export function Locations() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    title="重命名"
+                    title={t('common.rename')}
                     onClick={() => openRenameDialog(node.id)}
                   >
                     <IconPencil size={12} />
@@ -219,7 +246,7 @@ export function Locations() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    title="删除"
+                    title={t('common.delete')}
                     onClick={() => handleDelete(node.id)}
                   >
                     <IconTrash size={12} />
@@ -235,28 +262,26 @@ export function Locations() {
               <div>
                 <div style={{ fontSize: 'var(--fs-h2)', fontWeight: 600 }}>{activeLabel}</div>
                 <div className="small muted">
-                  共 <span className="numeric">{scopedItems.length}</span> 件
+                  {tc(scopedItems.length, 'locations.countHere')}
                   {activeId && ui.includeDescendants && directCount !== scopedItems.length
-                    ? `（其中 ${directCount} 件直接放在这里）`
-                    : ''}
+                    ? tc(directCount, 'locations.directHere')
+                    : null}
                 </div>
               </div>
               {activeId ? (
                 <Switch
                   checked={ui.includeDescendants}
                   onChange={(v) => setUi({ includeDescendants: v })}
-                  label="含子位置"
+                  label={t('locations.includeDescendants')}
                 />
               ) : null}
             </div>
 
             {scopedItems.length === 0 ? (
               <EmptyState
-                title={activeId ? '这个位置是空的' : '没有未归位的物品'}
+                title={activeId ? t('locations.scopedEmpty') : t('locations.unassignedEmpty')}
                 hint={
-                  activeId
-                    ? '空位置很好 —— 说明这里没有堆积。'
-                    : '每件物品都已经有了明确的位置。'
+                  activeId ? t('locations.scopedEmptyHint') : t('locations.unassignedEmptyHint')
                 }
               />
             ) : (
@@ -273,7 +298,9 @@ export function Locations() {
                         variant="ghost"
                         onClick={() => setIdle(item.id, item.status !== 'idle')}
                       >
-                        {item.status === 'idle' ? '改回在用' : '闲置'}
+                        {item.status === 'idle'
+                          ? t('locations.markActive')
+                          : t('locations.markIdle')}
                       </Button>
                     }
                   />
@@ -292,9 +319,9 @@ export function Locations() {
         maxWidth={400}
         footer={
           <>
-            <Button onClick={() => setNameDialog(null)}>取消</Button>
+            <Button onClick={() => setNameDialog(null)}>{t('common.cancel')}</Button>
             <Button variant="primary" onClick={submitNameDialog} disabled={nameDraft.trim() === ''}>
-              确定
+              {t('common.confirm')}
             </Button>
           </>
         }
@@ -303,7 +330,7 @@ export function Locations() {
           className="input"
           autoFocus
           value={nameDraft}
-          placeholder="例如：第二层抽屉"
+          placeholder={t('locations.namePlaceholder')}
           onChange={(e) => setNameDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -323,10 +350,10 @@ export function Locations() {
           if (moveTarget === null) return
           const result = moveLocation(moveTarget, newParentId)
           if (result.ok) {
-            notify('已移动位置', 'success')
+            notify(t('locations.moveDone'), 'success')
             if (newParentId) setExpanded((prev) => new Set(prev).add(newParentId))
           } else {
-            notify(result.reason ?? '移动失败', 'error')
+            notify(result.reason ?? t('locations.moveFailed'), 'error')
           }
           setMoveTarget(null)
         }}
@@ -337,32 +364,29 @@ export function Locations() {
       {/* ---------------- 删除有内容的位置 ---------------- */}
       <ConfirmDialog
         open={deleteProbe !== null}
-        title={`删除位置「${deleteProbe?.name ?? ''}」？`}
+        title={t('locations.deleteTitle', { name: deleteProbe?.name ?? '' })}
         danger
-        confirmLabel="移动内容并删除"
+        confirmLabel={t('locations.deleteConfirm')}
         message={
           <>
-            这个位置下还有
-            {deleteProbe && deleteProbe.childCount > 0
-              ? ` ${deleteProbe.childCount} 个子位置`
-              : ''}
-            {deleteProbe && deleteProbe.childCount > 0 && deleteProbe.itemCount > 0 ? '、' : ''}
-            {deleteProbe && deleteProbe.itemCount > 0 ? ` ${deleteProbe.itemCount} 件物品` : ''}
-            。
+            {t('locations.deleteBodyLead', { list: deleteContents })}
             <br />
             <br />
-            继续的话，它们会被移动到「未归位」，物品本身不会丢失；之后可以再各自指定新位置。
+            {t('locations.deleteBodyHint', { unassigned: t('status.unassigned') })}
           </>
         }
         onConfirm={() => {
           if (!deleteProbe) return
           const result = deleteLocation(deleteProbe.id, null)
           if (result.ok) {
-            notify('已删除位置，内容已移到「未归位」', 'success')
+            notify(
+              t('locations.deleteMovedDone', { unassigned: t('status.unassigned') }),
+              'success',
+            )
             setSelected(null)
             setTouched(true)
           } else {
-            notify(result.reason ?? '删除失败', 'error')
+            notify(result.reason ?? t('locations.deleteFailed'), 'error')
           }
           setDeleteProbe(null)
         }}

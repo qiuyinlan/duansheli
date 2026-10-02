@@ -3,13 +3,30 @@ import { IconPencil, IconPlus, IconTrash } from '../components/ui/icons'
 import { Button, ConfirmDialog, EmptyState, IconButton, Modal, Switch } from '../components/ui/primitives'
 import { useAppStore } from '../store/useAppStore'
 import type { AttrType, AttributeDef } from '../types'
+import type { DictKey } from '../i18n'
+import { t, tc, useT } from '../i18n'
 
-const TYPE_LABEL: Record<AttrType, string> = {
-  text: '文本',
-  number: '数字',
-  date: '日期',
-  select: '单选',
-  bool: '是/否',
+/**
+ * 属性类型的显示名。
+ *
+ * 表里存的是**词典 key**，不是文字 —— 如果在模块顶层就把 t() 的结果存下来，
+ * 语言一换这张表不会重新求值（见 docs/i18n-约定.md 第 3 节），
+ * 会出现「页面标题变英文了、列表里还是中文」这种半截状态。
+ *
+ * 这几个词和录入页的属性勾选器是同一套（itemEdit.attrType*），所以借过来用，
+ * 免得两处各自翻译、慢慢跑偏。
+ */
+const TYPE_LABEL_KEY: Record<AttrType, DictKey> = {
+  text: 'itemEdit.attrTypeText',
+  number: 'itemEdit.attrTypeNumber',
+  date: 'itemEdit.attrTypeDate',
+  select: 'itemEdit.attrTypeSelect',
+  bool: 'itemEdit.attrTypeBool',
+}
+
+/** 渲染时才查表，所以切换语言能正确跟着变 */
+function typeLabel(type: AttrType): string {
+  return t(TYPE_LABEL_KEY[type])
 }
 
 interface AttrFormState {
@@ -37,6 +54,9 @@ export function Attributes() {
   const updateAttributeDef = useAppStore((s) => s.updateAttributeDef)
   const deleteAttributeDef = useAppStore((s) => s.deleteAttributeDef)
   const notify = useAppStore((s) => s.notify)
+
+  // 订阅语言：语言一换这个组件就重新渲染，页面上所有文字才会跟着变
+  useT()
 
   const [form, setForm] = useState<AttrFormState | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{ def: AttributeDef; count: number } | null>(
@@ -73,7 +93,7 @@ export function Attributes() {
       .filter(Boolean)
 
     if (form.type === 'select' && options.length === 0) {
-      notify('单选类型至少需要一个选项', 'error')
+      notify(t('attributes.needOption'), 'error')
       return
     }
 
@@ -86,10 +106,10 @@ export function Attributes() {
         showByDefault: form.showByDefault,
       })
       if (!created) {
-        notify(`已经有一个叫「${name}」的属性了`, 'error')
+        notify(t('attributes.duplicate', { name }), 'error')
         return
       }
-      notify('已添加属性', 'success')
+      notify(t('attributes.addedToast'), 'success')
     } else {
       updateAttributeDef(form.id, {
         name,
@@ -98,7 +118,7 @@ export function Attributes() {
         unit: form.unit,
         showByDefault: form.showByDefault,
       })
-      notify('已保存（已有物品上的值不会丢失）', 'success')
+      notify(t('attributes.savedToast'), 'success')
     }
     setForm(null)
   }
@@ -107,32 +127,30 @@ export function Attributes() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-header__title">属性</div>
-          <div className="page-header__sub">
-            这里定义「可以用哪些属性」，录入时再按需勾选 —— 用不上就不会出现在表单里。
-          </div>
+          <div className="page-header__title">{t('nav.titleAttributes')}</div>
+          <div className="page-header__sub">{t('attributes.subtitle')}</div>
         </div>
         <div className="page-header__actions">
           <Button variant="primary" onClick={() => setForm({ ...EMPTY_FORM })}>
             <IconPlus size={13} />
-            新建属性
+            {t('attributes.newField')}
           </Button>
         </div>
       </div>
 
       {sorted.length === 0 ? (
         <EmptyState
-          title="属性库还是空的"
+          title={t('attributes.emptyTitle')}
           hint={
             <>
-              想记什么就定义什么，常见的有：品牌、购入日期、价格、颜色、尺寸、型号。
+              {t('attributes.emptyHint1')}
               <br />
-              定义好之后，录入物品时勾一下就能填。
+              {t('attributes.emptyHint2')}
             </>
           }
           action={
             <Button variant="primary" onClick={() => setForm({ ...EMPTY_FORM })}>
-              新建第一个属性
+              {t('attributes.emptyAction')}
             </Button>
           }
         />
@@ -143,20 +161,23 @@ export function Attributes() {
             return (
               <div key={def.id} className="manage-row">
                 <span className="manage-row__name truncate">
+                  {/* 属性名是用户自己的数据，不翻译 */}
                   {def.name}
-                  {def.unit ? <span className="dim">（{def.unit}）</span> : null}
+                  {def.unit ? (
+                    <span className="dim">{t('itemEdit.attrUnitParen', { unit: def.unit })}</span>
+                  ) : null}
                 </span>
                 <span className="manage-row__meta">
-                  {TYPE_LABEL[def.type]}
+                  {typeLabel(def.type)}
                   {def.type === 'select' && def.options.length > 0
-                    ? ` · ${def.options.length} 个选项`
+                    ? ` · ${tc(def.options.length, 'attributes.optionCount')}`
                     : ''}
-                  {def.showByDefault ? ' · 默认勾选' : ''}
+                  {def.showByDefault ? ` · ${t('attributes.showByDefaultShort')}` : ''}
                 </span>
-                <span className="manage-row__meta">{count} 处使用</span>
+                <span className="manage-row__meta">{tc(count, 'attributes.usage')}</span>
                 <div className="manage-row__actions">
                   <IconButton
-                    label="编辑"
+                    label={t('common.edit')}
                     onClick={() =>
                       setForm({
                         id: def.id,
@@ -171,7 +192,7 @@ export function Attributes() {
                     <IconPencil size={13} />
                   </IconButton>
                   <IconButton
-                    label="删除"
+                    label={t('common.delete')}
                     onClick={() => setDeleteTarget({ def, count })}
                   >
                     <IconTrash size={13} />
@@ -186,13 +207,13 @@ export function Attributes() {
       {/* ---------------- 新建 / 编辑 ---------------- */}
       <Modal
         open={form !== null}
-        title={form?.id ? '编辑属性' : '新建属性'}
+        title={form?.id ? t('attributes.titleEdit') : t('attributes.newField')}
         onClose={() => setForm(null)}
         footer={
           <>
-            <Button onClick={() => setForm(null)}>取消</Button>
+            <Button onClick={() => setForm(null)}>{t('common.cancel')}</Button>
             <Button variant="primary" onClick={submit} disabled={(form?.name.trim() ?? '') === ''}>
-              保存
+              {t('common.save')}
             </Button>
           </>
         }
@@ -201,21 +222,22 @@ export function Attributes() {
           <div className="stack">
             <div className="field">
               <label className="field__label" htmlFor="attr-name">
-                属性名称 <span className="field__label-required">必填</span>
+                {t('attributes.fieldName')}{' '}
+                <span className="field__label-required">{t('common.required')}</span>
               </label>
               <input
                 id="attr-name"
                 className="input"
                 autoFocus
                 value={form.name}
-                placeholder="例如：品牌"
+                placeholder={t('attributes.namePlaceholder')}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
             </div>
 
             <div className="field">
               <label className="field__label" htmlFor="attr-type">
-                类型
+                {t('attributes.fieldType')}
               </label>
               <select
                 id="attr-type"
@@ -223,24 +245,25 @@ export function Attributes() {
                 value={form.type}
                 onChange={(e) => setForm({ ...form, type: e.target.value as AttrType })}
               >
-                <option value="text">文本 —— 随便写</option>
-                <option value="number">数字 —— 可以比较大小</option>
-                <option value="date">日期</option>
-                <option value="select">单选 —— 只能从固定选项里挑</option>
-                <option value="bool">是 / 否</option>
+                <option value="text">{t('attributes.typeOptText')}</option>
+                <option value="number">{t('attributes.typeOptNumber')}</option>
+                <option value="date">{t('attributes.typeOptDate')}</option>
+                <option value="select">{t('attributes.typeOptSelect')}</option>
+                <option value="bool">{t('attributes.typeOptBool')}</option>
               </select>
             </div>
 
             {form.type === 'select' ? (
               <div className="field">
                 <label className="field__label" htmlFor="attr-options">
-                  选项 <span className="field__label-required">用逗号分隔</span>
+                  {t('attributes.fieldOptions')}{' '}
+                  <span className="field__label-required">{t('attributes.optionsCommaHint')}</span>
                 </label>
                 <input
                   id="attr-options"
                   className="input"
                   value={form.optionsText}
-                  placeholder="黑，白，灰，木色"
+                  placeholder={t('attributes.optionsPlaceholder')}
                   onChange={(e) => setForm({ ...form, optionsText: e.target.value })}
                 />
               </div>
@@ -249,13 +272,14 @@ export function Attributes() {
             {form.type === 'number' ? (
               <div className="field">
                 <label className="field__label" htmlFor="attr-unit">
-                  单位 <span className="field__label-required">可选</span>
+                  {t('attributes.fieldUnit')}{' '}
+                  <span className="field__label-required">{t('common.optional')}</span>
                 </label>
                 <input
                   id="attr-unit"
                   className="input"
                   value={form.unit}
-                  placeholder="例如：元、cm、kg"
+                  placeholder={t('attributes.unitPlaceholder')}
                   onChange={(e) => setForm({ ...form, unit: e.target.value })}
                 />
               </div>
@@ -264,12 +288,10 @@ export function Attributes() {
             <Switch
               checked={form.showByDefault}
               onChange={(v) => setForm({ ...form, showByDefault: v })}
-              label="录入物品时默认勾选这个属性"
+              label={t('attributes.showByDefault')}
             />
 
-            <div className="field__hint">
-              提示：录入时勾选过一次之后，程序会记住「这个分类常用哪些属性」，下次自动带上。
-            </div>
+            <div className="field__hint">{t('attributes.formHint')}</div>
           </div>
         ) : null}
       </Modal>
@@ -277,26 +299,27 @@ export function Attributes() {
       {/* ---------------- 删除 ---------------- */}
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={`删除属性「${deleteTarget?.def.name ?? ''}」？`}
+        title={t('attributes.deleteTitle', { name: deleteTarget?.def.name ?? '' })}
         danger
-        confirmLabel="删除"
+        confirmLabel={t('common.delete')}
         message={
           deleteTarget && deleteTarget.count > 0 ? (
             <>
-              有 <span className="numeric">{deleteTarget.count}</span> 处已经填了这个属性的值。
+              {t('attributes.deleteInUseLead')}
+              <span className="numeric">{deleteTarget.count}</span>
+              {tc(deleteTarget.count, 'attributes.deleteInUseTail')}
               <br />
               <br />
-              删除后这些值将不再显示（物品本身和其他信息都不受影响）。
-              删除前会自动存一份快照，之后也可以回退。
+              {t('attributes.deleteInUseNote')}
             </>
           ) : (
-            <>还没有任何物品填过这个属性，可以放心删除。</>
+            <>{t('attributes.deleteUnused')}</>
           )
         }
         onConfirm={() => {
           if (!deleteTarget) return
           deleteAttributeDef(deleteTarget.def.id)
-          notify('已删除属性', 'success')
+          notify(t('attributes.deletedToast'), 'success')
           setDeleteTarget(null)
         }}
         onCancel={() => setDeleteTarget(null)}

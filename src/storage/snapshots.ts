@@ -1,5 +1,6 @@
 import type { AppData, Snapshot, SnapshotMeta, SnapshotReason } from '../types'
 import { uid } from '../lib/id'
+import { t } from '../i18n'
 import { STORE_SNAPSHOTS, idbClear, idbDelete, idbDeleteMany, idbGet, idbGetAll, idbPut } from './idb'
 
 /** 最多保留多少份快照 */
@@ -8,11 +9,26 @@ export const MAX_SNAPSHOTS = 30
 /** 每种「非自动」原因至少保底保留几份，即使它们很旧 */
 const RESERVED_NON_AUTO = 5
 
+/**
+ * 快照原因的说法，用在设置页的徽章上。
+ *
+ * 写成 getter 而不是普通属性：语言是运行时能切的，而这是个拿 `[reason]`
+ * 直接取值的地方（`SNAPSHOT_REASON_LABEL[snap.reason]`），
+ * 每次读都重新取词，切换语言后才不会留半截中文。
+ */
 export const SNAPSHOT_REASON_LABEL: Record<SnapshotReason, string> = {
-  auto: '自动',
-  import: '导入前',
-  manual: '手动备份',
-  destructive: '删除前',
+  get auto() {
+    return t('data.snapshot.reasonAuto')
+  },
+  get import() {
+    return t('data.snapshot.reasonImport')
+  },
+  get manual() {
+    return t('data.snapshot.reasonManual')
+  },
+  get destructive() {
+    return t('data.snapshot.reasonDestructive')
+  },
 }
 
 /** ISO 时间戳取到分钟，用于「同一分钟只留一份自动快照」的分桶 */

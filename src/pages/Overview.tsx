@@ -4,6 +4,7 @@ import { BarChart } from '../components/ui/BarChart'
 import { IconAlert, IconChevronRight } from '../components/ui/icons'
 import { Button, EmptyState } from '../components/ui/primitives'
 import { daysSince, formatRelative, percent } from '../lib/format'
+import { useT } from '../i18n'
 import { UNASSIGNED_ID, UNCATEGORIZED_ID, UNTAGGED_ID } from '../types'
 import {
   computeStats,
@@ -19,9 +20,14 @@ export function Overview() {
   const data = useAppStore((s) => s.data)
   const derived = useAppStore((s) => s.derived)
   const lastExportAt = useAppStore((s) => s.ui.lastExportAt)
+  const soonDays = useAppStore((s) => s.ui.expirySoonDays)
   const navigate = useNavigate()
 
-  const stats = useMemo(() => computeStats(data), [data])
+  // useT() 一方面是拿 t/tc，另一方面是**订阅语言**：
+  // 语言一换这个页面就会重新渲染，页面上所有文字才会跟着变。
+  const { t, tc } = useT()
+
+  const stats = useMemo(() => computeStats(data, soonDays), [data, soonDays])
   const live = useMemo(() => liveItems(data), [data])
   const byCategory = useMemo(() => countByCategory(live, derived), [live, derived])
   const byLocation = useMemo(() => countByTopLocation(live, derived), [live, derived])
@@ -32,28 +38,31 @@ export function Overview() {
   const backupOverdue =
     stats.totalItems > 0 && (lastExportAt === null || daysSince(lastExportAt) >= 7)
 
+  // 到期的东西才值得占一块版面，一件都没有时整张卡片不渲染
+  const urgentExpiryCount = stats.expiredCount + stats.expiringSoonCount
+
   if (stats.totalItems === 0) {
     return (
       <>
         <div className="page-header">
           <div>
-            <div className="page-header__title">概览</div>
-            <div className="page-header__sub">你的家当会在这里变成一张图</div>
+            <div className="page-header__title">{t('nav.titleOverview')}</div>
+            <div className="page-header__sub">{t('overview.subtitleEmpty')}</div>
           </div>
         </div>
 
         <EmptyState
-          title="还没有录入任何物品"
+          title={t('overview.emptyTitle')}
           hint={
             <>
-              先录一件试试 —— 只要填个名称就能存下，其余都是可选的。
+              {t('overview.emptyHintFirst')}
               <br />
-              分类、位置、属性库已经替你准备好了一套常用的起步内容，随时可以改。
+              {t('overview.emptyHintSecond')}
             </>
           }
           action={
             <Button variant="primary" onClick={() => navigate('/items/new')}>
-              录入第一件物品
+              {t('overview.emptyAction')}
             </Button>
           }
         />
@@ -65,13 +74,13 @@ export function Overview() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-header__title">概览</div>
+          <div className="page-header__title">{t('nav.titleOverview')}</div>
           <div className="page-header__sub">
-            最近更新于 {formatRelative(data.updatedAt)}
+            {t('overview.updatedAt', { time: formatRelative(data.updatedAt) })}
           </div>
         </div>
         <div className="page-header__actions">
-          <Button onClick={() => navigate('/items/new')}>录入物品</Button>
+          <Button onClick={() => navigate('/items/new')}>{t('overview.addItem')}</Button>
         </div>
       </div>
 
@@ -82,12 +91,12 @@ export function Overview() {
           </span>
           <span className="notice__body">
             {lastExportAt === null
-              ? '数据只存在这台设备的浏览器里，还没有导出过备份。清一次浏览器数据就全没了。'
-              : `上次导出备份是 ${formatRelative(lastExportAt)}，建议重新导出一份。`}
+              ? t('overview.backupNever')
+              : t('overview.backupStale', { time: formatRelative(lastExportAt) })}
           </span>
           <span className="notice__action">
             <Button size="sm" onClick={() => navigate('/settings')}>
-              去备份
+              {t('overview.backupAction')}
             </Button>
           </span>
         </div>
@@ -95,48 +104,79 @@ export function Overview() {
 
       <div className="overview-hero">
         <span className="overview-hero__value numeric">{stats.totalItems}</span>
-        <span className="overview-hero__label">件物品（不含已舍弃）</span>
+        <span className="overview-hero__label">{t('overview.heroLabel')}</span>
       </div>
 
       <div className="stat-grid" style={{ marginBottom: 'var(--gap-6)' }}>
         <button type="button" className="stat" onClick={() => navigate('/items')}>
           <span className="stat__value numeric">{stats.categoryCount}</span>
-          <span className="stat__label">个分类</span>
+          <span className="stat__label">{t('overview.statCategories')}</span>
         </button>
         <button type="button" className="stat" onClick={() => navigate('/locations')}>
           <span className="stat__value numeric">{stats.locationCount}</span>
-          <span className="stat__label">个位置</span>
+          <span className="stat__label">{t('overview.statLocations')}</span>
         </button>
         <button type="button" className="stat" onClick={() => navigate('/idle')}>
           <span className="stat__value numeric">{stats.idleCount}</span>
-          <span className="stat__label">件闲置</span>
+          <span className="stat__label">{t('overview.statIdle')}</span>
         </button>
         <button
           type="button"
           className="stat"
           onClick={() => navigate('/items?loc=__unassigned__&group=location')}
-          title="查看未归位的物品"
+          title={t('overview.statUnassignedTitle')}
         >
           <span className="stat__value numeric">{stats.unassignedCount}</span>
-          <span className="stat__label">件未归位</span>
+          <span className="stat__label">{t('overview.statUnassigned')}</span>
         </button>
       </div>
+
+      {/* ---------------- 有效期：有要处理的才显示 ---------------- */}
+      {urgentExpiryCount > 0 ? (
+        <section className="section">
+          <button
+            type="button"
+            className="expiry-summary"
+            style={{ width: '100%', textAlign: 'left' }}
+            onClick={() => navigate('/expiry')}
+          >
+            <span className="row-between wrap">
+              <span className="section__title">{t('expiry.cardTitle')}</span>
+              <span className="small muted">
+                {t('expiry.cardAction')} <IconChevronRight size={13} />
+              </span>
+            </span>
+            <span className="expiry-summary__counts">
+              {stats.expiredCount > 0 ? (
+                <span className="expiry-summary__pill expiry-summary__pill--expired">
+                  {tc(stats.expiredCount, 'expiry.cardExpired')}
+                </span>
+              ) : null}
+              {stats.expiringSoonCount > 0 ? (
+                <span className="expiry-summary__pill expiry-summary__pill--soon">
+                  {tc(stats.expiringSoonCount, 'expiry.cardSoon')}
+                </span>
+              ) : null}
+            </span>
+          </button>
+        </section>
+      ) : null}
 
       {/* ---------------- 闲置占比：断舍离的核心指标 ---------------- */}
       <section className="section">
         <div className="idle-highlight">
           <div>
             <div className="idle-highlight__value">{idlePercent}%</div>
-            <div className="tiny dim">闲置占比</div>
+            <div className="tiny dim">{t('overview.idleShare')}</div>
           </div>
           <div className="idle-highlight__text">
             {stats.idleCount === 0
-              ? '目前没有闲置物品 —— 每一件都在用，很干净。'
-              : `有 ${stats.idleCount} 件已经闲置。闲置越久越说明它不该留在这里。`}
+              ? t('overview.idleNone')
+              : t('overview.idleSome', { count: stats.idleCount })}
           </div>
           {stats.idleCount > 0 ? (
             <Button onClick={() => navigate('/idle')}>
-              去处理
+              {t('overview.idleAction')}
               <IconChevronRight size={13} />
             </Button>
           ) : null}
@@ -146,15 +186,13 @@ export function Overview() {
       {/* ---------------- 按分类 ---------------- */}
       <section className="section">
         <div className="section__head">
-          <div className="section__title">按分类</div>
-          <div className="section__note">
-            只统计顶层分类；一件物品在同一顶层下只算一次
-          </div>
+          <div className="section__title">{t('overview.byCategory')}</div>
+          <div className="section__note">{t('overview.byCategoryNote')}</div>
         </div>
         <BarChart
           data={byCategory}
           limit={8}
-          emptyText="还没有设置分类"
+          emptyText={t('overview.emptyCategories')}
           onSelect={(d) => {
             if (d.target?.kind === 'category') {
               navigate(`/items?cat=${encodeURIComponent(d.target.id)}&group=category`)
@@ -168,13 +206,13 @@ export function Overview() {
       {/* ---------------- 按位置 ---------------- */}
       <section className="section">
         <div className="section__head">
-          <div className="section__title">按位置</div>
-          <div className="section__note">这里只显示第一层，点进去可以看每一层</div>
+          <div className="section__title">{t('overview.byLocation')}</div>
+          <div className="section__note">{t('overview.byLocationNote')}</div>
         </div>
         <BarChart
           data={byLocation}
           limit={8}
-          emptyText="还没有设置位置"
+          emptyText={t('overview.emptyLocations')}
           onSelect={(d) => {
             if (d.target?.kind === 'location') {
               navigate(`/items?loc=${encodeURIComponent(d.target.id)}&group=location`)
@@ -189,7 +227,7 @@ export function Overview() {
       {byTag.length > 1 || (byTag.length === 1 && byTag[0].key !== '__untagged__') ? (
         <section className="section">
           <div className="section__head">
-            <div className="section__title">按标签</div>
+            <div className="section__title">{t('overview.byTag')}</div>
           </div>
           <BarChart
             data={byTag}
@@ -209,8 +247,8 @@ export function Overview() {
       {stats.discardedCount > 0 ? (
         <section className="section">
           <div className="section__head">
-            <div className="section__title">按状态</div>
-            <div className="section__note">已舍弃的物品仍保留记录，可在设置里查看</div>
+            <div className="section__title">{t('overview.byStatus')}</div>
+            <div className="section__note">{t('overview.byStatusNote')}</div>
           </div>
           <BarChart
             data={byStatus}

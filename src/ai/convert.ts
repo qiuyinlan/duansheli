@@ -12,6 +12,7 @@
 
 import type { AppData, Item, TreeItem } from '../types'
 import { EXPIRY_SOON_DEFAULT_DAYS, isExpired, isExpiring } from '../lib/expiry'
+import { t } from '../i18n'
 import type { DerivedContext } from '../store/selectors'
 import { itemsInCategory, itemsInLocation } from '../store/selectors'
 import type { DraftApplyItem } from '../store/useAppStore'
@@ -178,8 +179,8 @@ export function toItemDraft(
   const locationLabel = locationId
     ? derived.index.pathString(locationId, ' / ')
     : newLocationPath
-      ? `${newLocationPath.join(' / ')}（新）`
-      : '未归位'
+      ? `${newLocationPath.join(' / ')}${t('common.newSuffix')}`
+      : t('status.unassigned')
 
   return {
     key: uid(),

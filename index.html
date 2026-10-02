@@ -8,11 +8,34 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <meta name="theme-color" content="#ffffff" />
-    <meta name="description" content="断舍离 · 整理你的物品，看清你的家当" />
+    <meta
+      name="description"
+      content="断舍离 · 整理你的物品，看清你的家当 — Declutter your things and see what you own"
+    />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="断舍离" />
     <title>断舍离 · 物品整理</title>
+    <script>
+      /*
+       * 在 bundle 加载之前先把语言定下来。
+       *
+       * 只有一个目的：免得英文用户先看到一瞬中文标题再跳成英文。
+       * 这里**故意写得很笨**（重复了一小段判断逻辑），因为它是首屏白屏期就跑的，
+       * 不能 import 任何模块。真正的检测逻辑在 src/i18n/index.ts，
+       * 挂载后 AppShell 会用那边的结果覆盖掉这里的猜测。
+       */
+      try {
+        var saved = localStorage.getItem('duansheli:lang')
+        var isEn = saved ? saved === 'en' : !/^zh/i.test(navigator.language || 'zh')
+        if (isEn) {
+          document.documentElement.lang = 'en'
+          document.title = 'Overview · 断舍离'
+        }
+      } catch (e) {
+        /* 隐私模式读不到 localStorage 也无所谓，交给 AppShell 覆盖 */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

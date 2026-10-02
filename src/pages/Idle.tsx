@@ -4,6 +4,7 @@ import { ItemRow } from '../components/ItemRow'
 import { IconTrash } from '../components/ui/icons'
 import { Button, ConfirmDialog, EmptyState } from '../components/ui/primitives'
 import { daysSince, formatDays, percent } from '../lib/format'
+import { useT } from '../i18n'
 import { computeStats, liveItems, sortByIdleDuration } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
 
@@ -14,6 +15,10 @@ export function Idle() {
   const setIdle = useAppStore((s) => s.setIdle)
   const batchSetStatus = useAppStore((s) => s.batchSetStatus)
   const notify = useAppStore((s) => s.notify)
+
+  // useT() 一方面是拿 t，另一方面是**订阅语言**：
+  // 语言一换这个页面就会重新渲染，页面上所有文字才会跟着变。
+  const { t } = useT()
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -48,20 +53,20 @@ export function Idle() {
       <>
         <div className="page-header">
           <div>
-            <div className="page-header__title">闲置</div>
-            <div className="page-header__sub">标记为闲置的物品会汇总到这里</div>
+            <div className="page-header__title">{t('nav.titleIdle')}</div>
+            <div className="page-header__sub">{t('idle.subtitleEmpty')}</div>
           </div>
         </div>
         <EmptyState
-          title="闲置已清空"
+          title={t('idle.emptyTitle')}
           hint={
             <>
-              没有一件东西处在「闲置」状态 —— 很干净。
+              {t('idle.emptyHintFirst')}
               <br />
-              以后发现有东西一直没动，就在物品列表里点一下「闲置」，它就会出现在这里。
+              {t('idle.emptyHintSecond')}
             </>
           }
-          action={<Button onClick={() => navigate('/items')}>去物品列表</Button>}
+          action={<Button onClick={() => navigate('/items')}>{t('idle.emptyAction')}</Button>}
         />
       </>
     )
@@ -71,23 +76,22 @@ export function Idle() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-header__title">闲置</div>
-          <div className="page-header__sub">
-            闲置越久的排越前面 —— 最该被处理的自动浮到顶上
-          </div>
+          <div className="page-header__title">{t('nav.titleIdle')}</div>
+          <div className="page-header__sub">{t('idle.subtitle')}</div>
         </div>
       </div>
 
       <div className="idle-highlight" style={{ marginBottom: 'var(--gap-5)' }}>
         <div>
           <div className="idle-highlight__value">{idleItems.length}</div>
-          <div className="tiny dim">件闲置</div>
+          <div className="tiny dim">{t('idle.highlightLabel')}</div>
         </div>
         <div className="idle-highlight__text">
-          占全部物品的 {idlePercent}%
-          {oldestDays > 0 ? `，最久的已经闲置了 ${formatDays(oldestDays)}` : ''}。
+          {oldestDays > 0
+            ? t('idle.shareOldest', { percent: idlePercent, days: formatDays(oldestDays) })
+            : t('idle.share', { percent: idlePercent })}
           <br />
-          看一遍，能扔的就点「已处理」。
+          {t('idle.hint')}
         </div>
       </div>
 
@@ -98,24 +102,24 @@ export function Idle() {
             checked={allSelected}
             onChange={() => setSelected(allSelected ? new Set() : new Set(idleItems.map((i) => i.id)))}
           />
-          <span className="small muted">全选这 {idleItems.length} 件</span>
+          <span className="small muted">{t('idle.selectAll', { count: idleItems.length })}</span>
         </label>
 
         {selected.size > 0 ? (
           <div className="row">
-            <span className="small muted">已选 {selected.size} 件</span>
+            <span className="small muted">{t('idle.selectedCount', { count: selected.size })}</span>
             <Button
               size="sm"
               onClick={() => {
                 batchSetStatus(selectedIds, 'active')
-                notify(`已把 ${selectedIds.length} 件改回「在用」`, 'success')
+                notify(t('idle.markedActiveToast', { count: selectedIds.length }), 'success')
                 setSelected(new Set())
               }}
             >
-              改回在用
+              {t('idle.markActive')}
             </Button>
             <Button size="sm" onClick={() => setConfirmOpen(true)}>
-              已处理（舍弃）
+              {t('idle.discard')}
             </Button>
           </div>
         ) : null}
@@ -141,15 +145,15 @@ export function Idle() {
               actions={
                 <>
                   <Button size="sm" variant="ghost" onClick={() => setIdle(item.id, false)}>
-                    改回在用
+                    {t('idle.markActive')}
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
-                    title="已处理（移入已舍弃）"
+                    title={t('idle.discardTitle')}
                     onClick={() => {
                       batchSetStatus([item.id], 'discarded')
-                      notify('已移入「已舍弃」，可在设置里找回', 'success')
+                      notify(t('idle.discardedToast'), 'success')
                     }}
                   >
                     <IconTrash size={14} />
@@ -163,19 +167,19 @@ export function Idle() {
 
       <ConfirmDialog
         open={confirmOpen}
-        title="确认已处理？"
+        title={t('idle.confirmTitle')}
         danger
-        confirmLabel="已处理"
+        confirmLabel={t('idle.confirmLabel')}
         message={
           <>
-            将把选中的 {selectedIds.length} 件物品标记为「已舍弃」。
+            {t('idle.confirmBodyFirst', { count: selectedIds.length })}
             <br />
-            记录不会消失，可以在「设置 → 已舍弃回收站」里找回。
+            {t('idle.confirmBodySecond')}
           </>
         }
         onConfirm={() => {
           batchSetStatus(selectedIds, 'discarded')
-          notify(`已处理 ${selectedIds.length} 件，闲置清单又短了一点`, 'success')
+          notify(t('idle.handledToast', { count: selectedIds.length }), 'success')
           setSelected(new Set())
           setConfirmOpen(false)
         }}

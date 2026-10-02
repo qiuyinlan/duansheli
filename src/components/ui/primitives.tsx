@@ -6,6 +6,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { useAppStore } from '../../store/useAppStore'
+import { useT } from '../../i18n'
 import { IconAlert, IconCheck, IconClose, IconSearch } from './icons'
 
 /* ------------------------------------------------------------------ */
@@ -95,6 +96,8 @@ interface SearchInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, '
 }
 
 export function SearchInput({ value, onValueChange, ...rest }: SearchInputProps) {
+  const { t } = useT()
+
   return (
     <div className="search">
       <span className="search__icon">
@@ -111,7 +114,7 @@ export function SearchInput({ value, onValueChange, ...rest }: SearchInputProps)
         <button
           type="button"
           className="search__clear"
-          aria-label="清空搜索"
+          aria-label={t('common.clearSearchAria')}
           onClick={() => onValueChange('')}
         >
           <IconClose size={13} />
@@ -157,6 +160,8 @@ interface ModalProps {
 }
 
 export function Modal({ open, title, onClose, children, footer, maxWidth }: ModalProps) {
+  const { t } = useT()
+
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -189,7 +194,7 @@ export function Modal({ open, title, onClose, children, footer, maxWidth }: Moda
       >
         <div className="modal__header">
           <div className="modal__title">{title}</div>
-          <IconButton label="关闭" onClick={onClose}>
+          <IconButton label={t('common.closeAria')} onClick={onClose}>
             <IconClose />
           </IconButton>
         </div>
@@ -220,12 +225,18 @@ export function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = '确定',
-  cancelLabel = '取消',
+  confirmLabel,
+  cancelLabel,
   danger = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  // 默认按钮文字要在这里取，不能写成模块级常量 ——
+  // 那会在模块加载时把语言冻住，切换语言后对话框还是旧语言。
+  const { t } = useT()
+  const confirm = confirmLabel ?? t('common.confirm')
+  const cancel = cancelLabel ?? t('common.cancel')
+
   return (
     <Modal
       open={open}
@@ -234,9 +245,9 @@ export function ConfirmDialog({
       maxWidth={400}
       footer={
         <>
-          <Button onClick={onCancel}>{cancelLabel}</Button>
+          <Button onClick={onCancel}>{cancel}</Button>
           <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>
-            {confirmLabel}
+            {confirm}
           </Button>
         </>
       }
@@ -255,6 +266,7 @@ export function ConfirmDialog({
 export function ToastStack() {
   const toasts = useAppStore((s) => s.toasts)
   const dismiss = useAppStore((s) => s.dismissToast)
+  const { t } = useT()
 
   if (toasts.length === 0) return null
 
@@ -271,7 +283,7 @@ export function ToastStack() {
           <button
             type="button"
             className="toast__close"
-            aria-label="关闭提示"
+            aria-label={t('common.closeAlertAria')}
             onClick={() => dismiss(toast.id)}
           >
             <IconClose size={13} />

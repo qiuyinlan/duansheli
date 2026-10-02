@@ -4,6 +4,7 @@ import { ItemRow } from '../components/ItemRow'
 import { TreeView } from '../components/TreeView'
 import { IconPencil, IconPlus, IconTrash } from '../components/ui/icons'
 import { Button, ConfirmDialog, EmptyState, Modal, Switch } from '../components/ui/primitives'
+import { useT } from '../i18n'
 import {
   countByCategoryIncludingDescendants,
   itemsInCategory,
@@ -38,6 +39,9 @@ export function Categories() {
   const moveCategory = useAppStore((s) => s.moveCategory)
   const deleteCategory = useAppStore((s) => s.deleteCategory)
   const notify = useAppStore((s) => s.notify)
+
+  // 拿 t/tc 的同时也订阅了语言：切语言时这个页面会整个重新渲染
+  const { t, tc } = useT()
 
   const [selected, setSelected] = useState<string | null>(null)
   const [touched, setTouched] = useState(false)
@@ -79,7 +83,7 @@ export function Categories() {
 
   const activeLabel = activeId
     ? derived.categoryIndex.pathString(activeId, ' / ')
-    : '未分类'
+    : t('status.uncategorized')
 
   const directCount = activeId
     ? live.filter((item) => item.categoryIds.includes(activeId)).length
@@ -91,8 +95,10 @@ export function Categories() {
       mode: 'add',
       parentId,
       title: parentId
-        ? `在「${derived.categoryById.get(parentId)?.name ?? ''}」下新建子分类`
-        : '新建顶层分类',
+        ? t('categories.addChildTitle', {
+            name: derived.categoryById.get(parentId)?.name ?? '',
+          })
+        : t('categories.addTopTitle'),
     })
   }
 
@@ -104,7 +110,7 @@ export function Categories() {
       mode: 'rename',
       parentId: category.parentId,
       targetId: id,
-      title: '重命名分类',
+      title: t('categories.renameTitle'),
     })
   }
 
@@ -116,16 +122,16 @@ export function Categories() {
     if (nameDialog.mode === 'add') {
       const created = addCategory(name, nameDialog.parentId)
       if (!created) {
-        notify('同一级下已经有同名的分类了', 'error')
+        notify(t('categories.addDuplicate'), 'error')
         return
       }
       if (nameDialog.parentId) {
         setExpanded((prev) => new Set(prev).add(nameDialog.parentId as string))
       }
-      notify('已创建分类', 'success')
+      notify(t('categories.addDone'), 'success')
     } else if (nameDialog.targetId) {
       renameCategory(nameDialog.targetId, name)
-      notify('已重命名', 'success')
+      notify(t('categories.renameDone'), 'success')
     }
     setNameDialog(null)
   }
@@ -136,7 +142,7 @@ export function Categories() {
 
     const result = deleteCategory(id)
     if (result.ok) {
-      notify(`已删除分类「${category.name}」`, 'success')
+      notify(t('categories.deleteDone', { name: category.name }), 'success')
       if (activeId === id) {
         setSelected(null)
         setTouched(true)
@@ -151,36 +157,47 @@ export function Categories() {
     })
   }
 
+  // 删除确认框里「还有 N 个子分类、M 件物品」那一段。
+  // 分隔符也走词典：中文是顿号，英文得写成 and。
+  const deleteContents = [
+    deleteProbe && deleteProbe.childCount > 0
+      ? tc(deleteProbe.childCount, 'categories.deleteChildCount')
+      : null,
+    deleteProbe && deleteProbe.itemCount > 0
+      ? tc(deleteProbe.itemCount, 'categories.deleteItemCount')
+      : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(t('categories.deleteJoin'))
+
   return (
     <>
       <div className="page-header">
         <div>
-          <div className="page-header__title">分类</div>
-          <div className="page-header__sub">
-            分类管的是「这是什么」。可以分很多级，比如 化妆品 › 眼妆；一件物品可以同时属于多个分类。
-          </div>
+          <div className="page-header__title">{t('nav.titleCategories')}</div>
+          <div className="page-header__sub">{t('categories.subtitle')}</div>
         </div>
         <div className="page-header__actions">
           <Button variant="primary" onClick={() => openAddDialog(null)}>
             <IconPlus size={13} />
-            新建分类
+            {t('categories.newTop')}
           </Button>
         </div>
       </div>
 
       {data.categories.length === 0 ? (
         <EmptyState
-          title="还没有分类"
+          title={t('categories.empty')}
           hint={
             <>
-              先建几个常用的顶层分类就好，比如：衣物、电子、日用品。
+              {t('categories.emptyHint')}
               <br />
-              之后随时可以在任意分类下面继续加子分类。
+              {t('categories.emptyHintSecond')}
             </>
           }
           action={
             <Button variant="primary" onClick={() => openAddDialog(null)}>
-              创建第一个分类
+              {t('categories.createFirst')}
             </Button>
           }
         />
@@ -207,7 +224,7 @@ export function Categories() {
               }
               virtualRoot={{
                 id: UNCATEGORIZED_ID,
-                label: '未分类',
+                label: t('status.uncategorized'),
                 count: counts.get(UNCATEGORIZED_ID) ?? 0,
               }}
               renderActions={(node) => (
@@ -215,7 +232,7 @@ export function Categories() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    title="新建子分类"
+                    title={t('categories.addChild')}
                     onClick={() => openAddDialog(node.id)}
                   >
                     <IconPlus size={12} />
@@ -223,7 +240,7 @@ export function Categories() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    title="移动到其他分类下"
+                    title={t('categories.moveUnder')}
                     onClick={() => setMoveTarget(node.id)}
                   >
                     ↑
@@ -231,7 +248,7 @@ export function Categories() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    title="重命名"
+                    title={t('common.rename')}
                     onClick={() => openRenameDialog(node.id)}
                   >
                     <IconPencil size={12} />
@@ -239,7 +256,7 @@ export function Categories() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    title="删除"
+                    title={t('common.delete')}
                     onClick={() => handleDelete(node.id)}
                   >
                     <IconTrash size={12} />
@@ -255,28 +272,26 @@ export function Categories() {
               <div>
                 <div style={{ fontSize: 'var(--fs-h2)', fontWeight: 600 }}>{activeLabel}</div>
                 <div className="small muted">
-                  共 <span className="numeric">{scopedItems.length}</span> 件
+                  {tc(scopedItems.length, 'categories.countHere')}
                   {activeId && ui.includeDescendants && directCount !== scopedItems.length
-                    ? `（其中 ${directCount} 件直接挂在这里）`
-                    : ''}
+                    ? tc(directCount, 'categories.directHere')
+                    : null}
                 </div>
               </div>
               {activeId ? (
                 <Switch
                   checked={ui.includeDescendants}
                   onChange={(v) => setUi({ includeDescendants: v })}
-                  label="含子分类"
+                  label={t('categories.includeDescendants')}
                 />
               ) : null}
             </div>
 
             {scopedItems.length === 0 ? (
               <EmptyState
-                title={activeId ? '这个分类下还没有物品' : '所有物品都已经分类了'}
+                title={activeId ? t('categories.scopedEmpty') : t('categories.allAssignedEmpty')}
                 hint={
-                  activeId
-                    ? '空分类没问题 —— 先建好结构，东西可以慢慢归。'
-                    : '每一件东西都找到了自己的位置。'
+                  activeId ? t('categories.scopedEmptyHint') : t('categories.allAssignedEmptyHint')
                 }
               />
             ) : (
@@ -295,7 +310,7 @@ export function Categories() {
                           navigate(`/items?cat=${encodeURIComponent(activeId ?? '')}&group=category`)
                         }
                       >
-                        筛选
+                        {t('categories.filter')}
                       </Button>
                     }
                   />
@@ -314,13 +329,13 @@ export function Categories() {
         maxWidth={400}
         footer={
           <>
-            <Button onClick={() => setNameDialog(null)}>取消</Button>
+            <Button onClick={() => setNameDialog(null)}>{t('common.cancel')}</Button>
             <Button
               variant="primary"
               onClick={submitNameDialog}
               disabled={nameDraft.trim() === ''}
             >
-              确定
+              {t('common.confirm')}
             </Button>
           </>
         }
@@ -329,7 +344,7 @@ export function Categories() {
           className="input"
           autoFocus
           value={nameDraft}
-          placeholder="例如：眼妆"
+          placeholder={t('categories.namePlaceholder')}
           onChange={(e) => setNameDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -348,10 +363,10 @@ export function Categories() {
           if (moveTarget === null) return
           const result = moveCategory(moveTarget, newParentId)
           if (result.ok) {
-            notify('已移动分类', 'success')
+            notify(t('categories.moveDone'), 'success')
             if (newParentId) setExpanded((prev) => new Set(prev).add(newParentId))
           } else {
-            notify(result.reason ?? '移动失败', 'error')
+            notify(result.reason ?? t('categories.moveFailed'), 'error')
           }
           setMoveTarget(null)
         }}
@@ -360,35 +375,28 @@ export function Categories() {
       {/* ---------------- 删除有内容的分类 ---------------- */}
       <ConfirmDialog
         open={deleteProbe !== null}
-        title={`删除分类「${deleteProbe?.name ?? ''}」？`}
+        title={t('categories.deleteTitle', { name: deleteProbe?.name ?? '' })}
         danger
-        confirmLabel="移到未分类并删除"
+        confirmLabel={t('categories.deleteConfirm')}
         message={
           <>
-            这个分类下还有
-            {deleteProbe && deleteProbe.childCount > 0
-              ? ` ${deleteProbe.childCount} 个子分类`
-              : ''}
-            {deleteProbe && deleteProbe.childCount > 0 && deleteProbe.itemCount > 0 ? '、' : ''}
-            {deleteProbe && deleteProbe.itemCount > 0
-              ? ` ${deleteProbe.itemCount} 件物品`
-              : ''}
-            。
+            {t('categories.deleteBodyLead', { list: deleteContents })}
             <br />
             <br />
-            继续的话，<strong>子分类会挂到顶层</strong>、直接挂在这里的物品会变成「未分类」——
-            东西本身都不会丢，子分类里的物品也不受影响。删除前会自动存一份快照。
+            {t('categories.deleteBodyBefore')}
+            <strong>{t('categories.deleteBodyStrong')}</strong>
+            {t('categories.deleteBodyAfter', { uncategorized: t('status.uncategorized') })}
           </>
         }
         onConfirm={() => {
           if (!deleteProbe) return
           const result = deleteCategory(deleteProbe.id, null)
           if (result.ok) {
-            notify('已删除分类，内容已妥善安置', 'success')
+            notify(t('categories.deleteMovedDone'), 'success')
             setSelected(null)
             setTouched(true)
           } else {
-            notify(result.reason ?? '删除失败', 'error')
+            notify(result.reason ?? t('categories.deleteFailed'), 'error')
           }
           setDeleteProbe(null)
         }}
@@ -413,6 +421,7 @@ function MoveCategoryDialog({
 }) {
   const derived = useAppStore((s) => s.derived)
   const data = useAppStore((s) => s.data)
+  const { t } = useT()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -427,14 +436,14 @@ function MoveCategoryDialog({
   return (
     <Modal
       open={open}
-      title="移动分类"
+      title={t('categories.moveTitle')}
       onClose={onClose}
-      footer={<Button onClick={onClose}>取消</Button>}
+      footer={<Button onClick={onClose}>{t('common.cancel')}</Button>}
     >
       <div className="dim small" style={{ marginBottom: 'var(--gap-3)' }}>
-        选一个新的上级分类。选「移到顶层」就把它提为顶层分类。
+        {t('categories.moveHint', { moveToTop: t('categories.moveToTop') })}
         <br />
-        （它自己的子分类会跟着一起走）
+        {t('categories.moveHintSecond')}
       </div>
       <div
         style={{
@@ -459,7 +468,7 @@ function MoveCategoryDialog({
               return next
             })
           }
-          virtualRoot={{ id: UNCATEGORIZED_ID, label: '移到顶层', count: 0 }}
+          virtualRoot={{ id: UNCATEGORIZED_ID, label: t('categories.moveToTop'), count: 0 }}
         />
       </div>
     </Modal>

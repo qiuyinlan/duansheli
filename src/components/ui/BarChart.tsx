@@ -1,4 +1,5 @@
 import type { BarDatum } from '../../store/selectors'
+import { t, useT } from '../../i18n'
 import { colorForKey } from '../../lib/palette'
 
 interface BarChartProps {
@@ -17,7 +18,10 @@ interface BarChartProps {
  * 图表里看到「化妆品」是蓝的，列表里那一组也是蓝的，一眼能连起来。
  * 颜色由 key 哈希决定，所以是稳定的，不会每刷新一次就换个色。
  */
-export function BarChart({ data, onSelect, emptyText = '暂无数据', limit }: BarChartProps) {
+export function BarChart({ data, onSelect, emptyText, limit }: BarChartProps) {
+  // 订阅语言：图里的字（「其他 N 项」、可点击条形的提示）要跟着切
+  useT()
+
   let rows = data
 
   if (limit && data.length > limit) {
@@ -25,12 +29,17 @@ export function BarChart({ data, onSelect, emptyText = '暂无数据', limit }: 
     const restValue = data.slice(limit).reduce((sum, d) => sum + d.value, 0)
     rows = [...head]
     if (restValue > 0) {
-      rows.push({ key: '__others__', label: `其他 ${data.length - limit} 项`, value: restValue })
+      rows.push({
+        key: '__others__',
+        label: t('chart.others', { count: data.length - limit }),
+        value: restValue,
+      })
     }
   }
 
   if (rows.length === 0) {
-    return <div className="dim small">{emptyText}</div>
+    // 调用方给了 emptyText 就用它的（那是调用方的文案），没给才用兜底
+    return <div className="dim small">{emptyText ?? t('chart.empty')}</div>
   }
 
   const max = Math.max(...rows.map((d) => d.value), 1)
@@ -63,7 +72,7 @@ export function BarChart({ data, onSelect, emptyText = '暂无数据', limit }: 
             type="button"
             className="bar-row bar-row--clickable"
             onClick={() => onSelect?.(datum)}
-            title={`查看「${datum.label}」`}
+            title={t('chart.view', { label: datum.label })}
           >
             {inner}
           </button>

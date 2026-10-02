@@ -67,4 +67,22 @@ export const common = {
   language: '语言',
   languageSwitchTo: '切换到{lang}',
   languageHint: '只改变界面文字，你录入的内容不会被翻译。',
+
+  /* 无障碍标签（屏幕上看不见，但读屏软件会念） */
+  clearSearchAria: '清空搜索',
+  closeAria: '关闭',
+  closeAlertAria: '关闭提示',
+
+  /* 启动阶段：本地数据打不开时的整屏提示 */
+  openingData: '正在打开本地数据…',
+  openDataFailed: '无法打开本地数据',
+  openDataReason1:
+    '常见原因：浏览器处于无痕 / 隐私模式，或禁用了网站数据存储。请改用普通窗口打开；',
+  openDataReason2: '如果是 iPhone，请在「设置 → Safari → 高级 → 网站数据」中确认没有禁用。',
+
+  /* 挂在某个名字后面的小标记，如「车库 / 货架（新）」 */
+  newSuffix: '（新）',
+
+  /* 只在开发期可能出现的致命错误 */
+  mountPointMissing: '找不到 #root 挂载点',
 }

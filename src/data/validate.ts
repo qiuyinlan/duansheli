@@ -11,6 +11,9 @@ import type {
 } from '../types'
 import { APP_ID, SCHEMA_VERSION } from '../types'
 import { normalizeExpiryDate } from '../lib/expiry'
+// 警告和报错都要给用户看，所以取词写在**拼接消息的那一刻**：
+// 模块顶层取词会把当时的语言冻住，切换语言后就露馅了。
+import { t, tc } from '../i18n'
 
 /* ------------------------------------------------------------------ */
 /* 取值助手：导入的文件可能被手工改过，这里做防御性归一化               */
@@ -73,17 +76,17 @@ function normalizeAttrs(v: unknown): Record<string, AttrValue> {
 
 function normalizeItem(raw: unknown, now: string, warn: string[], index: number): Item | null {
   if (!isRecord(raw)) {
-    warn.push(`第 ${index + 1} 条物品不是有效对象，已跳过`)
+    warn.push(t('data.validate.itemNotObject', { index: index + 1 }))
     return null
   }
   const name = str(raw.name).trim()
   if (name === '') {
-    warn.push(`第 ${index + 1} 条物品没有名称，已跳过`)
+    warn.push(t('data.validate.itemNoName', { index: index + 1 }))
     return null
   }
   const id = str(raw.id).trim()
   if (id === '') {
-    warn.push(`物品「${name}」缺少 id，已跳过`)
+    warn.push(t('data.validate.itemNoId', { name }))
     return null
   }
 
@@ -121,7 +124,7 @@ function normalizeLocation(raw: unknown, now: string, warn: string[]): Location 
   const id = str(raw.id).trim()
   const name = str(raw.name).trim()
   if (id === '' || name === '') {
-    warn.push('发现一条缺少 id 或名称的位置，已跳过')
+    warn.push(t('data.validate.locationNoIdOrName'))
     return null
   }
   const parentIdRaw = raw.parentId
@@ -142,7 +145,7 @@ function normalizeCategory(raw: unknown, now: string, warn: string[]): Category 
   const id = str(raw.id).trim()
   const name = str(raw.name).trim()
   if (id === '' || name === '') {
-    warn.push('发现一条缺少 id 或名称的分类，已跳过')
+    warn.push(t('data.validate.categoryNoIdOrName'))
     return null
   }
   // parentId 是 v2 新增的。老备份（v1）里没有这个字段，
@@ -165,7 +168,7 @@ function normalizeAttributeDef(raw: unknown, now: string, warn: string[]): Attri
   const id = str(raw.id).trim()
   const name = str(raw.name).trim()
   if (id === '' || name === '') {
-    warn.push('发现一条缺少 id 或名称的属性，已跳过')
+    warn.push(t('data.validate.attributeNoIdOrName'))
     return null
   }
   const typeRaw = str(raw.type, 'text')
@@ -221,7 +224,7 @@ export type ParseOutcome = ParseSuccess | ParseFailure
  */
 export function parseExportFile(text: string): ParseOutcome {
   const trimmed = text.trim()
-  if (trimmed === '') return { ok: false, error: '文件是空的。' }
+  if (trimmed === '') return { ok: false, error: t('data.validate.fileEmpty') }
 
   let parsed: unknown
   try {
@@ -229,38 +232,39 @@ export function parseExportFile(text: string): ParseOutcome {
   } catch {
     return {
       ok: false,
-      error: '文件内容不是合法的 JSON，可能已损坏或不是导出文件。',
+      error: t('data.validate.fileNotJson'),
     }
   }
 
   if (!isRecord(parsed)) {
-    return { ok: false, error: '文件结构不正确：顶层应该是一个对象。' }
+    return { ok: false, error: t('data.validate.fileNotObject') }
   }
 
   const format = str(parsed.format)
   if (format !== APP_ID) {
     return {
       ok: false,
-      error: `这不是「断舍离」的备份文件（缺少 format: "${APP_ID}" 标记）。`,
+      error: t('data.validate.fileNotOurs', { appId: APP_ID }),
     }
   }
 
   const schemaVersion = num(parsed.schemaVersion, 0)
   if (schemaVersion <= 0) {
-    return { ok: false, error: '备份文件缺少有效的 schemaVersion 字段。' }
+    return { ok: false, error: t('data.validate.fileNoSchemaVersion') }
   }
   if (schemaVersion > SCHEMA_VERSION) {
     return {
       ok: false,
-      error:
-        `这份备份来自更新版本（数据结构 v${schemaVersion}），` +
-        `当前程序只支持到 v${SCHEMA_VERSION}。请先升级程序再导入。`,
+      error: t('data.validate.fileNewerSchema', {
+        version: schemaVersion,
+        supported: SCHEMA_VERSION,
+      }),
     }
   }
 
   const dataRaw = parsed.data
   if (!isRecord(dataRaw)) {
-    return { ok: false, error: '备份文件里没有 data 字段，或 data 不是对象。' }
+    return { ok: false, error: t('data.validate.fileNoData') }
   }
 
   const now = new Date().toISOString()
@@ -277,7 +281,7 @@ export function parseExportFile(text: string): ParseOutcome {
     !Array.isArray(dataRaw.locations) &&
     !Array.isArray(dataRaw.categories)
   ) {
-    return { ok: false, error: '备份文件里找不到 items / locations / categories 数据。' }
+    return { ok: false, error: t('data.validate.fileNoCollections') }
   }
 
   const items: Item[] = []
@@ -315,12 +319,12 @@ export function parseExportFile(text: string): ParseOutcome {
   }
 
   // 去重：id 重复时保留第一条，避免出现两个「同一个位置」
-  const dedupe = <T extends { id: string }>(list: T[], label: string): T[] => {
+  const dedupe = <T extends { id: string }>(list: T[], kind: string): T[] => {
     const seen = new Set<string>()
     const out: T[] = []
     for (const entry of list) {
       if (seen.has(entry.id)) {
-        warnings.push(`发现重复的${label} id，已忽略后出现的那条`)
+        warnings.push(t('data.validate.duplicateId', { kind }))
         continue
       }
       seen.add(entry.id)
@@ -329,10 +333,10 @@ export function parseExportFile(text: string): ParseOutcome {
     return out
   }
 
-  const dedupedItems = dedupe(items, '物品')
-  const dedupedLocations = dedupe(locations, '位置')
-  const dedupedCategories = dedupe(categories, '分类')
-  const dedupedAttrDefs = dedupe(attributeDefs, '属性')
+  const dedupedItems = dedupe(items, t('data.kind.item'))
+  const dedupedLocations = dedupe(locations, t('data.kind.location'))
+  const dedupedCategories = dedupe(categories, t('data.kind.category'))
+  const dedupedAttrDefs = dedupe(attributeDefs, t('data.kind.attribute'))
 
   // 悬空引用修复：物品指向了不存在的位置/分类/属性
   const locIds = new Set(dedupedLocations.map((l) => l.id))
@@ -354,10 +358,10 @@ export function parseExportFile(text: string): ParseOutcome {
     )
   }
   if (danglingLocations > 0) {
-    warnings.push(`${danglingLocations} 件物品指向了不存在的位置，已改为「未归位」`)
+    warnings.push(tc(danglingLocations, 'data.validate.danglingLocation'))
   }
   if (danglingCategories > 0) {
-    warnings.push(`${danglingCategories} 处分类引用已失效，已移除`)
+    warnings.push(tc(danglingCategories, 'data.validate.danglingCategory'))
   }
 
   // 位置父子引用修复
@@ -366,7 +370,7 @@ export function parseExportFile(text: string): ParseOutcome {
   )
   for (const loc of parentFixed) {
     loc.parentId = null
-    warnings.push(`位置「${loc.name}」的上级位置不存在，已提升为顶层`)
+    warnings.push(t('data.validate.locationParentMissing', { name: loc.name }))
   }
 
   // 分类父子引用修复（分类现在也是树，同样要处理）
@@ -375,7 +379,7 @@ export function parseExportFile(text: string): ParseOutcome {
   )
   for (const category of categoryParentFixed) {
     category.parentId = null
-    warnings.push(`分类「${category.name}」的上级分类不存在，已提升为顶层`)
+    warnings.push(t('data.validate.categoryParentMissing', { name: category.name }))
   }
 
   const data: AppData = {

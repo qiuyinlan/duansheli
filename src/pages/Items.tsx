@@ -12,7 +12,9 @@ import {
   flattenGroupNodes,
   groupAndSort,
   isGroupExpanded,
+  labelForExpiryState,
   liveItems,
+  statusLabel,
   type ItemFilter,
   type ItemGroupNode,
 } from '../store/selectors'
@@ -20,25 +22,36 @@ import { useAppStore } from '../store/useAppStore'
 import { assignGroupColors, NEUTRAL_GROUP_COLOR } from '../lib/palette'
 import type { GroupBy, ItemStatus, SortBy, SortDir } from '../types'
 import { UNASSIGNED_ID } from '../types'
+import type { DictKey } from '../i18n'
+import { useT } from '../i18n'
 
 /* ------------------------------------------------------------------ */
 /* URL 参数 → 筛选条件                                                 */
 /* ------------------------------------------------------------------ */
 
-const GROUP_OPTIONS: Array<{ value: GroupBy; label: string }> = [
-  { value: 'category', label: '分类' },
-  { value: 'location', label: '位置' },
-  { value: 'tag', label: '标签' },
-  { value: 'status', label: '状态' },
-  { value: 'none', label: '不分组' },
+/**
+ * 分组 / 排序的备选值。
+ *
+ * 存的是**词典 key**，不是显示文字：这两个数组是模块级常量，
+ * 在模块加载时调用 t() 会把当时的语言冻进去，之后切语言它们不变
+ * （docs/i18n-约定.md 第 3 条说的就是这件事）。
+ */
+const GROUP_OPTIONS: Array<{ value: GroupBy; labelKey: DictKey }> = [
+  { value: 'category', labelKey: 'items.groupCategory' },
+  { value: 'location', labelKey: 'items.groupLocation' },
+  { value: 'tag', labelKey: 'items.groupTag' },
+  { value: 'status', labelKey: 'items.groupStatus' },
+  { value: 'expiry', labelKey: 'expiry.filterLabel' },
+  { value: 'none', labelKey: 'items.groupNone' },
 ]
 
-const SORT_OPTIONS: Array<{ value: SortBy; label: string }> = [
-  { value: 'updated', label: '最近修改' },
-  { value: 'created', label: '最近添加' },
-  { value: 'name', label: '名称' },
-  { value: 'quantity', label: '数量' },
-  { value: 'location', label: '位置' },
+const SORT_OPTIONS: Array<{ value: SortBy; labelKey: DictKey }> = [
+  { value: 'updated', labelKey: 'items.sortUpdated' },
+  { value: 'created', labelKey: 'items.sortCreated' },
+  { value: 'name', labelKey: 'items.sortName' },
+  { value: 'quantity', labelKey: 'items.sortQuantity' },
+  { value: 'location', labelKey: 'items.sortLocation' },
+  { value: 'expiry', labelKey: 'expiry.sortLabel' },
 ]
 
 const VALID_STATUSES: ItemStatus[] = ['active', 'idle', 'discarded']
@@ -94,6 +107,11 @@ export function Items() {
   const batchAddTag = useAppStore((s) => s.batchAddTag)
   const notify = useAppStore((s) => s.notify)
 
+  // useT() 一方面给 t/tc，另一方面**订阅语言**：语言一换这个组件就重渲染。
+  // lang 还要进下面各个 useMemo 的依赖 —— 分组标题是 selectors 里查表得到的，
+  // 不显式依赖 lang 的话切语言后分组标题会停在旧语言。
+  const { t, tc, lang } = useT()
+
   const [filter, setFilter] = useState<ItemFilter>(EMPTY_FILTER)
   const [groupBy, setGroupBy] = useState<GroupBy>(ui.groupBy)
   const [sortBy, setSortBy] = useState<SortBy>(ui.sortBy)
@@ -131,7 +149,7 @@ export function Items() {
 
   const groups = useMemo(
     () => groupAndSort(filtered, groupBy, sortBy, sortDir, derived),
-    [filtered, groupBy, sortBy, sortDir, derived],
+    [filtered, groupBy, sortBy, sortDir, derived, lang],
   )
 
   const locationCounts = useMemo(
@@ -150,6 +168,7 @@ export function Items() {
     filter.categoryIds.length +
     filter.locationIds.length +
     filter.statuses.length +
+    filter.expiryStates.length +
     filter.tags.length +
     filter.attrFilters.length
 
@@ -170,7 +189,7 @@ export function Items() {
   }
 
   const selectedIds = useMemo(() => [...selected], [selected])
-  const tagSuggestions = useMemo(() => data.tags.map((t) => t.name), [data.tags])
+  const tagSuggestions = useMemo(() => data.tags.map((tag) => tag.name), [data.tags])
 
   const changeGroupBy = (value: GroupBy) => {
     setGroupBy(value)
@@ -186,9 +205,7 @@ export function Items() {
   const runBatchStatus = (status: ItemStatus) => {
     batchSetStatus(selectedIds, status)
     notify(
-      `已把 ${selectedIds.length} 件物品标记为「${
-        status === 'idle' ? '闲置' : status === 'discarded' ? '已舍弃' : '在用'
-      }」`,
+      tc(selectedIds.length, 'items.batchStatus', { status: statusLabel(status) }),
       'success',
     )
     setSelected(new Set())
@@ -201,15 +218,15 @@ export function Items() {
       <>
         <div className="page-header">
           <div>
-            <div className="page-header__title">物品</div>
+            <div className="page-header__title">{t('nav.titleItems')}</div>
           </div>
         </div>
         <EmptyState
-          title="还没有任何物品"
-          hint="从最想整理的那个抽屉开始，一件一件录进来。"
+          title={t('items.emptyTitle')}
+          hint={t('items.emptyHint')}
           action={
             <Button variant="primary" onClick={() => navigate('/items/new')}>
-              录入物品
+              {t('items.addItem')}
             </Button>
           }
         />
@@ -256,7 +273,7 @@ export function Items() {
           <span className="group-head__label" style={{ color: color.text }}>
             {node.label}
           </span>
-          <span className="group-head__count numeric">{node.total} 件</span>
+          <span className="group-head__count numeric">{tc(node.total, 'format.countItems')}</span>
           <span className="group-head__line" style={{ background: color.line }} />
         </button>
 
@@ -287,15 +304,15 @@ export function Items() {
                           variant="ghost"
                           onClick={() => setIdle(item.id, item.status !== 'idle')}
                         >
-                          {item.status === 'idle' ? '改回在用' : '闲置'}
+                          {item.status === 'idle' ? t('items.backToActive') : t('items.markIdle')}
                         </Button>
                         <Button
                           size="sm"
                           variant="ghost"
-                          title="舍弃（可在设置里找回）"
+                          title={t('items.discardTitle')}
                           onClick={() => {
                             markDiscarded(item.id)
-                            notify('已移入「已舍弃」，可在设置里找回', 'success')
+                            notify(t('items.discardedToast'), 'success')
                           }}
                         >
                           <IconTrash size={14} />
@@ -316,16 +333,18 @@ export function Items() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-header__title">物品</div>
+          <div className="page-header__title">{t('nav.titleItems')}</div>
           <div className="page-header__sub">
-            共 <span className="numeric">{liveItems(data).length}</span> 件，当前显示{' '}
-            <span className="numeric">{filtered.length}</span> 件
+            {t('items.headerTotal')}{' '}
+            <span className="numeric">{liveItems(data).length}</span>{' '}
+            {t('items.headerBetween')} <span className="numeric">{filtered.length}</span>{' '}
+            {t('items.headerAfter')}
           </div>
         </div>
         <div className="page-header__actions">
-          <Button onClick={() => navigate('/ai')}>AI 录入</Button>
+          <Button onClick={() => navigate('/ai')}>{t('items.aiEntry')}</Button>
           <Button variant="primary" onClick={() => navigate('/items/new')}>
-            录入物品
+            {t('items.addItem')}
           </Button>
         </div>
       </div>
@@ -335,12 +354,12 @@ export function Items() {
         <SearchInput
           value={filter.search}
           onValueChange={(value) => setFilter((prev) => ({ ...prev, search: value }))}
-          placeholder="搜索名称、备注、标签、属性值…"
-          aria-label="搜索物品"
+          placeholder={t('items.searchPlaceholder')}
+          aria-label={t('items.searchAria')}
         />
 
         <div className="toolbar__row">
-          <span className="toolbar__label">分组</span>
+          <span className="toolbar__label">{t('items.groupLabel')}</span>
           <div className="segmented">
             {GROUP_OPTIONS.map((opt) => (
               <button
@@ -349,40 +368,41 @@ export function Items() {
                 className={`segmented__item${groupBy === opt.value ? ' is-active' : ''}`}
                 onClick={() => changeGroupBy(opt.value)}
               >
-                {opt.label}
+                {t(opt.labelKey)}
               </button>
             ))}
           </div>
         </div>
 
         <div className="toolbar__row">
-          <span className="toolbar__label">排序</span>
+          <span className="toolbar__label">{t('items.sortLabel')}</span>
           <select
             className="select"
             style={{ width: 130 }}
             value={sortBy}
             onChange={(e) => changeSort(e.target.value as SortBy, sortDir)}
-            aria-label="排序方式"
+            aria-label={t('items.sortAria')}
           >
             {SORT_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
-                {opt.label}
+                {t(opt.labelKey)}
               </option>
             ))}
           </select>
           <Button
             size="sm"
             onClick={() => changeSort(sortBy, sortDir === 'asc' ? 'desc' : 'asc')}
-            title={sortDir === 'asc' ? '当前升序' : '当前降序'}
+            title={sortDir === 'asc' ? t('items.sortAscTitle') : t('items.sortDescTitle')}
           >
-            {sortDir === 'asc' ? '升序 ↑' : '降序 ↓'}
+            {sortDir === 'asc' ? t('items.sortAsc') : t('items.sortDesc')}
           </Button>
 
           <span className="spacer" />
 
           <Button onClick={() => setFilterOpen(true)}>
-            筛选
-            {activeConditionCount > 0 ? `（${activeConditionCount}）` : ''}
+            {activeConditionCount > 0
+              ? t('items.filterWithCount', { count: activeConditionCount })
+              : t('items.filter')}
           </Button>
         </div>
 
@@ -390,11 +410,11 @@ export function Items() {
           <div className="row wrap">
             {filter.categoryIds.map((id) => (
               <span key={`cat-${id}`} className="badge">
-                {derived.categoryById.get(id)?.name ?? '未分类'}
+                {derived.categoryById.get(id)?.name ?? t('status.uncategorized')}
                 <button
                   type="button"
                   className="chip__remove"
-                  aria-label="移除这个条件"
+                  aria-label={t('items.removeCondition')}
                   onClick={() =>
                     setFilter((prev) => ({
                       ...prev,
@@ -408,11 +428,11 @@ export function Items() {
             ))}
             {filter.locationIds.map((id) => (
               <span key={`loc-${id}`} className="badge">
-                {id === UNASSIGNED_ID ? '未归位' : derived.index.pathString(id)}
+                {id === UNASSIGNED_ID ? t('status.unassigned') : derived.index.pathString(id)}
                 <button
                   type="button"
                   className="chip__remove"
-                  aria-label="移除这个条件"
+                  aria-label={t('items.removeCondition')}
                   onClick={() =>
                     setFilter((prev) => ({
                       ...prev,
@@ -430,7 +450,7 @@ export function Items() {
                 <button
                   type="button"
                   className="chip__remove"
-                  aria-label="移除这个条件"
+                  aria-label={t('items.removeCondition')}
                   onClick={() =>
                     setFilter((prev) => ({ ...prev, tags: prev.tags.filter((x) => x !== tag) }))
                   }
@@ -441,15 +461,33 @@ export function Items() {
             ))}
             {filter.statuses.map((status) => (
               <span key={`status-${status}`} className="badge">
-                {status === 'active' ? '在用' : status === 'idle' ? '闲置' : '已舍弃'}
+                {statusLabel(status)}
                 <button
                   type="button"
                   className="chip__remove"
-                  aria-label="移除这个条件"
+                  aria-label={t('items.removeCondition')}
                   onClick={() =>
                     setFilter((prev) => ({
                       ...prev,
                       statuses: prev.statuses.filter((x) => x !== status),
+                    }))
+                  }
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {filter.expiryStates.map((state) => (
+              <span key={`expiry-${state}`} className="badge">
+                {labelForExpiryState(state, ui.expirySoonDays)}
+                <button
+                  type="button"
+                  className="chip__remove"
+                  aria-label={t('items.removeCondition')}
+                  onClick={() =>
+                    setFilter((prev) => ({
+                      ...prev,
+                      expiryStates: prev.expiryStates.filter((x) => x !== state),
                     }))
                   }
                 >
@@ -462,7 +500,7 @@ export function Items() {
               className="btn btn--sm btn--ghost"
               onClick={() => setFilter((prev) => ({ ...EMPTY_FILTER, search: prev.search }))}
             >
-              全部清除
+              {t('items.clearAll')}
             </button>
           </div>
         ) : null}
@@ -471,16 +509,16 @@ export function Items() {
       {/* ---------------- 批量操作条 ---------------- */}
       {selected.size > 0 ? (
         <div className="selection-bar">
-          <span>已选 {selected.size} 件</span>
+          <span>{t('items.selectedCount', { count: selected.size })}</span>
           <span className="spacer" />
           <Button size="sm" onClick={() => runBatchStatus('idle')}>
-            标记闲置
+            {t('items.markIdleBatch')}
           </Button>
           <Button size="sm" onClick={() => runBatchStatus('active')}>
-            改回在用
+            {t('items.backToActive')}
           </Button>
           <Button size="sm" onClick={() => setMoveOpen(true)}>
-            移动位置
+            {t('items.moveLocation')}
           </Button>
           <Button
             size="sm"
@@ -489,13 +527,13 @@ export function Items() {
               setTagOpen(true)
             }}
           >
-            加标签
+            {t('items.addTags')}
           </Button>
           <Button size="sm" onClick={() => setConfirmDiscardOpen(true)}>
-            舍弃
+            {t('items.discard')}
           </Button>
           <Button size="sm" onClick={() => setSelected(new Set())}>
-            取消
+            {t('common.cancel')}
           </Button>
         </div>
       ) : (
@@ -503,7 +541,9 @@ export function Items() {
           <div className="row" style={{ marginBottom: 'var(--gap-3)' }}>
             <label className="checkbox">
               <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
-              <span className="small muted">全选当前 {filtered.length} 件</span>
+              <span className="small muted">
+                {t('items.selectAllShown', { count: filtered.length })}
+              </span>
             </label>
           </div>
         ) : null
@@ -512,13 +552,13 @@ export function Items() {
       {/* ---------------- 列表 ---------------- */}
       {filtered.length === 0 ? (
         <EmptyState
-          title="没有匹配的物品"
-          hint="试试放宽筛选条件，或者换个搜索词。"
+          title={t('items.noMatch')}
+          hint={t('items.noMatchHint')}
           action={
             <Button
               onClick={() => setFilter((prev) => ({ ...EMPTY_FILTER, search: prev.search }))}
             >
-              清除筛选条件
+              {t('items.clearFilters')}
             </Button>
           }
         />
@@ -542,7 +582,7 @@ export function Items() {
         value={null}
         onSelect={(locationId) => {
           batchMoveToLocation(selectedIds, locationId)
-          notify(`已把 ${selectedIds.length} 件物品移动到新位置`, 'success')
+          notify(tc(selectedIds.length, 'items.movedToast'), 'success')
           setSelected(new Set())
           setMoveOpen(false)
         }}
@@ -552,22 +592,22 @@ export function Items() {
 
       <Modal
         open={tagOpen}
-        title={`给 ${selectedIds.length} 件物品加标签`}
+        title={tc(selectedIds.length, 'items.addTagsTitle')}
         onClose={() => setTagOpen(false)}
         footer={
           <>
-            <Button onClick={() => setTagOpen(false)}>取消</Button>
+            <Button onClick={() => setTagOpen(false)}>{t('common.cancel')}</Button>
             <Button
               variant="primary"
               disabled={batchTagDraft.length === 0}
               onClick={() => {
                 for (const tag of batchTagDraft) batchAddTag(selectedIds, tag)
-                notify(`已添加 ${batchTagDraft.length} 个标签`, 'success')
+                notify(tc(batchTagDraft.length, 'items.taggedToast'), 'success')
                 setSelected(new Set())
                 setTagOpen(false)
               }}
             >
-              添加
+              {t('common.add')}
             </Button>
           </>
         }
@@ -581,14 +621,14 @@ export function Items() {
 
       <ConfirmDialog
         open={confirmDiscardOpen}
-        title="舍弃这些物品？"
+        title={t('items.confirmDiscardTitle')}
         danger
-        confirmLabel="舍弃"
+        confirmLabel={t('items.discard')}
         message={
           <>
-            将把选中的 {selectedIds.length} 件物品标记为「已舍弃」。
+            {t('items.confirmDiscardLine1', { count: selectedIds.length })}
             <br />
-            它们不会真的消失，可以在「设置 → 已舍弃回收站」里找回或彻底删除。
+            {t('items.confirmDiscardLine2')}
           </>
         }
         onConfirm={() => {

@@ -9,6 +9,10 @@
  * 本模块不做任何持久化 —— Key 由调用方持有，用完即弃。
  */
 
+// AiError 的 message 是直接显示给用户的一句话（还带着「该怎么办」），
+// 所以取词都在抛出的那一刻 —— 类定义和模块顶层都不能先算好。
+import { t } from '../i18n'
+
 export const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/chat/completions'
 export const DEEPSEEK_MODEL = 'deepseek-chat'
 
@@ -76,39 +80,39 @@ function messageForStatus(status: number, detail: string): { kind: AiErrorKind; 
     case 400:
       return {
         kind: 'bad_request',
-        message: detail || '请求格式不对，DeepSeek 拒绝了这次调用。',
+        message: detail || t('data.ai.badRequest'),
       }
     case 401:
       return {
         kind: 'auth',
-        message: 'API Key 无效。请检查是否复制完整（通常以 sk- 开头），以及是否已经过期。',
+        message: t('data.ai.auth'),
       }
     case 402:
       return {
         kind: 'balance',
-        message: '账户余额不足。请到 DeepSeek 开放平台充值后再试。',
+        message: t('data.ai.balance'),
       }
     case 422:
       return {
         kind: 'bad_request',
-        message: detail || '请求参数不被接受。',
+        message: detail || t('data.ai.badParams'),
       }
     case 429:
       return {
         kind: 'rate_limit',
-        message: '请求太频繁或已达到速率上限，等一会儿再试。',
+        message: t('data.ai.rateLimit'),
       }
     case 500:
     case 502:
     case 503:
       return {
         kind: 'server',
-        message: 'DeepSeek 服务端暂时出问题了，稍后再试。',
+        message: t('data.ai.server'),
       }
     default:
       return {
         kind: 'server',
-        message: detail || `DeepSeek 返回了意外的状态码 ${status}。`,
+        message: detail || t('data.ai.unexpectedStatus', { status }),
       }
   }
 }
@@ -165,7 +169,7 @@ function toNumber(value: unknown): number {
 export async function chat(options: ChatOptions): Promise<ChatResult> {
   const apiKey = options.apiKey.trim()
   if (apiKey === '') {
-    throw new AiError('no_key', '还没有填写 DeepSeek API Key。')
+    throw new AiError('no_key', t('data.ai.noKey'))
   }
 
   const body: Record<string, unknown> = {
@@ -199,17 +203,14 @@ export async function chat(options: ChatOptions): Promise<ChatResult> {
   try {
     payload = (await response.json()) as RawChatResponse
   } catch {
-    throw new AiError('bad_response', 'DeepSeek 返回的内容不是合法 JSON，可能被网络拦了。')
+    throw new AiError('bad_response', t('data.ai.notJson'))
   }
 
   const choice = payload.choices?.[0]
   const content = choice?.message?.content
   if (typeof content !== 'string' || content.trim() === '') {
     // JSON 模式偶尔会返回空内容，官方文档里也提到了这个已知情况
-    throw new AiError(
-      'bad_response',
-      'DeepSeek 这次没有返回内容（偶发情况）。直接再点一次通常就好了。',
-    )
+    throw new AiError('bad_response', t('data.ai.emptyContent'))
   }
 
   return {
@@ -239,11 +240,8 @@ async function rawFetch(
       signal,
     })
   } catch (err) {
-    if (isAbortError(err)) throw new AiError('aborted', '已取消。')
-    throw new AiError(
-      'network',
-      '连不上 DeepSeek。请检查网络；如果你在用广告拦截插件，它可能拦了这个请求。',
-    )
+    if (isAbortError(err)) throw new AiError('aborted', t('data.ai.aborted'))
+    throw new AiError('network', t('data.ai.network'))
   }
 }
 

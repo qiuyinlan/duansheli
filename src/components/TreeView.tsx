@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { TreeItem } from '../types'
 import type { TreeNode } from '../lib/tree'
+import { t, useT } from '../i18n'
 import { IconChevronRight, IconFolder } from './ui/icons'
 
 /**
@@ -39,8 +40,11 @@ export function TreeView<T extends TreeItem>({
   onToggle,
   renderActions,
   virtualRoot = null,
-  emptyText = '还没有内容',
+  emptyText,
 }: TreeViewProps<T>) {
+  // 订阅语言：展开 / 折叠的读屏标签和兜底的空状态文字要跟着切
+  useT()
+
   const selected = new Set(selectedIds)
 
   const renderNodes = (list: TreeNode<T>[], depth: number): ReactNode =>
@@ -61,7 +65,7 @@ export function TreeView<T extends TreeItem>({
               <button
                 type="button"
                 className={`tree-node__toggle${isOpen ? ' is-open' : ''}`}
-                aria-label={isOpen ? '折叠' : '展开'}
+                aria-label={isOpen ? t('tree.collapse') : t('tree.expand')}
                 aria-expanded={isOpen}
                 onClick={() => onToggle(id)}
               >
@@ -119,7 +123,8 @@ export function TreeView<T extends TreeItem>({
 
       {nodes.length === 0 ? (
         <div className="dim small" style={{ padding: 'var(--gap-3)' }}>
-          {emptyText}
+          {/* 调用方给了就用调用方的（那是它的文案），没给才用这里的兜底 */}
+          {emptyText ?? t('tree.empty')}
         </div>
       ) : null}
 

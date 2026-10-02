@@ -11,6 +11,7 @@ import { Button, ConfirmDialog, Modal } from '../components/ui/primitives'
 import { exportCsv } from '../data/exportCsv'
 import { exportJson } from '../data/exportJson'
 import { parseExportFile } from '../data/validate'
+import { useT } from '../i18n'
 import { formatBytes, readFileAsText } from '../lib/download'
 import { formatDateTime, formatRelative } from '../lib/format'
 import { estimateUsage } from '../storage/idb'
@@ -31,6 +32,10 @@ interface ImportPreview {
 
 export function Settings() {
   const navigate = useNavigate()
+
+  // useT() 一方面是拿 t/tc，另一方面是**订阅语言**：
+  // 语言一换这个组件就会重新渲染，页面上所有文字才会跟着变。
+  const { t, tc } = useT()
 
   const data = useAppStore((s) => s.data)
   const derived = useAppStore((s) => s.derived)
@@ -88,12 +93,12 @@ export function Settings() {
     const filename = exportJson(data)
     setUi({ lastExportAt: new Date().toISOString() })
     setRefreshKey((k) => k + 1)
-    notify(`已导出 ${filename}`, 'success')
+    notify(t('settings.exportedToast', { filename }), 'success')
   }
 
   const handleExportCsv = () => {
     const filename = exportCsv(data, derived)
-    notify(`已导出 ${filename}（CSV 仅供查看，不能用来恢复数据）`, 'success')
+    notify(t('settings.exportedCsvToast', { filename }), 'success')
   }
 
   const handleFile = async (file: File) => {
@@ -122,19 +127,16 @@ export function Settings() {
     try {
       if (importStrategy === 'replace') {
         await replaceAll(importPreview.data, 'import')
-        notify(
-          `已覆盖导入：${importPreview.data.items.length} 件物品`,
-          'success',
-        )
+        notify(tc(importPreview.data.items.length, 'settings.importReplaceDone'), 'success')
       } else {
         const report = await mergeAll(importPreview.data)
         setImportReport(report)
-        notify('合并完成', 'success')
+        notify(t('settings.reportTitle'), 'success')
       }
       setImportPreview(null)
       setRefreshKey((k) => k + 1)
     } catch (err) {
-      notify(err instanceof Error ? err.message : '导入失败', 'error')
+      notify(err instanceof Error ? err.message : t('settings.importFailedToast'), 'error')
     } finally {
       setImporting(false)
     }
@@ -146,10 +148,8 @@ export function Settings() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-header__title">设置</div>
-          <div className="page-header__sub">
-            数据安全是这个软件最重要的事 —— 请定期导出备份
-          </div>
+          <div className="page-header__title">{t('nav.titleSettings')}</div>
+          <div className="page-header__sub">{t('settings.subtitle')}</div>
         </div>
       </div>
 
@@ -157,61 +157,68 @@ export function Settings() {
       <section className="section">
         <div className="settings-block">
           <div className="settings-block__head">
-            <div className="settings-block__title">备份与恢复</div>
+            <div className="settings-block__title">{t('settings.backupTitle')}</div>
             <div className="settings-block__desc">
-              数据只存在这台设备的浏览器里，不会上传到任何服务器。
-              换设备、换浏览器、清理浏览器数据都会看不到它 —— 所以请用导出的 JSON 文件来搬运和保底。
+              {t('settings.backupDesc1')} {t('settings.backupDesc2')}
             </div>
           </div>
           <div className="settings-block__body">
             <div className="action-row">
               <div className="action-row__text">
-                <div className="action-row__title">导出完整备份（JSON）</div>
+                <div className="action-row__title">{t('settings.exportJsonTitle')}</div>
                 <div className="action-row__desc">
-                  包含全部物品、位置、分类、属性、标签。这是唯一能完整恢复数据的格式，
-                  建议每周存一份到网盘或电脑里。
+                  {t('settings.exportJsonDesc1')} {t('settings.exportJsonDesc2')}
                   <br />
-                  上次导出：
-                  {ui.lastExportAt ? ` ${formatDateTime(ui.lastExportAt)}（${formatRelative(ui.lastExportAt)}）` : ' 从未'}
+                  {t('settings.lastExportLabel')}{' '}
+                  {ui.lastExportAt
+                    ? t('settings.lastExportValue', {
+                        time: formatDateTime(ui.lastExportAt),
+                        relative: formatRelative(ui.lastExportAt),
+                      })
+                    : t('settings.lastExportNever')}
                 </div>
               </div>
               <div className="action-row__buttons">
                 <Button variant="primary" onClick={handleExportJson}>
                   <IconDownload size={14} />
-                  导出 JSON
+                  {t('settings.exportJsonAction')}
                 </Button>
               </div>
             </div>
 
             <div className="action-row">
               <div className="action-row__text">
-                <div className="action-row__title">导出物品清单（CSV）</div>
+                <div className="action-row__title">{t('settings.exportCsvTitle')}</div>
                 <div className="action-row__desc">
-                  用 Excel / 表格软件打开查看，方便打印清点。
-                  这是有损格式，<strong>不能用来恢复数据</strong>。
+                  {t('settings.exportCsvDesc1')} {t('settings.exportCsvDesc2')}
+                  <strong>{t('settings.exportCsvDesc2Strong')}</strong>
+                  {t('settings.exportCsvDesc2Tail')}
                 </div>
               </div>
               <div className="action-row__buttons">
                 <Button onClick={handleExportCsv} disabled={data.items.length === 0}>
-                  导出 CSV
+                  {t('settings.exportCsvAction')}
                 </Button>
               </div>
             </div>
 
             <div className="action-row">
               <div className="action-row__text">
-                <div className="action-row__title">导入备份（JSON）</div>
+                <div className="action-row__title">{t('settings.importTitle')}</div>
                 <div className="action-row__desc">
-                  支持两种方式：<strong>覆盖</strong> 用备份完全替换当前数据（换设备后恢复用这个）；
-                  <strong>合并</strong> 把备份和当前数据合起来（手机和电脑各录了一半时用这个）。
+                  {t('settings.importDescLead')}
+                  <strong>{t('settings.overwriteStrong')}</strong>{' '}
+                  {t('settings.importDescReplaceRest')}{' '}
+                  <strong>{t('settings.mergeStrong')}</strong>{' '}
+                  {t('settings.importDescMergeRest')}
                   <br />
-                  无论选哪种，导入前都会自动为当前数据存一份快照。
+                  {t('settings.importDescSnapshotNote')}
                 </div>
               </div>
               <div className="action-row__buttons">
                 <Button onClick={() => fileInputRef.current?.click()}>
                   <IconUpload size={14} />
-                  选择文件
+                  {t('settings.chooseFile')}
                 </Button>
                 <input
                   ref={fileInputRef}
@@ -235,44 +242,42 @@ export function Settings() {
       <section className="section">
         <div className="settings-block">
           <div className="settings-block__head">
-            <div className="settings-block__title">存储状态</div>
-            <div className="settings-block__desc">
-              数据存在浏览器提供的 IndexedDB 里，数据库名固定为 duansheli。
-            </div>
+            <div className="settings-block__title">{t('settings.storageTitle')}</div>
+            <div className="settings-block__desc">{t('settings.storageDesc')}</div>
           </div>
           <div className="settings-block__body">
             <div className="storage-grid">
               <div className="storage-item">
-                <span className="storage-item__label">存储引擎</span>
+                <span className="storage-item__label">{t('settings.storageEngineLabel')}</span>
                 <span className="storage-item__value">
                   IndexedDB
                   <span className="badge" style={{ marginLeft: 6 }}>
-                    可用
+                    {t('settings.storageAvailable')}
                   </span>
                 </span>
               </div>
               <div className="storage-item">
-                <span className="storage-item__label">已用空间</span>
+                <span className="storage-item__label">{t('settings.storageUsedLabel')}</span>
                 <span className="storage-item__value">
-                  {usage ? formatBytes(usage.usage) : '未知'}
+                  {usage ? formatBytes(usage.usage) : t('common.unknown')}
                 </span>
               </div>
               <div className="storage-item">
-                <span className="storage-item__label">浏览器配额</span>
+                <span className="storage-item__label">{t('settings.storageQuotaLabel')}</span>
                 <span className="storage-item__value">
-                  {usage && usage.quota > 0 ? formatBytes(usage.quota) : '未知'}
+                  {usage && usage.quota > 0 ? formatBytes(usage.quota) : t('common.unknown')}
                 </span>
               </div>
               <div className="storage-item">
-                <span className="storage-item__label">物品总数</span>
+                <span className="storage-item__label">{t('settings.storageItemsLabel')}</span>
                 <span className="storage-item__value">{data.items.length}</span>
               </div>
               <div className="storage-item">
-                <span className="storage-item__label">快照份数</span>
+                <span className="storage-item__label">{t('settings.storageSnapshotsLabel')}</span>
                 <span className="storage-item__value">{snapshots.length}</span>
               </div>
               <div className="storage-item">
-                <span className="storage-item__label">数据最后更新</span>
+                <span className="storage-item__label">{t('settings.storageUpdatedLabel')}</span>
                 <span className="storage-item__value">{formatRelative(data.updatedAt)}</span>
               </div>
             </div>
@@ -286,9 +291,7 @@ export function Settings() {
           <span className="notice__icon">
             <IconAlert />
           </span>
-          <span className="notice__body">
-            你还没有导出过备份。浏览器数据一旦被清理就无法找回，建议现在导出一次。
-          </span>
+          <span className="notice__body">{t('settings.backupOverdueNotice')}</span>
         </div>
       ) : null}
 
@@ -296,17 +299,16 @@ export function Settings() {
       <section className="section">
         <div className="settings-block">
           <div className="settings-block__head">
-            <div className="settings-block__title">自动快照</div>
+            <div className="settings-block__title">{t('settings.snapshotsTitle')}</div>
             <div className="settings-block__desc">
-              每次修改前都会自动存一份（同一分钟内只留一份），最多保留 30 份；
-              导入前和删除位置 / 分类 / 属性前的快照会额外保底保留。
-              回退之前也会先为当前状态存一份 —— 所以回退本身也可以回退。
+              {t('settings.snapshotsDescThrottle')} {t('settings.snapshotsDescReserved')}{' '}
+              {t('settings.snapshotsDescUndoable')}
             </div>
           </div>
 
           <div className="settings-block__body" style={{ paddingBottom: 0 }}>
             <div className="row-between wrap">
-              <span className="tiny dim">共 {snapshots.length} 份</span>
+              <span className="tiny dim">{tc(snapshots.length, 'settings.snapshotsTotal')}</span>
               <div className="row">
                 <Button
                   size="sm"
@@ -314,10 +316,10 @@ export function Settings() {
                     void backupNow().then(() => setRefreshKey((k) => k + 1))
                   }}
                 >
-                  立即备份一份
+                  {t('settings.backupNowAction')}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setRefreshKey((k) => k + 1)}>
-                  刷新
+                  {t('settings.refreshAction')}
                 </Button>
               </div>
             </div>
@@ -325,7 +327,7 @@ export function Settings() {
 
           {snapshots.length === 0 ? (
             <div className="settings-block__body">
-              <span className="dim small">还没有任何快照。</span>
+              <span className="dim small">{t('settings.snapshotsEmpty')}</span>
             </div>
           ) : (
             <div style={{ maxHeight: 340, overflowY: 'auto' }}>
@@ -335,19 +337,19 @@ export function Settings() {
                     <div className="snapshot-row__time">{formatDateTime(snap.at)}</div>
                     <div className="snapshot-row__meta">
                       <span className="badge">{SNAPSHOT_REASON_LABEL[snap.reason]}</span>
-                      <span>{snap.itemCount} 件物品</span>
+                      <span>{tc(snap.itemCount, 'settings.snapshotItems')}</span>
                       <span className="dim">{formatRelative(snap.at)}</span>
                     </div>
                   </div>
                   <div className="row">
                     <Button size="sm" onClick={() => setRestoreTarget(snap)}>
                       <IconUndo size={12} />
-                      回退
+                      {t('settings.restoreAction')}
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
-                      title="删除这份快照"
+                      title={t('settings.deleteSnapshotTitle')}
                       onClick={() => {
                         void deleteSnapshot(snap.id).then(() => setRefreshKey((k) => k + 1))
                       }}
@@ -366,23 +368,23 @@ export function Settings() {
       <section className="section">
         <div className="settings-block">
           <div className="settings-block__head">
-            <div className="settings-block__title">已舍弃回收站</div>
-            <div className="settings-block__desc">
-              标记为「已舍弃」的物品会留在这里，可以回顾自己扔了些什么，也可以随时恢复。
-            </div>
+            <div className="settings-block__title">{t('settings.recycleTitle')}</div>
+            <div className="settings-block__desc">{t('settings.recycleDesc')}</div>
           </div>
 
           {discarded.length === 0 ? (
             <div className="settings-block__body">
-              <span className="dim small">回收站是空的。</span>
+              <span className="dim small">{t('settings.recycleEmpty')}</span>
             </div>
           ) : (
             <>
               <div className="settings-block__body" style={{ paddingBottom: 0 }}>
                 <div className="row-between wrap">
-                  <span className="tiny dim">共 {discarded.length} 件</span>
+                  <span className="tiny dim">
+                    {tc(discarded.length, 'settings.recycleTotal')}
+                  </span>
                   <Button size="sm" variant="danger" onClick={() => setConfirmPurgeAll(true)}>
-                    全部彻底删除
+                    {t('settings.purgeAllAction')}
                   </Button>
                 </div>
               </div>
@@ -395,10 +397,14 @@ export function Settings() {
                         <span>
                           {item.locationId
                             ? derived.index.pathString(item.locationId, ' / ')
-                            : '未归位'}
+                            : t('status.unassigned')}
                         </span>
                         {item.discardedAt ? (
-                          <span className="dim">舍弃于 {formatDateTime(item.discardedAt)}</span>
+                          <span className="dim">
+                            {t('settings.discardedAt', {
+                              time: formatDateTime(item.discardedAt),
+                            })}
+                          </span>
                         ) : null}
                       </div>
                     </div>
@@ -407,15 +413,15 @@ export function Settings() {
                         size="sm"
                         onClick={() => {
                           restoreItem(item.id)
-                          notify('已恢复为「在用」', 'success')
+                          notify(t('settings.restoredToast'), 'success')
                         }}
                       >
-                        恢复
+                        {t('settings.restoreItemAction')}
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        title="彻底删除"
+                        title={t('settings.purgeAction')}
                         onClick={() => setPurgeTarget(item.id)}
                       >
                         <IconTrash size={13} />
@@ -432,56 +438,55 @@ export function Settings() {
       {/* ================= 危险区 ================= */}
       <section className="section">
         <div className="danger-zone">
-          <div className="danger-zone__title">危险操作</div>
+          <div className="danger-zone__title">{t('settings.dangerTitle')}</div>
 
           <div className="danger-item">
             <div className="danger-item__text">
-              <div className="danger-item__title">恢复为初始的分类、位置与属性库</div>
+              <div className="danger-item__title">{t('settings.resetSeedTitle')}</div>
               <div className="danger-item__desc">
-                会清空所有物品，并把分类、位置、属性库重置成刚安装时的样子。
-                执行前会自动存一份快照，之后可以回退。
+                {t('settings.resetSeedDesc1')} {t('settings.resetSeedDesc2')}
               </div>
             </div>
             <Button variant="danger" onClick={() => setConfirmResetSeed(true)}>
-              恢复初始
+              {t('settings.resetSeedAction')}
             </Button>
           </div>
 
           <div className="danger-item">
             <div className="danger-item__text">
-              <div className="danger-item__title">清空所有数据</div>
+              <div className="danger-item__title">{t('settings.clearAllTitle')}</div>
               <div className="danger-item__desc">
-                删除全部物品、位置、分类、属性和标签，回到完全空白的状态。
+                {t('settings.clearAllDesc1')}
                 <br />
-                同样会先存一份快照 —— 但快照也在这个浏览器里，<strong>强烈建议先导出一份 JSON</strong>。
+                {t('settings.clearAllDesc2')}
+                <strong>{t('settings.clearAllDesc2Strong')}</strong>
+                {t('settings.clearAllDesc2Tail')}
               </div>
             </div>
             <Button variant="danger" onClick={() => setConfirmClearAll(true)}>
-              清空所有
+              {t('settings.clearAllAction')}
             </Button>
           </div>
         </div>
       </section>
 
       <div className="row" style={{ marginTop: 'var(--gap-5)' }}>
-        <span className="tiny dim">
-          断舍离 · 本地版 · 数据不经过任何服务器 · 想换设备请用导出的 JSON 文件
-        </span>
+        <span className="tiny dim">{t('settings.footerNote')}</span>
       </div>
 
       {/* ================= 导入预览 ================= */}
       <Modal
         open={importPreview !== null}
-        title="确认导入"
+        title={t('settings.importPreviewTitle')}
         onClose={() => setImportPreview(null)}
         maxWidth={520}
         footer={
           <>
             <Button onClick={() => setImportPreview(null)} disabled={importing}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button variant="primary" onClick={() => void doImport()} disabled={importing}>
-              {importing ? '导入中…' : '开始导入'}
+              {importing ? t('settings.importing') : t('settings.startImport')}
             </Button>
           </>
         }
@@ -490,26 +495,30 @@ export function Settings() {
           <div className="stack">
             <div className="report">
               <div className="report__row">
-                <span>文件</span>
+                <span>{t('settings.previewFileLabel')}</span>
                 <span className="truncate">{importPreview.fileName}</span>
               </div>
               <div className="report__row">
-                <span>导出时间</span>
-                <span>{importPreview.exportedAt ? formatDateTime(importPreview.exportedAt) : '未知'}</span>
+                <span>{t('settings.previewExportedAtLabel')}</span>
+                <span>
+                  {importPreview.exportedAt
+                    ? formatDateTime(importPreview.exportedAt)
+                    : t('common.unknown')}
+                </span>
               </div>
               <div className="report__row">
-                <span>包含内容</span>
+                <span>{t('settings.previewContentsLabel')}</span>
                 <span>
-                  {importPreview.data.items.length} 件物品 ·{' '}
-                  {importPreview.data.locations.length} 个位置 ·{' '}
-                  {importPreview.data.categories.length} 个分类 ·{' '}
-                  {importPreview.data.attributeDefs.length} 个属性
+                  {tc(importPreview.data.items.length, 'settings.previewItems')} ·{' '}
+                  {tc(importPreview.data.locations.length, 'settings.previewLocations')} ·{' '}
+                  {tc(importPreview.data.categories.length, 'settings.previewCategories')} ·{' '}
+                  {tc(importPreview.data.attributeDefs.length, 'settings.previewAttributes')}
                 </span>
               </div>
             </div>
 
             <div className="field">
-              <span className="field__label">导入方式</span>
+              <span className="field__label">{t('settings.importStrategyLabel')}</span>
               <label className="checkbox" style={{ alignItems: 'flex-start' }}>
                 <input
                   type="radio"
@@ -519,10 +528,9 @@ export function Settings() {
                   style={{ marginTop: 3 }}
                 />
                 <span>
-                  <strong>覆盖</strong>
+                  <strong>{t('settings.overwriteStrong')}</strong>
                   <span className="small muted" style={{ display: 'block' }}>
-                    清空当前数据，完全用这份备份替换。换设备后恢复数据请选这个。
-                    （当前数据会在导入前自动存成快照）
+                    {t('settings.strategyReplaceDesc1')} {t('settings.strategyReplaceDesc2')}
                   </span>
                 </span>
               </label>
@@ -535,10 +543,9 @@ export function Settings() {
                   style={{ marginTop: 3 }}
                 />
                 <span>
-                  <strong>合并</strong>
+                  <strong>{t('settings.mergeStrong')}</strong>
                   <span className="small muted" style={{ display: 'block' }}>
-                    把这份备份和当前数据合起来。两台设备各录了一部分时选这个。
-                    位置会按名称自动对齐，缺失的会自动补建。
+                    {t('settings.strategyMergeDesc1')} {t('settings.strategyMergeDesc2')}
                   </span>
                 </span>
               </label>
@@ -546,7 +553,7 @@ export function Settings() {
 
             {importPreview.warnings.length > 0 ? (
               <div className="field">
-                <span className="field__label">解析时发现的问题</span>
+                <span className="field__label">{t('settings.previewWarningsLabel')}</span>
                 <ul className="report__warnings">
                   {importPreview.warnings.slice(0, 40).map((w, i) => (
                     <li key={i}>{w}</li>
@@ -561,12 +568,12 @@ export function Settings() {
       {/* ================= 导入结果 ================= */}
       <Modal
         open={importReport !== null}
-        title="合并完成"
+        title={t('settings.reportTitle')}
         onClose={() => setImportReport(null)}
         maxWidth={520}
         footer={
           <Button variant="primary" onClick={() => setImportReport(null)}>
-            知道了
+            {t('settings.gotIt')}
           </Button>
         }
       >
@@ -574,41 +581,44 @@ export function Settings() {
           <div className="stack">
             <div className="report">
               <div className="report__row">
-                <span>物品</span>
+                <span>{t('nav.items')}</span>
                 <span>
-                  新增 {importReport.items.added} · 更新 {importReport.items.updated} · 未变{' '}
-                  {importReport.items.unchanged}
+                  {t('settings.reportAdded', { count: importReport.items.added })} ·{' '}
+                  {t('settings.reportUpdated', { count: importReport.items.updated })} ·{' '}
+                  {t('settings.reportUnchanged', { count: importReport.items.unchanged })}
                 </span>
               </div>
               <div className="report__row">
-                <span>位置</span>
+                <span>{t('nav.locations')}</span>
                 <span>
-                  新增 {importReport.locations.added} · 已存在 {importReport.locations.updated}
+                  {t('settings.reportAdded', { count: importReport.locations.added })} ·{' '}
+                  {t('settings.reportExisting', { count: importReport.locations.updated })}
                 </span>
               </div>
               <div className="report__row">
-                <span>分类</span>
+                <span>{t('nav.categories')}</span>
                 <span>
-                  新增 {importReport.categories.added} · 已存在 {importReport.categories.updated}
+                  {t('settings.reportAdded', { count: importReport.categories.added })} ·{' '}
+                  {t('settings.reportExisting', { count: importReport.categories.updated })}
                 </span>
               </div>
               <div className="report__row">
-                <span>属性</span>
+                <span>{t('nav.attributes')}</span>
                 <span>
-                  新增 {importReport.attributeDefs.added} · 已存在{' '}
-                  {importReport.attributeDefs.updated}
+                  {t('settings.reportAdded', { count: importReport.attributeDefs.added })} ·{' '}
+                  {t('settings.reportExisting', { count: importReport.attributeDefs.updated })}
                 </span>
               </div>
               <div className="report__row">
-                <span>标签</span>
-                <span>新增 {importReport.tags.added}</span>
+                <span>{t('nav.tags')}</span>
+                <span>{t('settings.reportAdded', { count: importReport.tags.added })}</span>
               </div>
             </div>
 
             {importReport.warnings.length > 0 ? (
               <div className="field">
                 <span className="field__label">
-                  需要留意的地方（共 {importReport.warnings.length} 条）
+                  {tc(importReport.warnings.length, 'settings.reportWarningsLabel')}
                 </span>
                 <ul className="report__warnings">
                   {importReport.warnings.slice(0, 60).map((w, i) => (
@@ -617,12 +627,11 @@ export function Settings() {
                 </ul>
               </div>
             ) : (
-              <div className="dim small">没有发现问题。</div>
+              <div className="dim small">{t('settings.noWarnings')}</div>
             )}
 
             <div className="dim small">
-              提示：合并是按 id 去重的。如果两台设备分别录了同一件东西，会出现两条记录，
-              需要你手动删掉其中一条。
+              {t('settings.mergeHint1')} {t('settings.mergeHint2')}
             </div>
           </div>
         ) : null}
@@ -631,12 +640,12 @@ export function Settings() {
       {/* ================= 导入失败 ================= */}
       <Modal
         open={importError !== null}
-        title="这个文件无法导入"
+        title={t('settings.importErrorTitle')}
         onClose={() => setImportError(null)}
         maxWidth={440}
         footer={
           <Button variant="primary" onClick={() => setImportError(null)}>
-            知道了
+            {t('settings.gotIt')}
           </Button>
         }
       >
@@ -645,7 +654,7 @@ export function Settings() {
             {importError}
           </div>
           <div className="dim small">
-            当前数据完全没有被改动。请确认选择的是「断舍离」导出的 .json 备份文件。
+            {t('settings.importErrorHint', { brand: t('nav.brand') })}
           </div>
         </div>
       </Modal>
@@ -653,15 +662,17 @@ export function Settings() {
       {/* ================= 各类确认 ================= */}
       <ConfirmDialog
         open={restoreTarget !== null}
-        title="回退到这份快照？"
-        confirmLabel="回退"
+        title={t('settings.confirmRestoreTitle')}
+        confirmLabel={t('settings.restoreAction')}
         message={
           <>
-            将把数据恢复到 {restoreTarget ? formatDateTime(restoreTarget.at) : ''} 的状态
-            （{restoreTarget?.itemCount ?? 0} 件物品）。
+            {t('settings.confirmRestoreBody', {
+              time: restoreTarget ? formatDateTime(restoreTarget.at) : '',
+            })}{' '}
+            {tc(restoreTarget?.itemCount ?? 0, 'settings.confirmRestoreCount')}
             <br />
             <br />
-            当前状态会先被单独存成一份快照，所以这次回退本身也可以再回退。
+            {t('settings.confirmRestoreNote')}
           </>
         }
         onConfirm={() => {
@@ -676,10 +687,10 @@ export function Settings() {
 
       <ConfirmDialog
         open={purgeTarget !== null}
-        title="彻底删除这件物品？"
+        title={t('settings.confirmPurgeTitle')}
         danger
-        confirmLabel="彻底删除"
-        message="删除后无法恢复，也不会留在回收站里。"
+        confirmLabel={t('settings.purgeAction')}
+        message={t('settings.confirmPurgeBody')}
         onConfirm={() => {
           if (purgeTarget) purgeItem(purgeTarget)
           setPurgeTarget(null)
@@ -689,13 +700,13 @@ export function Settings() {
 
       <ConfirmDialog
         open={confirmPurgeAll}
-        title={`彻底删除回收站里的 ${discarded.length} 件物品？`}
+        title={tc(discarded.length, 'settings.confirmPurgeAllTitle')}
         danger
-        confirmLabel="全部删除"
-        message="删除后无法恢复。如果你想留个记录「我都扔了什么」，建议先导出 JSON 备份。"
+        confirmLabel={t('settings.confirmPurgeAllLabel')}
+        message={t('settings.confirmPurgeAllBody')}
         onConfirm={() => {
           purgeAllDiscarded()
-          notify('回收站已清空', 'success')
+          notify(t('settings.recycleClearedToast'), 'success')
           setConfirmPurgeAll(false)
         }}
         onCancel={() => setConfirmPurgeAll(false)}
@@ -703,10 +714,10 @@ export function Settings() {
 
       <ConfirmDialog
         open={confirmResetSeed}
-        title="恢复为初始状态？"
+        title={t('settings.confirmResetSeedTitle')}
         danger
-        confirmLabel="确认恢复"
-        message={`将清空当前 ${data.items.length} 件物品，并把分类、位置、属性库重置为初始内容。执行前会自动存一份快照。`}
+        confirmLabel={t('settings.confirmResetSeedLabel')}
+        message={tc(data.items.length, 'settings.confirmResetSeedBody')}
         onConfirm={() => {
           void resetToSeed().then(() => {
             setConfirmResetSeed(false)
@@ -718,16 +729,16 @@ export function Settings() {
 
       <ConfirmDialog
         open={confirmClearAll}
-        title="清空所有数据？"
+        title={t('settings.confirmClearAllTitle')}
         danger
-        confirmLabel="确认清空"
+        confirmLabel={t('settings.confirmClearAllLabel')}
         message={
           <>
-            这会删除全部 {data.items.length} 件物品以及所有位置、分类、属性、标签。
+            {tc(data.items.length, 'settings.confirmClearAllBody')}
             <br />
             <br />
-            执行前会自动存一份快照，但快照也存在这个浏览器里。
-            <strong>强烈建议先导出 JSON 备份再操作。</strong>
+            {t('settings.confirmClearAllNote1')}{' '}
+            <strong>{t('settings.confirmClearAllNoteStrong')}</strong>
           </>
         }
         onConfirm={() => {

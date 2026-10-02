@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { IconPencil, IconPlus, IconTrash } from '../components/ui/icons'
 import { Button, ConfirmDialog, EmptyState, IconButton, Modal } from '../components/ui/primitives'
 import { useAppStore } from '../store/useAppStore'
+import { t, tc, useT } from '../i18n'
 
 export function Tags() {
   const navigate = useNavigate()
@@ -11,6 +12,9 @@ export function Tags() {
   const renameTag = useAppStore((s) => s.renameTag)
   const deleteTag = useAppStore((s) => s.deleteTag)
   const notify = useAppStore((s) => s.notify)
+
+  // 订阅语言：语言一换这个组件就重新渲染
+  useT()
 
   const [draft, setDraft] = useState('')
   const [renameTarget, setRenameTarget] = useState<string | null>(null)
@@ -37,17 +41,15 @@ export function Tags() {
     if (name === '') return
     addTag(name)
     setDraft('')
-    notify('已添加标签', 'success')
+    notify(t('tags.addToast'), 'success')
   }
 
   return (
     <>
       <div className="page-header">
         <div>
-          <div className="page-header__title">标签</div>
-          <div className="page-header__sub">
-            标签管的是「什么情境」，例如「想送人」「舍不得扔」「待维修」。
-          </div>
+          <div className="page-header__title">{t('nav.titleTags')}</div>
+          <div className="page-header__sub">{t('tags.subtitle')}</div>
         </div>
       </div>
 
@@ -55,7 +57,7 @@ export function Tags() {
         <div className="row">
           <input
             className="input grow"
-            placeholder="添加一个标签"
+            placeholder={t('tags.addPlaceholder')}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -67,34 +69,35 @@ export function Tags() {
           />
           <Button variant="primary" onClick={create} disabled={draft.trim() === ''}>
             <IconPlus size={13} />
-            添加
+            {t('common.add')}
           </Button>
         </div>
         <div className="field__hint" style={{ marginTop: 'var(--gap-2)' }}>
-          录入物品时也可以随手新建标签，不必先来这里。
+          {t('tags.addHint')}
         </div>
       </div>
 
       {sorted.length === 0 ? (
-        <EmptyState title="还没有标签" hint="标签是可选的，不用也可以。" />
+        <EmptyState title={t('tags.emptyTitle')} hint={t('tags.emptyHint')} />
       ) : (
         <div className="list">
           {sorted.map((name) => {
             const count = counts.get(name) ?? 0
             return (
               <div key={name} className="manage-row">
+                {/* 标签名是用户自己的数据，不翻译 */}
                 <span className="manage-row__name truncate">#{name}</span>
-                <span className="manage-row__meta">{count} 件</span>
+                <span className="manage-row__meta">{tc(count, 'format.countItems')}</span>
                 <div className="manage-row__actions">
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={() => navigate(`/items?tag=${encodeURIComponent(name)}&group=tag`)}
                   >
-                    查看
+                    {t('tags.view')}
                   </Button>
                   <IconButton
-                    label="重命名"
+                    label={t('common.rename')}
                     onClick={() => {
                       setRenameTarget(name)
                       setRenameDraft(name)
@@ -103,7 +106,7 @@ export function Tags() {
                     <IconPencil size={13} />
                   </IconButton>
                   <IconButton
-                    label="删除"
+                    label={t('common.delete')}
                     onClick={() => setDeleteTarget({ name, count })}
                   >
                     <IconTrash size={13} />
@@ -117,12 +120,12 @@ export function Tags() {
 
       <Modal
         open={renameTarget !== null}
-        title="重命名标签"
+        title={t('tags.renameTitle')}
         onClose={() => setRenameTarget(null)}
         maxWidth={400}
         footer={
           <>
-            <Button onClick={() => setRenameTarget(null)}>取消</Button>
+            <Button onClick={() => setRenameTarget(null)}>{t('common.cancel')}</Button>
             <Button
               variant="primary"
               disabled={renameDraft.trim() === ''}
@@ -130,10 +133,10 @@ export function Tags() {
                 if (renameTarget === null) return
                 renameTag(renameTarget, renameDraft)
                 setRenameTarget(null)
-                notify('已重命名', 'success')
+                notify(t('tags.renamedToast'), 'success')
               }}
             >
-              保存
+              {t('common.save')}
             </Button>
           </>
         }
@@ -149,7 +152,7 @@ export function Tags() {
               if (renameTarget === null) return
               renameTag(renameTarget, renameDraft)
               setRenameTarget(null)
-              notify('已重命名', 'success')
+              notify(t('tags.renamedToast'), 'success')
             }
           }}
         />
@@ -157,23 +160,25 @@ export function Tags() {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={`删除标签「${deleteTarget?.name ?? ''}」？`}
+        title={t('tags.deleteTitle', { name: deleteTarget?.name ?? '' })}
         danger
-        confirmLabel="删除"
+        confirmLabel={t('common.delete')}
         message={
           deleteTarget && deleteTarget.count > 0 ? (
             <>
-              有 <span className="numeric">{deleteTarget.count}</span> 件物品带着这个标签。
-              删除后标签会被移除，物品本身不会消失。
+              {t('tags.deleteInUseLead')}
+              <span className="numeric">{deleteTarget.count}</span>
+              {tc(deleteTarget.count, 'tags.deleteInUseTail')}
+              {t('tags.deleteInUseNote')}
             </>
           ) : (
-            <>这个标签还没有被任何物品使用。</>
+            <>{t('tags.deleteUnused')}</>
           )
         }
         onConfirm={() => {
           if (!deleteTarget) return
           deleteTag(deleteTarget.name)
-          notify('已删除标签', 'success')
+          notify(t('tags.deletedToast'), 'success')
           setDeleteTarget(null)
         }}
         onCancel={() => setDeleteTarget(null)}

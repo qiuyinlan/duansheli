@@ -49,11 +49,21 @@ const LOCALE: Record<Lang, string> = {
 
 type FlatDict = Record<string, string>
 
-function flatten(dict: Dict, prefix = '', out: FlatDict = {}): FlatDict {
+/**
+ * 字典的递归形状。
+ *
+ * 用这个类型而不是 `Dict`，是因为 `flatten` 要往下递归，而 `Dict` 是**具体**
+ * 那棵树的类型 —— 把某个子节点断言成整棵 `Dict` 只是自欺欺人，
+ * 而且一旦所有命名空间都被填满（不再有空的 `{}` 兜底），
+ * 那个断言连编译都过不去。递归类型才是这里真正想表达的东西。
+ */
+type NestedDict = { readonly [key: string]: string | NestedDict }
+
+function flatten(dict: NestedDict, prefix = '', out: FlatDict = {}): FlatDict {
   for (const [key, value] of Object.entries(dict)) {
     const path = prefix === '' ? key : `${prefix}.${key}`
     if (typeof value === 'string') out[path] = value
-    else flatten(value as Dict, path, out)
+    else flatten(value, path, out)
   }
   return out
 }

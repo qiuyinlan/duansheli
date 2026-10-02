@@ -12,7 +12,9 @@ import 'fake-indexeddb/auto'
 import './dom'
 
 import './smoke'
+import './expiry'
 import './ai'
+import './i18n'
 import './render'
 
 import { finish } from './harness'

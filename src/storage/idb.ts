@@ -8,6 +8,10 @@
  *     └─ "kv"         无 keyPath，存界面偏好等小数据
  */
 
+// 这里抛出的错误会一路显示给用户（「存不进去了」是最让人慌的一类），
+// 所以取词写在抛的那一刻，不能先算在模块顶层。
+import { t } from '../i18n'
+
 const DB_NAME = 'duansheli'
 const DB_VERSION = 1
 
@@ -25,11 +29,7 @@ export function openDb(): Promise<IDBDatabase> {
 
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
-      reject(
-        new Error(
-          '当前浏览器不支持 IndexedDB，无法保存数据。请改用 Chrome / Edge / Safari / Firefox 的普通模式（不要用无痕模式）。',
-        ),
-      )
+      reject(new Error(t('data.storage.noIndexedDb')))
       return
     }
 
@@ -37,7 +37,7 @@ export function openDb(): Promise<IDBDatabase> {
     try {
       req = indexedDB.open(DB_NAME, DB_VERSION)
     } catch (err) {
-      reject(err instanceof Error ? err : new Error('无法打开本地数据库'))
+      reject(err instanceof Error ? err : new Error(t('data.storage.openFailed')))
       return
     }
 
@@ -65,9 +65,8 @@ export function openDb(): Promise<IDBDatabase> {
       resolve(db)
     }
 
-    req.onerror = () => reject(req.error ?? new Error('打开本地数据库失败'))
-    req.onblocked = () =>
-      reject(new Error('本地数据库被其他标签页占用，请关闭本站的其他标签页后刷新'))
+    req.onerror = () => reject(req.error ?? new Error(t('data.storage.openError')))
+    req.onblocked = () => reject(new Error(t('data.storage.blocked')))
   })
 
   // 打开失败时不缓存失败的 Promise，否则永远无法恢复
@@ -111,7 +110,7 @@ function run<T>(
           resolve(result)
         }
         tx.onerror = () => fail(tx.error)
-        tx.onabort = () => fail(tx.error ?? new Error('数据库事务被中止'))
+        tx.onabort = () => fail(tx.error ?? new Error(t('data.storage.transactionAborted')))
 
         let req: Req<T>
         try {
@@ -163,7 +162,7 @@ function runBatch(
           resolve()
         }
         tx.onerror = () => fail(tx.error)
-        tx.onabort = () => fail(tx.error ?? new Error('数据库事务被中止'))
+        tx.onabort = () => fail(tx.error ?? new Error(t('data.storage.transactionAborted')))
 
         try {
           for (const op of ops) op.fn(tx.objectStore(op.store))

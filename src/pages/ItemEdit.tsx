@@ -3,12 +3,48 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { AttributePicker, CategoryPicker, LocationPicker, TagInput } from '../components/pickers'
 import { IconChevronRight, IconClose, IconPlus, IconTrash } from '../components/ui/icons'
 import { Button, EmptyState, Switch } from '../components/ui/primitives'
+import type { DictKey } from '../i18n'
+import { useT } from '../i18n'
+import { isExpired } from '../lib/expiry'
+import { todayISODate } from '../lib/format'
 import {
   countByLocationIncludingDescendants,
   liveItems,
 } from '../store/selectors'
 import { suggestAttrIds, useAppStore, type ItemInput } from '../store/useAppStore'
 import type { AttributeDef, AttrValue, ItemStatus } from '../types'
+
+/* ------------------------------------------------------------------ */
+/* 有效期：快捷设置的候选值                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 存的是「天数 + 词典 key」，不是现成的文字。
+ *
+ * 模块顶层调 t() 会把加载那一刻的语言冻进常量里，切语言时这一排按钮
+ * 不会跟着变（见 docs/i18n-约定.md 第 4 条）。存 key、渲染时再查表。
+ */
+const EXPIRY_QUICK_CHOICES: Array<{ days: number; labelKey: DictKey }> = [
+  { days: 7, labelKey: 'expiry.fieldQuickWeek' },
+  { days: 30, labelKey: 'expiry.fieldQuickMonth' },
+  { days: 183, labelKey: 'expiry.fieldQuickHalfYear' },
+  { days: 365, labelKey: 'expiry.fieldQuickYear' },
+]
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+/**
+ * 在 `YYYY-MM-DD` 上加减天数，返回同样格式的串。
+ *
+ * 用**本地日期**算术（`new Date(y, m, d)`）：绝不能走 `toISOString()`，
+ * 那会先把日期当成 UTC 再换算回来，在东八区晚上会差一天。
+ * 日期只有「天」没有「时刻」，所以加减也用日期构造器，不碰毫秒。
+ */
+function addDaysToISODate(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const shifted = new Date(y, m - 1, d + days)
+  return `${shifted.getFullYear()}-${pad2(shifted.getMonth() + 1)}-${pad2(shifted.getDate())}`
+}
 
 /* ------------------------------------------------------------------ */
 /* 单个属性输入控件                                                    */
@@ -24,19 +60,22 @@ function AttributeField({
   onChange: (value: AttrValue) => void
 }) {
   const text = value === null || value === undefined ? '' : String(value)
+  const { t } = useT()
 
   return (
     <div className="field">
       <label className="field__label" htmlFor={`attr-${def.id}`}>
         {def.name}
-        {def.unit ? <span className="field__label-required">（{def.unit}）</span> : null}
+        {def.unit ? (
+          <span className="field__label-required">{t('itemEdit.attrUnitParen', { unit: def.unit })}</span>
+        ) : null}
       </label>
 
       {def.type === 'bool' ? (
         <Switch
           checked={value === true}
           onChange={(checked) => onChange(checked)}
-          label={value === true ? '是' : '否'}
+          label={value === true ? t('common.yes') : t('common.no')}
         />
       ) : def.type === 'select' ? (
         <select
@@ -45,7 +84,7 @@ function AttributeField({
           value={text}
           onChange={(e) => onChange(e.target.value)}
         >
-          <option value="">未填写</option>
+          <option value="">{t('itemEdit.attrNotSet')}</option>
           {def.options.map((opt) => (
             <option key={opt} value={opt}>
               {opt}
@@ -81,6 +120,7 @@ function AttributeField({
 export function ItemEdit() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { t } = useT()
 
   const data = useAppStore((s) => s.data)
   const derived = useAppStore((s) => s.derived)
@@ -107,6 +147,8 @@ export function ItemEdit() {
   const [note, setNote] = useState('')
   const [attrs, setAttrs] = useState<Record<string, AttrValue>>({})
   const [attrIds, setAttrIds] = useState<string[]>([])
+  /** 有效期至（YYYY-MM-DD）；null = 没设置 —— 和「已过期」是两回事 */
+  const [expiresAt, setExpiresAt] = useState<string | null>(null)
 
   const [moreOpen, setMoreOpen] = useState(false)
   const [locationOpen, setLocationOpen] = useState(false)
@@ -127,6 +169,7 @@ export function ItemEdit() {
       setNote(existing.note)
       setAttrs(existing.attrs)
       setAttrIds(Object.keys(existing.attrs))
+      setExpiresAt(existing.expiresAt)
       setMoreOpen(existing.tags.length > 0 || existing.note !== '')
     } else {
       setName('')
@@ -138,6 +181,7 @@ export function ItemEdit() {
       setNote('')
       setAttrs({})
       setAttrIds(suggestAttrIds(ui, data.attributeDefs, ui.lastCategoryIds))
+      setExpiresAt(null)
       setMoreOpen(false)
     }
     // 只在进入页面或切换物品时重新初始化
@@ -172,6 +216,10 @@ export function ItemEdit() {
     .map((cid) => derived.categoryById.get(cid)?.name)
     .filter((n): n is string => Boolean(n))
 
+  // 填了有效期，但那天已经过去了。只是提醒，**不拦保存** ——
+  // 记录一件本来就已经过期的东西（比如去年的药）是正当用法。
+  const expiryIsPast = expiresAt !== null && isExpired(expiresAt)
+
   const buildInput = (): ItemInput => ({
     name,
     locationId,
@@ -180,6 +228,7 @@ export function ItemEdit() {
     status,
     tags,
     note,
+    expiresAt,
     attrs: Object.fromEntries(
       Object.entries(attrs).filter(([key]) => attrIds.includes(key)),
     ) as Record<string, AttrValue>,
@@ -188,14 +237,14 @@ export function ItemEdit() {
   const save = (continueAfter: boolean) => {
     const trimmed = name.trim()
     if (trimmed === '') {
-      notify('先给这件物品起个名字吧', 'error')
+      notify(t('itemEdit.nameRequired'), 'error')
       nameRef.current?.focus()
       return
     }
 
     if (isEdit && existing) {
       updateItem(existing.id, { ...buildInput(), name: trimmed })
-      notify('已保存', 'success')
+      notify(t('common.saved'), 'success')
       navigate('/items')
       return
     }
@@ -211,10 +260,12 @@ export function ItemEdit() {
       setTags([])
       setNote('')
       setAttrs({})
-      notify('已保存，继续录入下一件', 'success')
+      // 有效期属于「每件各不相同」的东西，连续录入时清掉
+      setExpiresAt(null)
+      notify(t('itemEdit.savedContinue'), 'success')
       nameRef.current?.focus()
     } else {
-      notify('已保存', 'success')
+      notify(t('common.saved'), 'success')
       navigate('/items')
     }
   }
@@ -224,13 +275,13 @@ export function ItemEdit() {
       <>
         <div className="page-header">
           <div>
-            <div className="page-header__title">物品详情</div>
+            <div className="page-header__title">{t('nav.titleItemDetail')}</div>
           </div>
         </div>
         <EmptyState
-          title="找不到这件物品"
-          hint="它可能已经被彻底删除了。"
-          action={<Button onClick={() => navigate('/items')}>回到物品列表</Button>}
+          title={t('itemEdit.notFoundTitle')}
+          hint={t('itemEdit.notFoundHint')}
+          action={<Button onClick={() => navigate('/items')}>{t('itemEdit.backToItems')}</Button>}
         />
       </>
     )
@@ -240,11 +291,11 @@ export function ItemEdit() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-header__title">{isEdit ? '编辑物品' : '录入物品'}</div>
+          <div className="page-header__title">
+            {isEdit ? t('itemEdit.titleEdit') : t('nav.titleItemNew')}
+          </div>
           <div className="page-header__sub">
-            {isEdit
-              ? '改完记得保存'
-              : '只有名称是必填的，其余都可以以后慢慢补'}
+            {isEdit ? t('itemEdit.subtitleEdit') : t('itemEdit.subtitleNew')}
           </div>
         </div>
         <div className="page-header__actions">
@@ -253,16 +304,19 @@ export function ItemEdit() {
               variant="danger"
               onClick={() => {
                 markDiscarded(existing.id)
-                notify('已移入「已舍弃」，可在设置里找回', 'success')
+                notify(
+                  t('itemEdit.discardedToast', { status: t('status.discarded') }),
+                  'success',
+                )
                 navigate('/items')
               }}
             >
               <IconTrash size={14} />
-              舍弃
+              {t('itemEdit.discard')}
             </Button>
           ) : null}
           <Button variant="primary" onClick={() => save(false)}>
-            保存
+            {t('common.save')}
           </Button>
         </div>
       </div>
@@ -283,7 +337,8 @@ export function ItemEdit() {
         {/* ---------------- 名称 ---------------- */}
         <div className="field">
           <label className="field__label" htmlFor="item-name">
-            名称 <span className="field__label-required">必填</span>
+            {t('itemEdit.fieldName')}{' '}
+            <span className="field__label-required">{t('common.required')}</span>
           </label>
           <input
             id="item-name"
@@ -291,7 +346,7 @@ export function ItemEdit() {
             className="input input--lg"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="写得具体一点，例如「灰色羊毛衫」而不是「毛衣」"
+            placeholder={t('itemEdit.namePlaceholder')}
             autoComplete="off"
             enterKeyHint="done"
           />
@@ -299,7 +354,7 @@ export function ItemEdit() {
 
         {/* ---------------- 位置 ---------------- */}
         <div className="field">
-          <span className="field__label">位置</span>
+          <span className="field__label">{t('itemEdit.fieldLocation')}</span>
           <button
             type="button"
             className="input"
@@ -307,7 +362,9 @@ export function ItemEdit() {
             onClick={() => setLocationOpen(true)}
           >
             <span className={`grow truncate${locationId ? '' : ' dim'}`}>
-              {locationId ? derived.index.pathString(locationId, ' / ') : '未归位（点击选择）'}
+              {locationId
+                ? derived.index.pathString(locationId, ' / ')
+                : t('itemEdit.locationPick')}
             </span>
             <IconChevronRight size={13} />
           </button>
@@ -319,14 +376,14 @@ export function ItemEdit() {
               onClick={() => setLocationId(null)}
             >
               <IconClose size={12} />
-              清空位置
+              {t('itemEdit.locationClear')}
             </button>
           ) : null}
         </div>
 
         {/* ---------------- 分类 ---------------- */}
         <div className="field">
-          <span className="field__label">分类</span>
+          <span className="field__label">{t('itemEdit.fieldCategories')}</span>
           <div className="chip-list">
             {categoryNames.map((label, index) => (
               <span key={`${label}-${index}`} className="chip is-active">
@@ -334,7 +391,7 @@ export function ItemEdit() {
                 <button
                   type="button"
                   className="chip__remove"
-                  aria-label={`移除分类 ${label}`}
+                  aria-label={t('itemEdit.removeCategoryAria', { name: label })}
                   onClick={() =>
                     setCategoryIds((prev) => prev.filter((_, i) => i !== index))
                   }
@@ -349,16 +406,18 @@ export function ItemEdit() {
               onClick={() => setCategoryOpen(true)}
             >
               <IconPlus size={11} />
-              {categoryNames.length > 0 ? '修改分类' : '选择分类'}
+              {categoryNames.length > 0
+                ? t('itemEdit.categoriesChange')
+                : t('itemEdit.categoriesChoose')}
             </button>
           </div>
-          <div className="field__hint">一件物品可以同时属于多个分类。</div>
+          <div className="field__hint">{t('itemEdit.categoriesHint')}</div>
         </div>
 
         {/* ---------------- 数量 ---------------- */}
         <div className="field">
           <label className="field__label" htmlFor="item-quantity">
-            数量
+            {t('itemEdit.fieldQuantity')}
           </label>
           <input
             id="item-quantity"
@@ -374,16 +433,52 @@ export function ItemEdit() {
 
         {/* ---------------- 闲置 ---------------- */}
         <div className="field">
-          <span className="field__label">状态</span>
+          <span className="field__label">{t('itemEdit.fieldStatus')}</span>
           <Switch
             checked={status === 'idle'}
             onChange={(checked) => setStatus(checked ? 'idle' : 'active')}
-            label={
-              status === 'idle'
-                ? '标记为闲置 —— 会出现在「闲置」页面里，等着被处理'
-                : '在用（打开开关可以标记为闲置）'
-            }
+            label={status === 'idle' ? t('itemEdit.idleOn') : t('itemEdit.idleOff')}
           />
+        </div>
+
+        {/* ---------------- 有效期 ---------------- */}
+        <div className="field">
+          <label className="field__label" htmlFor="item-expires-at">
+            {t('expiry.fieldLabel')}
+          </label>
+          <input
+            id="item-expires-at"
+            className="input"
+            type="date"
+            value={expiresAt ?? ''}
+            onChange={(e) => setExpiresAt(e.target.value === '' ? null : e.target.value)}
+          />
+          {expiresAt ? (
+            <button
+              type="button"
+              className="btn btn--sm btn--ghost"
+              style={{ alignSelf: 'flex-start' }}
+              onClick={() => setExpiresAt(null)}
+            >
+              <IconClose size={12} />
+              {t('expiry.fieldClear')}
+            </button>
+          ) : null}
+          <div className="expiry-field__quick">
+            {EXPIRY_QUICK_CHOICES.map(({ days, labelKey }) => (
+              <Button
+                key={days}
+                size="sm"
+                onClick={() => setExpiresAt(addDaysToISODate(todayISODate(), days))}
+              >
+                {t(labelKey)}
+              </Button>
+            ))}
+          </div>
+          <div className="field__hint">{t('expiry.fieldHint')}</div>
+          {expiryIsPast ? (
+            <div className="expiry-field__warning small">{t('expiry.fieldPastWarning')}</div>
+          ) : null}
         </div>
 
         {/* ---------------- 更多（标签、备注） ---------------- */}
@@ -397,33 +492,31 @@ export function ItemEdit() {
             <span className={`collapsible__caret${moreOpen ? ' is-open' : ''}`}>
               <IconChevronRight size={10} />
             </span>
-            更多（标签、备注）
+            {t('itemEdit.moreToggle')}
           </button>
 
           {moreOpen ? (
             <div className="stack" style={{ paddingTop: 'var(--gap-2)' }}>
               <div className="field">
-                <span className="field__label">标签</span>
+                <span className="field__label">{t('itemEdit.fieldTags')}</span>
                 <TagInput
                   value={tags}
                   onChange={setTags}
-                  suggestions={data.tags.map((t) => t.name)}
+                  suggestions={data.tags.map((tag) => tag.name)}
                 />
-                <div className="field__hint">
-                  标签适合记「情境」而不是「是什么」，例如「想送人」「舍不得扔」。
-                </div>
+                <div className="field__hint">{t('itemEdit.tagsHint')}</div>
               </div>
 
               <div className="field">
                 <label className="field__label" htmlFor="item-note">
-                  备注
+                  {t('itemEdit.fieldNote')}
                 </label>
                 <textarea
                   id="item-note"
                   className="textarea"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  placeholder="任何想记下来的事，比如「妈妈送的」「有点漏水」"
+                  placeholder={t('itemEdit.notePlaceholder')}
                 />
               </div>
             </div>
@@ -437,23 +530,21 @@ export function ItemEdit() {
           <div className="row-between wrap">
             <div>
               <div className="field__label" style={{ margin: 0 }}>
-                属性
+                {t('itemEdit.fieldAttributes')}
               </div>
-              <div className="field__hint">
-                只加这次需要的。不勾的属性不会出现在表单里。
-              </div>
+              <div className="field__hint">{t('itemEdit.attributesHint')}</div>
             </div>
             <Button onClick={() => setAttrPickerOpen(true)}>
               <IconPlus size={13} />
-              添加属性
+              {t('itemEdit.addAttributes')}
             </Button>
           </div>
 
           {selectedAttrDefs.length === 0 ? (
             <div className="dim small">
               {attrDefs.length === 0
-                ? '属性库还是空的，可以在「属性」页面里定义。'
-                : '还没有选择任何属性。'}
+                ? t('itemEdit.attributesEmptyLibrary')
+                : t('itemEdit.attributesEmptySelected')}
             </div>
           ) : (
             <div className="stack">
@@ -470,7 +561,7 @@ export function ItemEdit() {
                   </div>
                   <Button
                     variant="ghost"
-                    title={`不再填写「${def.name}」`}
+                    title={t('itemEdit.removeAttrTitle', { name: def.name })}
                     onClick={() => {
                       setAttrIds((prev) => prev.filter((x) => x !== def.id))
                       setAttrs((prev) => {
@@ -494,22 +585,20 @@ export function ItemEdit() {
         <div className="edit-form__actions">
           {isEdit ? (
             <Button variant="primary" onClick={() => save(false)}>
-              保存
+              {t('common.save')}
             </Button>
           ) : (
             <>
               <Button variant="primary" size="lg" onClick={() => save(true)}>
-                保存并继续录入
+                {t('itemEdit.saveAndContinue')}
               </Button>
               <Button size="lg" onClick={() => save(false)}>
-                保存并返回
+                {t('itemEdit.saveAndBack')}
               </Button>
             </>
           )}
           <span className="spacer" />
-          <span className="tiny dim">
-            {isEdit ? '' : '按 Ctrl / ⌘ + Enter 也是「保存并继续」'}
-          </span>
+          <span className="tiny dim">{isEdit ? '' : t('itemEdit.ctrlEnterHint')}</span>
         </div>
       </form>
 

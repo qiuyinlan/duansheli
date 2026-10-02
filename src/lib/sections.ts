@@ -14,81 +14,88 @@
 
 export interface SectionTheme {
   key: string
-  label: string
   accent: string
   accentText: string
   accentSoft: string
 }
 
+/*
+ * 这里**故意不放板块名字**。
+ *
+ * 以前每个板块带一个 `label: '概览'` 这样的中文字段，但它从来没被渲染过 ——
+ * 界面上的板块名一律走词典（`nav.*`）。留着一个没人用的中文字段有两个坏处：
+ * 一是看着像「还有没翻译的地方」，二是哪天有人真去用它，
+ * 就会永久冻结成中文。所以删掉，板块名只保留在下面每条的注释里。
+ */
 export const SECTION_THEMES: Record<string, SectionTheme> = {
+  /* 概览 */
   overview: {
     key: 'overview',
-    label: '概览',
     accent: '#2563eb',
     accentText: '#1d4ed8',
     accentSoft: '#eff6ff',
   },
+  /* 物品 */
   items: {
     key: 'items',
-    label: '物品',
     accent: '#4f46e5',
     accentText: '#4338ca',
     accentSoft: '#eef2ff',
   },
+  /* 位置 */
   locations: {
     key: 'locations',
-    label: '位置',
     accent: '#0d9488',
     accentText: '#0f766e',
     accentSoft: '#f0fdfa',
   },
+  /* 闲置 */
   idle: {
     key: 'idle',
-    label: '闲置',
     accent: '#d97706',
     accentText: '#b45309',
     accentSoft: '#fffbeb',
   },
+  /* 有效期 */
   expiry: {
     key: 'expiry',
-    label: '有效期',
     // 独立的一档颜色，跟闲置的橙拉开：闲置是「想想怎么处理」，
     // 有效期是「有截止日期」，后者更急，所以用了偏红的琥珀
     accent: '#e11d48',
     accentText: '#be123c',
     accentSoft: '#fff1f2',
   },
+  /* AI 助手 */
   ai: {
     key: 'ai',
-    label: 'AI 助手',
     accent: '#7c3aed',
     accentText: '#6d28d9',
     accentSoft: '#f5f3ff',
   },
+  /* 分类 */
   categories: {
     key: 'categories',
-    label: '分类',
     accent: '#0891b2',
     accentText: '#0e7490',
     accentSoft: '#ecfeff',
   },
+  /* 属性 */
   attributes: {
     key: 'attributes',
-    label: '属性',
     accent: '#059669',
     accentText: '#047857',
     accentSoft: '#ecfdf5',
   },
+  /* 标签 */
   tags: {
     key: 'tags',
-    label: '标签',
     accent: '#db2777',
     accentText: '#be185d',
     accentSoft: '#fdf2f8',
   },
+  /* 设置 */
   settings: {
     key: 'settings',
-    label: '设置',
     accent: '#475569',
     accentText: '#334155',
     accentSoft: '#f8fafc',

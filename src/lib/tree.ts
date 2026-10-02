@@ -195,6 +195,18 @@ export function isDescendantOf<T extends TreeItem>(
 }
 
 /**
+ * 不能挂过去的原因。
+ *
+ * 这里返回**机器可读的代号**而不是给用户看的句子：
+ * `lib/` 是不该知道界面语言的（它连 i18n 都不该 import），
+ * 而且这同一个判断位置和分类都要用 —— 给用户看的时候该说「位置」还是「分类」
+ * 只有调用方知道。由调用方把代号翻成人话。
+ */
+export type ReparentBlock = 'self' | 'missing' | 'descendant'
+
+export type ReparentCheck = { ok: true } | { ok: false; blocked: ReparentBlock }
+
+/**
  * 能否把 nodeId 挂到 newParentId 下。
  * 禁止挂到自己或自己的子孙下（否则树会成环、节点会从界面上消失）。
  */
@@ -202,12 +214,12 @@ export function canReparent<T extends TreeItem>(
   index: TreeIndex<T>,
   nodeId: string,
   newParentId: string | null,
-): { ok: true } | { ok: false; reason: string } {
+): ReparentCheck {
   if (newParentId === null) return { ok: true }
-  if (newParentId === nodeId) return { ok: false, reason: '不能把它移动到它自己下面' }
-  if (!index.has(newParentId)) return { ok: false, reason: '目标位置不存在' }
+  if (newParentId === nodeId) return { ok: false, blocked: 'self' }
+  if (!index.has(newParentId)) return { ok: false, blocked: 'missing' }
   if (isDescendantOf(index, newParentId, nodeId)) {
-    return { ok: false, reason: '不能把它移动到它自己的子级下面' }
+    return { ok: false, blocked: 'descendant' }
   }
   return { ok: true }
 }

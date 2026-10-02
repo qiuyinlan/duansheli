@@ -15,6 +15,7 @@ import { Overview } from './pages/Overview'
 import { Settings } from './pages/Settings'
 import { Tags } from './pages/Tags'
 import { useAppStore } from './store/useAppStore'
+import { useT } from './i18n'
 
 /**
  * 路由表单独抽出来，方便测试里直接渲染各页面
@@ -47,6 +48,7 @@ export function App() {
   const status = useAppStore((s) => s.status)
   const error = useAppStore((s) => s.error)
   const init = useAppStore((s) => s.init)
+  const { t } = useT()
 
   useEffect(() => {
     void init()
@@ -56,7 +58,7 @@ export function App() {
     return (
       <div className="center-screen">
         <div className="spinner" />
-        <div className="dim small">正在打开本地数据…</div>
+        <div className="dim small">{t('common.openingData')}</div>
       </div>
     )
   }
@@ -64,7 +66,9 @@ export function App() {
   if (status === 'error') {
     return (
       <div className="center-screen">
-        <div style={{ fontSize: 'var(--fs-h2)', fontWeight: 600 }}>无法打开本地数据</div>
+        <div style={{ fontSize: 'var(--fs-h2)', fontWeight: 600 }}>
+          {t('common.openDataFailed')}
+        </div>
         <div
           className="muted small"
           style={{ maxWidth: '38em', lineHeight: 1.8, textAlign: 'left' }}
@@ -72,11 +76,11 @@ export function App() {
           {error}
           <br />
           <br />
-          常见原因：浏览器处于无痕 / 隐私模式，或禁用了网站数据存储。请改用普通窗口打开；
-          如果是 iPhone，请在「设置 → Safari → 高级 → 网站数据」中确认没有禁用。
+          {t('common.openDataReason1')}
+          {t('common.openDataReason2')}
         </div>
         <Button variant="primary" onClick={() => void init()}>
-          重试
+          {t('common.retry')}
         </Button>
       </div>
     )

@@ -10,6 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/run-tests.mjs",
+    "audit:i18n": "node scripts/audit-i18n.mjs",
+    "check": "node node_modules/typescript/bin/tsc --noEmit && node scripts/audit-i18n.mjs && node scripts/run-tests.mjs",
     "sample": "node scripts/make-sample-backup.mjs",
     "icons": "node scripts/generate-icons.mjs"
   },

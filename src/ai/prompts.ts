@@ -14,6 +14,7 @@ import {
 } from '../store/selectors'
 import type { TreeIndex, TreeNode } from '../lib/tree'
 import type { ChatMessage } from './deepseek'
+import { fill, promptText } from './promptText'
 
 /* ------------------------------------------------------------------ */
 /* 上下文（用户现有的分类 / 位置 / 属性 / 标签）                        */
@@ -96,34 +97,33 @@ export function buildAiContext(
 }
 
 function listOrEmpty(values: string[], emptyHint: string): string {
-  return values.length > 0 ? values.join('、') : emptyHint
+  return values.length > 0 ? values.join(promptText().ctxListSeparator) : emptyHint
 }
 
 export function renderContextBlock(ctx: AiContext): string {
+  const p = promptText()
   const categories = ctx.categoryPaths.map((path) => path.join(' / ')).join('\n')
   const locations = ctx.locationPaths.map((path) => path.join(' / ')).join('\n')
 
   return [
-    '【已有分类】（categories 优先从这里挑，用「化妆品 / 眼妆」这样的完整路径，不要造同义词）',
-    '注意两点：',
-    '① 分类是多级的，物品可以挂在任意一级，所以单独一个「化妆品」也是合法的。',
-    '② 如果原文自己写了归类名（如「化妆品：」），必须用它 —— 即使不在下面这个清单里。',
-    '   下面这些只是「可以复用的选项」，不是「必须从中二选一的选项」。',
-    '   宁可新建一个分类，也不要把东西塞进不相干的已有分类。',
-    ctx.categoryPaths.length > 0
-      ? categories
-      : '（还没有分类，你可以自由创建，但每一级的名字都要短而通用）',
+    p.ctxCategoriesHead,
+    p.ctxNoteIntro,
+    p.ctxNote1,
+    p.ctxNote2a,
+    p.ctxNote2b,
+    p.ctxNote2c,
+    ctx.categoryPaths.length > 0 ? categories : p.ctxCategoriesEmpty,
     '',
-    '【已有位置】（location 必须从下面这些路径里挑，或者输出 null）',
-    '位置同样可以挂在任意一级，路径从顶层写起。',
-    ctx.locationPaths.length > 0 ? locations : '（还没有位置，请一律输出 null）',
+    p.ctxLocationsHead,
+    p.ctxLocationsNote,
+    ctx.locationPaths.length > 0 ? locations : p.ctxLocationsEmpty,
     '',
-    '【已有属性】（attributes 的 key 只能使用下面这些名字）',
-    listOrEmpty(ctx.attributes, '（还没有属性，请把 attributes 输出为空对象）'),
+    p.ctxAttributesHead,
+    listOrEmpty(ctx.attributes, p.ctxAttributesEmpty),
     '',
-    '【已有标签】（可以参考，也可以新增）',
-    listOrEmpty(ctx.tags, '（还没有标签）'),
-    ctx.truncated ? '\n（注意：上面的清单因为太长做了截断，可能不完整）' : '',
+    p.ctxTagsHead,
+    listOrEmpty(ctx.tags, p.ctxTagsEmpty),
+    ctx.truncated ? `\n${p.ctxTruncated}` : '',
   ]
     .filter((line) => line !== '')
     .join('\n')
@@ -168,30 +168,32 @@ export function buildInventoryDigest(data: AppData, derived: DerivedContext): In
  * 只放名字和数量，不放具体条目 —— 具体条目等 AI 要的时候再拉。
  */
 export function renderInventoryDigest(digest: InventoryDigest): string {
+  const p = promptText()
+
   if (digest.totalItems === 0) {
-    return '【你现有的物品】一件都还没有。'
+    return p.digestEmpty
   }
 
-  const categories =
-    digest.categories.length > 0
-      ? digest.categories.map((entry) => `${entry.path.join(' / ')}（${entry.count}）`).join('、')
-      : '（没有任何分类）'
+  const renderList = (entries: Array<{ path: string[]; count: number }>, empty: string) =>
+    entries.length > 0
+      ? entries
+          .map((entry) => fill(p.digestEntry, { path: entry.path.join(' / '), count: entry.count }))
+          .join(p.ctxListSeparator)
+      : empty
 
-  const locations =
-    digest.locations.length > 0
-      ? digest.locations.map((entry) => `${entry.path.join(' / ')}（${entry.count}）`).join('、')
-      : '（没有任何位置）'
+  const categories = renderList(digest.categories, p.digestNoCategories)
+  const locations = renderList(digest.locations, p.digestNoLocations)
 
   return [
-    `【你现有的物品】共 ${digest.totalItems} 件（不含已舍弃）`,
-    `· 按分类：${categories}`,
-    digest.uncategorized > 0 ? `· 其中未分类 ${digest.uncategorized} 件` : '',
-    `· 按位置：${locations}`,
-    digest.unassigned > 0 ? `· 其中未归位 ${digest.unassigned} 件` : '',
-    digest.idle > 0 ? `· 其中标记为闲置 ${digest.idle} 件` : '',
+    fill(p.digestTitle, { total: digest.totalItems }),
+    fill(p.digestByCategory, { list: categories }),
+    digest.uncategorized > 0 ? fill(p.digestUncategorized, { count: digest.uncategorized }) : '',
+    fill(p.digestByLocation, { list: locations }),
+    digest.unassigned > 0 ? fill(p.digestUnassigned, { count: digest.unassigned }) : '',
+    digest.idle > 0 ? fill(p.digestIdle, { count: digest.idle }) : '',
     '',
-    '注意：上面只是**统计**，你手里还没有这些物品的具体条目。',
-    '要修改它们，你需要用 loadScope 先让程序把它们拉进来（见下面的说明）。',
+    p.digestFootnote1,
+    p.digestFootnote2,
   ]
     .filter((line) => line !== '')
     .join('\n')
@@ -201,75 +203,32 @@ export function renderInventoryDigest(digest: InventoryDigest): string {
 /* 一、从自由文字里批量抽取物品                                        */
 /* ------------------------------------------------------------------ */
 
-const EXTRACTION_SYSTEM = `你是「断舍离」这款个人物品整理工具里的录入助手。
-用户会给你一段自然语言（可能是清单，也可能是一段随口描述），
-你要从中抽取出物品，并输出严格的 json。
-
-输出格式（一个 json 对象，不要输出任何解释性文字）：
-{
-  "items": [
-    {
-      "name": "灰色羊毛衫",
-      "quantity": 1,
-      "categories": [["衣物"]],
-      "location": ["家", "卧室", "衣柜"],
-      "tags": ["舍不得扔"],
-      "attributes": { "品牌": "某品牌" },
-      "note": ""
-    }
-  ]
-}
-
-抽取规则：
-1. name 要具体。原文只写「毛衣」时，结合上下文补全为「灰色羊毛衫」这类可辨认的名字。
-   但不要编造原文没有依据的信息（没有依据就不要写颜色、品牌）。
-2. quantity：原文说「三双袜子」就是 3；没提到数量就填 1。
-3. categories 是一个**二维数组** —— 每一项是一条分类路径，从顶层写到末级。
-   例如 [["化妆品","眼妆"]] 表示这件东西归到「化妆品」下面的「眼妆」。
-   按这个**优先级**决定用哪条路径：
-
-   a) **原文自己给出了归类名** —— 比如写了「化妆品：」「药：」「衣柜里的：」这样的标题 ——
-      就**必须**用那个名字作为分类，**即使它不在【已有分类】里**。
-      那是用户自己写的意图，比你从清单里挑一个更可信。
-   b) 原文没给归类时，再看【已有分类】里有没有**语义相符**的。
-   c) 都没有，才自己起一条新路径；每一级的名字都要短而通用。
-
-   **绝对不要为了避开新建分类，就把物品塞进一个不相干的已有分类。**
-   把「口红」归到「日用品」是错的，正确做法是新建「化妆品」。
-   分类清单里的名字只是「可以复用的选项」，不是「必须从中二选一的选项」。
-
-   如果原文的归类比较宽（比如只写了「化妆品」），而里面的东西明显能再分
-   （眼影、口红、卸妆），就写成两级路径，例如 ["化妆品","眼妆"]、["化妆品","唇妆"]。
-   分类是多级的，物品也可以只挂在上一层，所以 [["化妆品"]] 同样合法。
-   一件物品允许有多个分类，但大多数情况一个就够。
-4. location 必须从【已有位置】里挑，输出从顶层到末级的名称数组。
-   位置同样可以挂在任意一级。
-   原文没有提到位置就填 null —— 不要猜、不要编。
-5. tags：记录「情境」而不是「是什么」，例如 想送人、待维修、舍不得扔。没有就填 []。
-6. attributes：key 只能使用【已有属性】里的名字。原文没提到相关信息就不要写这一项。
-7. note：原文里关于这件物品的补充说明，例如「妈妈送的」「有点漏水」。没有就填空字符串。
-8. 不要把一件物品拆成多条，也不要把描述同一件物品的几句话拆开。
-9. 如果这段文字里完全没有物品信息，返回 {"items": []}。`
-
+/**
+ * 抽取用的 messages。
+ *
+ * 提示词本身（角色、规则、全部示例）在 src/ai/promptText/ 下按语言分开存放 ——
+ * 提示词是 AI 质量的地基，两种语言各留一份完整的，比混排更可靠。
+ */
 export function buildExtractionMessages(
   context: AiContext,
   chunkText: string,
   chunkInfo?: { index: number; total: number },
 ): ChatMessage[] {
+  const p = promptText()
   const header =
     chunkInfo && chunkInfo.total > 1
-      ? `这是用户输入的第 ${chunkInfo.index} / ${chunkInfo.total} 段，只处理这一段里的物品。`
+      ? fill(p.extractChunkHeader, { index: chunkInfo.index, total: chunkInfo.total })
       : ''
 
   return [
-    { role: 'system', content: EXTRACTION_SYSTEM },
+    { role: 'system', content: p.extractionSystem },
     {
       role: 'user',
       content: [
         renderContextBlock(context),
         '',
         header,
-        '【待识别的文字】',
+        p.extractInputLabel,
         '<<<',
         chunkText,
         '>>>',
