@@ -9,13 +9,19 @@
  * 网络请求不测（那是在测 DeepSeek），只测我们自己写的那部分。
  */
 
-import type { ParsedChatResponse, RawExtractedItem, RawRevisedItem } from '../src/ai/parse'
+import type {
+  LoadScopeRequest,
+  ParsedChatResponse,
+  RawExtractedItem,
+  RawRevisedItem,
+} from '../src/ai/parse'
 import {
   createMatchContext,
-  draftsToBulkAddItems,
-  draftsToBulkUpdates,
+  draftsFromItems,
+  draftsToApply,
+  itemsForLoadScope,
   toItemDraft,
-  toTidyDraft,
+  type ItemDraft,
 } from '../src/ai/convert'
 import {
   buildChatMessages,
@@ -25,26 +31,23 @@ import {
   type ChatTurn,
 } from '../src/ai/chat'
 import { AiError } from '../src/ai/deepseek'
-import {
-  extractJson,
-  parseAssignments,
-  parseChatResponse,
-  parseExtraction,
-} from '../src/ai/parse'
+import { extractJson, parseChatResponse, parseExtraction } from '../src/ai/parse'
 import {
   buildAiContext,
   buildExtractionMessages,
-  buildTidyMessages,
+  buildInventoryDigest,
   chunkItems,
   renderContextBlock,
+  renderInventoryDigest,
   splitIntoChunks,
 } from '../src/ai/prompts'
 import { buildExportFile } from '../src/data/exportJson'
 import { getRepository } from '../src/storage/repository'
+import { createEmptyData } from '../src/storage/seed'
 import { createDerived } from '../src/store/selectors'
 import { flushWrites, useAppStore } from '../src/store/useAppStore'
 import type { AppData, Category, Location } from '../src/types'
-import { deepEq, eq, fixture, must, ok, suite, test } from './harness'
+import { deepEq, eq, fixture, item, must, ok, suite, test } from './harness'
 
 /* ------------------------------------------------------------------ */
 /* 1. 从模型回复里抠 JSON                                              */
@@ -216,30 +219,7 @@ await test('完全找不到列表时报错', () => {
   ok(caught !== null, '应该抛错')
 })
 
-/* ------------------------------------------------------------------ */
-/* 3. 整理建议的解析                                                   */
-/* ------------------------------------------------------------------ */
-
-suite('AI 回复解析：整理建议')
-
-await test('标准结构', () => {
-  const list = parseAssignments({
-    assignments: [
-      { id: 'i1', categories: [['化妆品', '眼妆']], location: ['家', '卧室'], reason: '应该归到卧室' },
-    ],
-  })
-  eq(list.length, 1)
-  eq(list[0].id, 'i1')
-  deepEq(list[0].categoryPaths, [['化妆品', '眼妆']])
-  deepEq(list[0].location, ['家', '卧室'])
-})
-
-await test('没有 id 的建议被丢弃（不能用）', () => {
-  eq(parseAssignments({ assignments: [{ categories: [['衣物']] }, { id: 'ok' }] }).length, 1)
-})
-
-/* ------------------------------------------------------------------ */
-/* 4. 名称路径 → id 的匹配                                             */
+/* 3. 名称路径 → id 的匹配                                             */
 /* ------------------------------------------------------------------ */
 
 suite('名称匹配：位置与分类')
@@ -395,10 +375,10 @@ await test('AI 用简称时也能对上（大小写与空格不敏感）', () =>
 })
 
 /* ------------------------------------------------------------------ */
-/* 5. 草稿 → 写入计划                                                  */
+/* 4. 草稿 → 落库计划                                                  */
 /* ------------------------------------------------------------------ */
 
-suite('草稿转成写入计划')
+suite('草稿转成落库计划')
 
 await test('未采纳的新分类不会进入计划', () => {
   const draft = toItemDraft(
@@ -407,11 +387,10 @@ await test('未采纳的新分类不会进入计划', () => {
     ctx,
   )
   eq(draft.adoptNewCategories, false, '新分类默认不采纳')
-  deepEq(
-    draftsToBulkAddItems([draft], match, ctx)[0].categoryPaths,
-    [['衣物']],
-    '未采纳时只带上已匹配到的那个',
-  )
+  const applied = draftsToApply([draft], fx.items, ctx)
+  deepEq(applied.plan[0].categoryPaths, [['衣物']], '未采纳时只带上已匹配到的那个')
+  eq(applied.creating, 1)
+  eq(applied.updating, 0)
 })
 
 await test('采纳后的新分类会带着层级进入计划', () => {
@@ -419,13 +398,13 @@ await test('采纳后的新分类会带着层级进入计划', () => {
     ...toItemDraft(raw({ name: '眼影盘', categoryPaths: [['化妆品', '眼妆']] }), match, ctx),
     adoptNewCategories: true,
   }
-  const plan = draftsToBulkAddItems([draft], match, ctx)
-  deepEq(plan[0].categoryPaths, [['化妆品', '眼妆']], '层级不能被拍平')
+  const plan = draftsToApply([draft], fx.items, ctx)
+  deepEq(plan.plan[0].categoryPaths, [['化妆品', '眼妆']], '层级不能被拍平')
 })
 
 await test('未采纳的新位置 → 未归位', () => {
   const draft = toItemDraft(raw({ name: '工具箱', location: ['家', '车库'] }), match, ctx)
-  eq(draftsToBulkAddItems([draft], match, ctx)[0].locationPath, null)
+  eq(draftsToApply([draft], fx.items, ctx).plan[0].locationPath, null)
 })
 
 await test('采纳后的新位置会带着完整路径进入计划', () => {
@@ -433,53 +412,49 @@ await test('采纳后的新位置会带着完整路径进入计划', () => {
     ...toItemDraft(raw({ name: '工具箱', location: ['家', '车库'] }), match, ctx),
     adoptNewLocation: true,
   }
-  deepEq(draftsToBulkAddItems([draft], match, ctx)[0].locationPath, ['家', '车库'])
+  deepEq(draftsToApply([draft], fx.items, ctx).plan[0].locationPath, ['家', '车库'])
 })
 
 await test('取消勾选的条目不进入计划', () => {
   const draft = { ...toItemDraft(raw({ name: '不要这个' }), match, ctx), include: false }
-  eq(draftsToBulkAddItems([draft], match, ctx).length, 0)
+  const applied = draftsToApply([draft], fx.items, ctx)
+  eq(applied.plan.length, 0)
+  eq(applied.creating, 0)
+  eq(applied.updating, 0)
 })
 
-await test('整理建议：完全没变化的条目被丢弃', () => {
+await test('带 sourceItemId 的草稿走更新，不新建', () => {
   const existing = must(fx.items.find((i) => i.id === 'i1'), '找不到 i1')
-  const clothing = must(fx.categories.find((c) => c.name === '衣物'), '找不到衣物')
+  const [draft] = draftsFromItems([existing], match, ctx)
+  eq(draft.sourceItemId, 'i1', '从库里来的草稿必须记住它来自哪一件')
 
-  const noop = toTidyDraft(
-    { id: 'i1', categoryPaths: [['衣物']], location: ['家', '卧室', '衣柜'], reason: '本来就这样' },
-    existing,
-    match,
-    ctx,
-  )
-  eq(noop, null, '没有变化的建议不该出现在预览里')
+  // 把它改成未归位，制造「有变化」
+  const changed: ItemDraft = { ...draft, locationId: null, locationLabel: '未归位' }
+  const applied = draftsToApply([changed], fx.items, ctx)
 
-  const changed = toTidyDraft(
-    { id: 'i1', categoryPaths: [['衣物']], location: ['家', '客厅'], reason: '换个地方' },
-    existing,
-    match,
-    ctx,
-  )
-  ok(changed !== null, '有变化的应该保留')
-  eq(changed?.matchedCategoryIds[0], clothing.id)
+  eq(applied.updating, 1)
+  eq(applied.creating, 0)
+  eq(applied.untouched, 0)
+  eq(applied.plan[0].existingId, 'i1', '有 existingId 才会去改那一条，而不是新增')
 })
 
-await test('整理计划只带上要改的字段', () => {
+await test('已有物品没改动 → 跳过，不去刷它的修改时间', () => {
   const existing = must(fx.items.find((i) => i.id === 'i2'), '找不到 i2')
-  const draft = toTidyDraft(
-    { id: 'i2', categoryPaths: [['衣物']], location: ['家', '客厅', '电视柜'], reason: '移一下' },
-    existing,
-    match,
-    ctx,
-  )
-  const updates = draftsToBulkUpdates([must(draft, '草稿不该为空')], match, ctx)
-  eq(updates.length, 1)
-  eq(updates[0].id, 'i2')
-  deepEq(updates[0].locationPath, ['家', '客厅', '电视柜'])
-  deepEq(updates[0].categoryPaths, [['衣物']])
+  const applied = draftsToApply(draftsFromItems([existing], match, ctx), fx.items, ctx)
+
+  eq(applied.untouched, 1)
+  eq(applied.plan.length, 0, '内容没变就不该产生写入计划')
+  eq(applied.updating, 0)
+})
+
+await test('被移出草稿的已有物品 → 软删除，且只认库里真有的 id', () => {
+  const applied = draftsToApply([], fx.items, ctx, ['i3', 'AI 自己编的 id'])
+  deepEq(applied.discardIds, ['i3'], 'AI 编的 id 一律忽略')
+  eq(applied.discarding, 1)
 })
 
 /* ------------------------------------------------------------------ */
-/* 6. 分批                                                             */
+/* 5. 分批                                                             */
 /* ------------------------------------------------------------------ */
 
 suite('长文本分批')
@@ -513,7 +488,7 @@ await test('物品按批大小切开', () => {
 })
 
 /* ------------------------------------------------------------------ */
-/* 7. 上下文注入                                                       */
+/* 6. 上下文注入                                                       */
 /* ------------------------------------------------------------------ */
 
 suite('发给 AI 的上下文')
@@ -555,10 +530,10 @@ await test('清单太长时截断并如实标注', () => {
 })
 
 /* ------------------------------------------------------------------ */
-/* 8. store 批量写入                                                   */
+/* 7. store 草稿落库                                                   */
 /* ------------------------------------------------------------------ */
 
-suite('批量写入（自动创建分类与位置）')
+suite('落库（AI 采纳的唯一通路）')
 
 function seedStore(data: AppData = fx): void {
   useAppStore.setState({
@@ -569,20 +544,42 @@ function seedStore(data: AppData = fx): void {
   })
 }
 
-await test('批量录入：多级分类路径被逐层创建', async () => {
+/** 手工造一条草稿 —— 只写关心的字段，其余给默认值 */
+function draftOf(patch: Partial<ItemDraft> & { name: string }): ItemDraft {
+  const base: ItemDraft = {
+    key: patch.name,
+    name: patch.name,
+    quantity: 1,
+    locationId: null,
+    locationLabel: '未归位',
+    newLocationPath: null,
+    matchedCategoryIds: [],
+    newCategoryPaths: [],
+    tags: [],
+    attrs: {},
+    droppedAttrs: [],
+    note: '',
+    include: true,
+    adoptNewCategories: false,
+    adoptNewLocation: false,
+  }
+  return { ...base, ...patch, name: patch.name, key: patch.key ?? patch.name }
+}
+
+/** 走「AI 采纳」那条真实路径：草稿 → 落库计划 → 一次提交 */
+function adopt(drafts: ItemDraft[], removedKeys: string[] = []) {
+  const state = useAppStore.getState()
+  const applied = draftsToApply(drafts, state.data.items, state.derived, removedKeys)
+  const result = state.applyDraftItems({ items: applied.plan, discardIds: applied.discardIds })
+  return { applied, result }
+}
+
+await test('落库：多级分类路径被逐层创建', async () => {
   seedStore()
   const before = useAppStore.getState().data.categories.length
 
-  useAppStore.getState().bulkAddItems([
-    {
-      name: '眼影盘',
-      quantity: 1,
-      categoryPaths: [['化妆品', '眼妆']],
-      locationPath: null,
-      tags: [],
-      attrs: {},
-      note: '',
-    },
+  adopt([
+    draftOf({ name: '眼影盘', newCategoryPaths: [['化妆品', '眼妆']], adoptNewCategories: true }),
   ])
 
   const state = useAppStore.getState()
@@ -598,36 +595,21 @@ await test('批量录入：多级分类路径被逐层创建', async () => {
   await flushWrites()
 })
 
-await test('批量录入：同一条路径只建一次', async () => {
+await test('落库：同一条路径只建一次', async () => {
   seedStore()
-  useAppStore.getState().bulkAddItems([
-    {
-      name: '口红',
-      quantity: 1,
-      categoryPaths: [['化妆品', '唇妆']],
-      locationPath: null,
-      tags: [],
-      attrs: {},
-      note: '',
-    },
-    {
-      name: '唇釉',
-      quantity: 1,
-      categoryPaths: [['化妆品', '唇妆']],
-      locationPath: null,
-      tags: [],
-      attrs: {},
-      note: '',
-    },
+  adopt([
+    draftOf({ name: '口红', newCategoryPaths: [['化妆品', '唇妆']], adoptNewCategories: true }),
+    draftOf({ name: '唇釉', newCategoryPaths: [['化妆品', '唇妆']], adoptNewCategories: true }),
   ])
 
   const state = useAppStore.getState()
   eq(state.data.categories.filter((c) => c.name === '化妆品').length, 1, '化妆品只该有一个')
   eq(state.data.categories.filter((c) => c.name === '唇妆').length, 1, '唇妆只该有一个')
+  eq(state.data.categories.filter((c) => c.name === '唇釉').length, 0, '物品名不该被当成分类')
   await flushWrites()
 })
 
-await test('批量录入：已有的分类路径直接复用，不会重复建', async () => {
+await test('落库：已有的分类路径直接复用，不会重复建', async () => {
   const { data, derived, matchCtx } = hierarchyFixture()
   seedStore(data)
   const before = useAppStore.getState().data.categories.length
@@ -637,27 +619,22 @@ await test('批量录入：已有的分类路径直接复用，不会重复建',
     matchCtx,
     derived,
   )
-  useAppStore.getState().bulkAddItems(draftsToBulkAddItems([draft], matchCtx, derived))
+  adopt([draft])
 
   eq(useAppStore.getState().data.categories.length, before, '不该多出任何分类')
   const eyeMakeup = must(data.categories.find((c) => c.name === '眼妆'), '找不到眼妆')
-  const item = must(useAppStore.getState().data.items.find((i) => i.name === '睫毛膏'), '找不到睫毛膏')
+  const item = must(
+    useAppStore.getState().data.items.find((i) => i.name === '睫毛膏'),
+    '找不到睫毛膏',
+  )
   deepEq(item.categoryIds, [eyeMakeup.id])
   await flushWrites()
 })
 
-await test('批量录入：位置路径逐层创建，中间层缺失也能补上', async () => {
+await test('落库：位置路径逐层创建，中间层缺失也能补上', async () => {
   seedStore()
-  const result = useAppStore.getState().bulkAddItems([
-    {
-      name: '工具箱',
-      quantity: 1,
-      categoryPaths: [],
-      locationPath: ['家', '车库', '货架'],
-      tags: [],
-      attrs: {},
-      note: '',
-    },
+  const { result } = adopt([
+    draftOf({ name: '工具箱', newLocationPath: ['家', '车库', '货架'], adoptNewLocation: true }),
   ])
 
   eq(result.createdLocations, 2, '车库和货架两层都该建出来')
@@ -677,18 +654,15 @@ await test('批量录入：位置路径逐层创建，中间层缺失也能补�
   await flushWrites()
 })
 
-await test('批量录入：属性名被映射成属性 id；库里没有的属性被忽略', async () => {
+await test('落库：属性名被映射成属性 id；库里没有的属性被忽略', async () => {
   seedStore()
-  useAppStore.getState().bulkAddItems([
-    {
+  adopt([
+    draftOf({
       name: '毛衣',
-      quantity: 1,
-      categoryPaths: [],
-      locationPath: null,
       tags: ['想送人'],
       attrs: { 品牌: '某品牌', 不存在的属性: '值' },
       note: '备注',
-    },
+    }),
   ])
 
   const state = useAppStore.getState()
@@ -701,19 +675,9 @@ await test('批量录入：属性名被映射成属性 id；库里没有的属�
   await flushWrites()
 })
 
-await test('批量录入：标签表会被补齐', async () => {
+await test('落库：标签表会被补齐', async () => {
   seedStore()
-  useAppStore.getState().bulkAddItems([
-    {
-      name: '新东西',
-      quantity: 1,
-      categoryPaths: [],
-      locationPath: null,
-      tags: ['临时想到的标签'],
-      attrs: {},
-      note: '',
-    },
-  ])
+  adopt([draftOf({ name: '新东西', tags: ['临时想到的标签'] })])
   ok(
     useAppStore.getState().data.tags.some((t) => t.name === '临时想到的标签'),
     '标签表必须补齐，否则标签页会漏掉',
@@ -721,20 +685,18 @@ await test('批量录入：标签表会被补齐', async () => {
   await flushWrites()
 })
 
-await test('批量录入：真的落盘了', async () => {
+await test('落库：真的落盘了', async () => {
   seedStore()
   const countBefore = useAppStore.getState().data.items.length
+  const wardrobe = must(fx.locations.find((l) => l.name === '衣柜'), '找不到衣柜')
 
-  useAppStore.getState().bulkAddItems([
-    {
+  adopt([
+    draftOf({
       name: '落盘测试物品',
-      quantity: 1,
-      categoryPaths: [['衣物']],
-      locationPath: ['家', '卧室', '衣柜'],
-      tags: [],
-      attrs: {},
-      note: '',
-    },
+      matchedCategoryIds: [must(fx.categories.find((c) => c.name === '衣物'), '找不到衣物').id],
+      locationId: wardrobe.id,
+      locationLabel: '家 / 卧室 / 衣柜',
+    }),
   ])
   await flushWrites()
 
@@ -742,37 +704,61 @@ await test('批量录入：真的落盘了', async () => {
   eq(persisted.items.length, countBefore + 1)
 
   const saved = must(persisted.items.find((i) => i.name === '落盘测试物品'), '应该能在磁盘上找到它')
-  const wardrobe = must(fx.locations.find((l) => l.name === '衣柜'), '找不到衣柜')
   eq(saved.locationId, wardrobe.id, '位置也应该正确落盘')
 })
 
-await test('批量更新：把一批物品改到新分类和新位置', async () => {
+await test('落库：带 existingId 的更新已有物品，不新建', async () => {
   seedStore()
+  const before = useAppStore.getState().data.items.length
   const electronics = must(fx.categories.find((c) => c.name === '电子'), '找不到电子')
 
-  const result = useAppStore.getState().bulkUpdateItems([
-    { id: 'i5', categoryPaths: [['电子']], locationPath: ['家', '书房', '书桌'] },
+  const { result } = adopt([
+    draftOf({
+      name: '旧手机',
+      sourceItemId: 'i3',
+      matchedCategoryIds: [electronics.id],
+      newLocationPath: ['家', '书房', '书桌'],
+      adoptNewLocation: true,
+    }),
   ])
 
-  eq(result.items, 1)
-  const after = must(useAppStore.getState().data.items.find((i) => i.id === 'i5'), 'i5 应还在')
+  eq(result.updated, 1)
+  eq(result.added, 0)
+  eq(useAppStore.getState().data.items.length, before, '不该多出物品')
+
+  const after = must(useAppStore.getState().data.items.find((i) => i.id === 'i3'), 'i3 应还在')
   eq(after.categoryIds[0], electronics.id)
   const desk = must(useAppStore.getState().data.locations.find((l) => l.name === '书桌'), '书桌应存在')
   eq(after.locationId, desk.id)
+  eq(after.status, 'idle', '更新不该把它的闲置状态改掉')
   await flushWrites()
 })
 
-await test('批量更新：空数组表示清空分类，null 表示清空位置', async () => {
+await test('落库：更新时清空分类与位置也是允许的', async () => {
   seedStore()
-  useAppStore.getState().bulkUpdateItems([{ id: 'i1', categoryPaths: [], locationPath: null }])
+  adopt([
+    draftOf({ name: '灰色羊毛衫', sourceItemId: 'i1', matchedCategoryIds: [], locationId: null }),
+  ])
+
   const after = must(useAppStore.getState().data.items.find((i) => i.id === 'i1'), 'i1 应还在')
   deepEq(after.categoryIds, [])
   eq(after.locationId, null)
   await flushWrites()
 })
 
+await test('落库：被移出草稿的已有物品进回收站，不是硬删', async () => {
+  seedStore()
+  const { result } = adopt([], ['i3'])
+  eq(result.discarded, 1)
+
+  const after = must(useAppStore.getState().data.items.find((i) => i.id === 'i3'), 'i3 不该被删掉')
+  eq(after.status, 'discarded')
+  ok(after.discardedAt !== null, '要记下是什么时候丢的')
+  await flushWrites()
+})
+
 /* ------------------------------------------------------------------ */
-/* 9. AI 分类匹配的歧义保护                                             */
+/* 8. AI 分类匹配的歧义保护                                             */
 /* ------------------------------------------------------------------ */
 
 suite('分类后缀有歧义时绝不猜')
@@ -833,11 +819,18 @@ await test('上下文块里再强调一遍这条约束', () => {
   )
 })
 
-await test('整理指令：允许纠正错的分类，该新建就新建', () => {
-  const messages = buildTidyMessages(buildAiContext(fx, ctx), [])
-  const system = must(messages[0], '应该有 system 消息').content
-  ok(system.includes('该新建就新建'), '整理模式也要能纠正错分类')
-  ok(system.includes('明显不合适'), '要说明什么情况下该改')
+await test('对话指令：宁可新建，也不把东西塞进不相干的分类', () => {
+  const messages = buildChatMessages(
+    buildAiContext(fx, ctx),
+    buildInventoryDigest(fx, ctx),
+    [],
+    [],
+    '把药品改成 药品/补剂',
+  )
+  const all = messages.map((m) => m.content).join('\n')
+  ok(all.includes('绝对不要把物品塞进不相干的已有分类'), '要明确禁止硬塞')
+  ok(all.includes('即使不在【已有分类】里'), '用户点名的分类要优先，即使它是新的')
+  ok(all.includes('都没有才新建'), '要有兜底的新建规则')
 })
 
 await test('抽取指令要求 json 模式（DeepSeek 的硬性要求）', () => {
@@ -938,7 +931,11 @@ function botReply(
   removedIds: string[] = [],
   reply = '改好了',
 ): ParsedChatResponse {
-  return { reply, items, removedIds, noChanges: false }
+  return { reply, items, removedIds, loadScope: null, noChanges: false }
+}
+
+function loadRequest(reply: string, scope: LoadScopeRequest): ParsedChatResponse {
+  return { reply, items: [], removedIds: [], loadScope: scope, noChanges: false }
 }
 
 /* ---- 合并 ---- */
@@ -1133,11 +1130,14 @@ await test('空字段不发出去（省 token）', () => {
   ok(richPayload.includes('妈妈送的'), '有备注要发')
 })
 
-await test('用户体系放在 system 消息里 —— 这是前缀缓存能生效的前提', () => {
+await test('用户体系 + 现有物品目录放在 system 消息里 —— 前缀缓存能生效的前提', () => {
   const context = buildAiContext(fx, ctx)
-  const first = buildChatMessages(context, [], [], '第一句')
+  const digest = buildInventoryDigest(fx, ctx)
+
+  const first = buildChatMessages(context, digest, [], [], '第一句')
   const second = buildChatMessages(
     context,
+    digest,
     [
       { role: 'user', content: '第一句' },
       { role: 'assistant', content: '好' },
@@ -1152,10 +1152,11 @@ await test('用户体系放在 system 消息里 —— 这是前缀缓存能生�
     must(second[0], '应该有 system').content,
     'system 必须逐字节一致，否则缓存命中不了',
   )
-  ok(
-    must(first[0], '应该有 system').content.includes('【已有分类】'),
-    '用户体系应该在 system 里',
-  )
+
+  const system = must(first[0], '应该有 system').content
+  ok(system.includes('【已有分类】'), '用户体系应该在 system 里')
+  ok(system.includes('【你现有的物品】'), '现有物品的目录也应该在 system 里')
+  ok(system.includes('loadScope'), '要告诉 AI 怎么请求具体条目')
   ok(
     !must(first[first.length - 1], '应该有最后一条').content.includes('【已有分类】'),
     '用户消息里不该再重复一遍体系',
@@ -1164,7 +1165,7 @@ await test('用户体系放在 system 消息里 —— 这是前缀缓存能生�
 
 /* ---- 解析 ---- */
 
-await test('解析对话回复：标准结构 / 纯问答 / removedIds / 全不合法', () => {
+await test('解析对话回复：标准结构 / 纯问答 / removedIds / loadScope / 全不合法', () => {
   const normal = parseChatResponse({
     reply: '改好了',
     items: [{ id: 'a', name: '口红', categories: [['化妆品', '唇妆']] }],
@@ -1180,6 +1181,17 @@ await test('解析对话回复：标准结构 / 纯问答 / removedIds / 全不�
   eq(onlyRemoved.items.length, 0)
   eq(onlyRemoved.removedIds.length, 1)
   eq(onlyRemoved.noChanges, false, '只有删除也算有改动')
+
+  // AI 要数据：给了 loadScope 但没有改动 —— 这是正常的一步，不是"没变化"
+  const wantsData = parseChatResponse({
+    reply: '你「药品」下有 74 件，我先拉进来',
+    loadScope: { categoryPaths: [['药品']] },
+  })
+  eq(wantsData.noChanges, false, '要数据也是有效的一步')
+  deepEq(must(wantsData.loadScope, '应该解析出 loadScope').categoryPaths, [['药品']])
+
+  // 空 loadScope 不算请求
+  eq(parseChatResponse({ reply: '好', loadScope: {} }).loadScope, null)
 
   // 只回一句话、没有任何改动 —— 这是允许的，草稿该原样保留
   const chatOnly = parseChatResponse({ reply: '这个我不太确定，你能说得更具体吗？' })
@@ -1200,12 +1212,181 @@ await test('对话的 history 不会被无限撑大', () => {
     role: i % 2 === 0 ? 'user' : 'assistant',
     content: `第 ${i} 轮`,
   }))
-  const messages = buildChatMessages(buildAiContext(fx, ctx), longHistory, [], '继续改')
+  const messages = buildChatMessages(
+    buildAiContext(fx, ctx),
+    buildInventoryDigest(fx, ctx),
+    longHistory,
+    [],
+    '继续改',
+  )
   const content = messages.map((m) => m.content).join('\n')
 
   ok(!content.includes('第 0 轮'), '太老的轮次应该被丢掉')
   ok(content.includes('第 39 轮'), '最近几轮要保留')
   ok(messages.length < 16, `消息条数应该有上限，实际 ${messages.length}`)
+})
+
+/* ------------------------------------------------------------------ */
+/* 12. 按需调取现有物品（loadScope）                                    */
+/* ------------------------------------------------------------------ */
+
+suite('按需调取现有物品')
+
+await test('目录只放名字和件数，不放具体条目（这是省 token 的关键）', () => {
+  const digest = buildInventoryDigest(fx, ctx)
+  const text = renderInventoryDigest(digest)
+
+  eq(digest.totalItems, 5)
+  ok(text.includes('共 5 件'), '要有总数')
+  ok(text.includes('衣物'), '要有分类名')
+  ok(text.includes('家 / 卧室 / 衣柜'), '位置要用完整路径')
+  ok(text.includes('只是**统计**') || text.includes('只是'), '要说明这只是统计')
+
+  // 关键：不能把具体物品名混进去，否则 token 就白省了
+  ok(!text.includes('灰色羊毛衫'), '目录里不该出现具体物品名')
+  ok(!text.includes('牛仔裤'), '目录里不该出现具体物品名')
+})
+
+await test('空数据时的目录也说得通', () => {
+  const empty = createEmptyData()
+  const text = renderInventoryDigest(buildInventoryDigest(empty, createDerived(empty)))
+  ok(text.includes('一件都还没有'))
+})
+
+await test('loadScope：按分类路径取（含子分类）', () => {
+  const { data } = hierarchyFixture()
+  const eye = must(data.categories.find((c) => c.name === '眼妆'), '找不到眼妆')
+
+  const withItems: AppData = {
+    ...data,
+    items: [
+      ...data.items,
+      item({ id: 'e1', name: '眼影盘', categoryIds: [eye.id] }),
+      item({ id: 'e2', name: '睫毛膏', categoryIds: [eye.id] }),
+    ],
+  }
+  const ctx2 = createDerived(withItems)
+
+  const picked = itemsForLoadScope({ categoryPaths: [['化妆品', '眼妆']] }, withItems, ctx2)
+  eq(picked.length, 2, '眼妆下的两件都该取到')
+
+  // 只给末级名字也能对上（后缀唯一）
+  const byShortName = itemsForLoadScope({ categoryPaths: [['眼妆']] }, withItems, ctx2)
+  eq(byShortName.length, 2)
+
+  // 取父分类要含子分类
+  const byParent = itemsForLoadScope({ categoryPaths: [['化妆品']] }, withItems, ctx2)
+  eq(byParent.length, 2, '取「化妆品」应该把子分类里的也带上')
+})
+
+await test('loadScope：全部 / 闲置 / 未分类 / 未归位', () => {
+  const all = itemsForLoadScope({ all: true }, fx, ctx)
+  eq(all.length, 5, '全部在用物品（不含已舍弃）')
+
+  const idle = itemsForLoadScope({ idle: true }, fx, ctx)
+  eq(idle.length, 1)
+  eq(idle[0].name, '旧手机')
+
+  const uncategorized = itemsForLoadScope({ uncategorized: true }, fx, ctx)
+  eq(uncategorized.length, 1)
+  eq(uncategorized[0].name, '不知道放哪的东西')
+
+  const unassigned = itemsForLoadScope({ unassigned: true }, fx, ctx)
+  eq(unassigned.length, 1)
+})
+
+await test('loadScope：几种条件混用取并集，同一件不会重复', () => {
+  const picked = itemsForLoadScope({ idle: true, uncategorized: true, all: true }, fx, ctx)
+  eq(picked.length, 5, '被 all 覆盖了，不该重复计数')
+  eq(new Set(picked.map((i) => i.id)).size, picked.length, 'id 不能重复')
+})
+
+await test('loadScope：路径找不到时返回空，不瞎猜', () => {
+  const picked = itemsForLoadScope({ categoryPaths: [['不存在的分类']] }, fx, ctx)
+  eq(picked.length, 0)
+})
+
+await test('AI 要数据这一步不该被当成「没变化」', () => {
+  const outcome = parseChatResponse({
+    reply: '我先把药品拉进来',
+    loadScope: { categoryPaths: [['药品']] },
+  })
+  eq(outcome.noChanges, false, '这是有效的一步')
+  ok(
+    must(outcome.loadScope, '应该解析出 loadScope') !== null,
+    '上层要能拿到它去加载数据',
+  )
+})
+
+await test('把现有物品转成草稿时带上 sourceItemId', () => {
+  const loaded = draftsFromItems([must(fx.items.find((i) => i.id === 'i1'), '找不到 i1')], match, ctx)
+  eq(loaded.length, 1)
+  eq(loaded[0].sourceItemId, 'i1', '要记住它来自哪件已有物品')
+  eq(loaded[0].key, 'i1', 'key 用物品自己的 id，下一轮才能对上')
+  eq(loaded[0].name, '灰色羊毛衫')
+  ok(loaded[0].matchedCategoryIds.length > 0, '已有的分类要能匹配回来')
+})
+
+await test('已有物品的属性：id 转成属性名再发给 AI', () => {
+  const wardrobe = must(fx.items.find((i) => i.id === 'i1'), '找不到 i1')
+  const loaded = draftsFromItems([wardrobe], match, ctx)
+  ok(
+    Object.keys(loaded[0].attrs).includes('品牌'),
+    'AI 看不懂属性 id，要换成属性名',
+  )
+})
+
+await test('采纳分流：已有物品走更新、新录入走创建、没改的跳过', () => {
+  const unchanged = must(fx.items.find((i) => i.id === 'i2'), '找不到 i2')
+  const changed = must(fx.items.find((i) => i.id === 'i1'), '找不到 i1')
+
+  const drafts = [
+    draftsFromItems([unchanged], match, ctx)[0],
+    draftsFromItems([changed], match, ctx)[0],
+    { ...toItemDraft(raw({ name: '新东西' }), match, ctx) },
+  ]
+  // 只改中间那一条
+  drafts[1] = { ...drafts[1], name: '灰色羊毛衫（改过名）' }
+
+  const plan = draftsToApply(drafts, fx.items, ctx)
+  eq(plan.updating, 1, '改过的那条走更新')
+  eq(plan.creating, 1, '新录入的走创建')
+  eq(plan.untouched, 1, '没改的跳过，不白刷它的修改时间')
+  eq(plan.plan.length, 2)
+  eq(plan.plan[0].existingId, 'i1', '更新要带上目标 id')
+  eq(plan.plan[1].existingId, undefined, '新建不该带 id')
+})
+
+await test('采纳分流：被移出草稿的已有物品进回收站，不是硬删', () => {
+  const drafts = draftsFromItems([must(fx.items.find((i) => i.id === 'i1'), '找不到 i1')], match, ctx)
+  const plan = draftsToApply(drafts, fx.items, ctx, ['i1'])
+  eq(plan.discarding, 1)
+  deepEq(plan.discardIds, ['i1'])
+  eq(plan.updating, 0, '被删的不该同时算更新')
+})
+
+await test('采纳分流：AI 编的 id 不会误删东西', () => {
+  const plan = draftsToApply([], fx.items, ctx, ['ai-编的-id', 'i1'])
+  eq(plan.discarding, 1, '只有真实存在的 id 才算数')
+  deepEq(plan.discardIds, ['i1'])
+})
+
+await test('AI 改内容时，已有物品的 sourceItemId 不会丢', () => {
+  const base = draftsFromItems([must(fx.items.find((i) => i.id === 'i1'), '找不到 i1')], match, ctx)[0]
+  const outcome = mergeChatResponse(
+    botReply([revisedItem({ id: 'i1', name: '灰色羊毛衫（改过）' })]),
+    [base],
+    match,
+    ctx,
+  )
+  eq(outcome.drafts[0].sourceItemId, 'i1', '丢了它，采纳时就会被当新条目又建一遍')
+})
+
+await test('loadRequest 夹具本身可用（顺带守住类型）', () => {
+  const parsed = parseChatResponse({ reply: '要数据' })
+  eq(parsed.loadScope, null)
+  const withScope = loadRequest('拉进来', { all: true })
+  eq(must(withScope.loadScope, '应该有').all, true)
 })
 
 /* ------------------------------------------------------------------ */

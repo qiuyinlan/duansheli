@@ -1,21 +1,12 @@
 import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  buildAiContext,
-  buildExtractionMessages,
-  buildTidyMessages,
-  chunkItems,
-  splitIntoChunks,
-  type TidyInputItem,
-} from '../ai/prompts'
+import { buildAiContext, buildInventoryDigest } from '../ai/prompts'
 import {
   createMatchContext,
-  draftsToBulkAddItems,
-  draftsToBulkUpdates,
-  toItemDraft,
-  toTidyDraft,
+  draftsFromItems,
+  draftsToApply,
+  itemsForLoadScope,
   type ItemDraft,
-  type TidyDraft,
 } from '../ai/convert'
 import {
   buildChatMessages,
@@ -24,36 +15,16 @@ import {
   type ChatTurn,
 } from '../ai/chat'
 import { AiError, chat, createRequestController, type AiUsage } from '../ai/deepseek'
-import {
-  extractJson,
-  parseAssignments,
-  parseChatResponse,
-  parseExtraction,
-  type RawAssignment,
-  type RawExtractedItem,
-} from '../ai/parse'
+import { extractJson, parseChatResponse, type LoadScopeRequest } from '../ai/parse'
 import { AiChatPanel, type ChatBubble } from '../components/AiChatPanel'
 import { AiExtractPreview } from '../components/AiExtractPreview'
 import { AiKeyPanel } from '../components/AiKeyPanel'
-import { AiTidyPreview } from '../components/AiTidyPreview'
-import { IconAlert, IconCheck } from '../components/ui/icons'
 import { Button, EmptyState } from '../components/ui/primitives'
 import { uid } from '../lib/id'
-import { liveItems } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
-import type { Item } from '../types'
 
-/** 每批最多多少字 —— 太大输出会被 max_tokens 截断，截断的 JSON 是解析不了的 */
-const MAX_CHARS_PER_CHUNK = 2500
-
-/** 整理已有物品时，每批发给 AI 多少件 */
-const TIDY_BATCH_SIZE = 40
-
-/** 一次整理最多处理多少件，防止一把梭把上下文撑爆 */
-const TIDY_MAX_ITEMS = 200
-
-type Mode = 'chat' | 'extract' | 'tidy'
-type TidyScope = 'active' | 'idle' | 'uncategorized' | 'unassigned' | 'category'
+/** AI 连续要了几轮数据还没动手，就停下来 —— 免得无限循环烧 token */
+const MAX_AUTO_TURNS = 3
 
 const EMPTY_USAGE: AiUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
 
@@ -70,367 +41,178 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+/**
+ * AI 助手。
+ *
+ * **只有一个对话框。** 早期版本拆成了「一次性录入 / 对话整理 / 整理已有物品」
+ * 三个模式 —— 那是实现上的边界（新建 vs 更新）漏到了界面上，
+ * 用户脑子里其实只有一件事：跟 AI 说一句，它帮我改。
+ *
+ * 具体怎么工作：
+ *   · 草稿里可能混着「已经录入的物品」和「这次新加的」，
+ *     采纳时自动分流（带 sourceItemId 的更新，不带的创建）
+ *   · 用户现有的物品**不预先塞进 prompt**（500 件就是一万多 token），
+ *     system 里只放一份「目录」（哪个分类有多少件）
+ *   · AI 真需要具体条目时，用 loadScope 要，程序自动拉进草稿并再问它一轮
+ */
 export function Ai() {
   const navigate = useNavigate()
 
   const data = useAppStore((s) => s.data)
   const derived = useAppStore((s) => s.derived)
   const aiApiKey = useAppStore((s) => s.aiApiKey)
-  const bulkAddItems = useAppStore((s) => s.bulkAddItems)
-  const bulkUpdateItems = useAppStore((s) => s.bulkUpdateItems)
+  const applyDraftItems = useAppStore((s) => s.applyDraftItems)
   const notify = useAppStore((s) => s.notify)
 
-  const [mode, setMode] = useState<Mode>('chat')
+  const [bubbles, setBubbles] = useState<ChatBubble[]>([])
+  const [history, setHistory] = useState<ChatTurn[]>([])
+  const [drafts, setDrafts] = useState<ItemDraft[]>([])
+  const [changedKeys, setChangedKeys] = useState<string[]>([])
+  /** 被移出草稿的 key —— 已有物品会在采纳时移入回收站 */
+  const [removedKeys, setRemovedKeys] = useState<string[]>([])
+  const [error, setError] = useState<string | null>(null)
 
-  /* ---------------- 对话整理 ---------------- */
-  const [chatBubbles, setChatBubbles] = useState<ChatBubble[]>([])
-  const [chatHistory, setChatHistory] = useState<ChatTurn[]>([])
-  const [chatDrafts, setChatDrafts] = useState<ItemDraft[]>([])
-  const [chatChangedKeys, setChatChangedKeys] = useState<string[]>([])
-  const [chatError, setChatError] = useState<string | null>(null)
-  /** 上一轮的 token 消耗 —— 让人看得出这轮贵不贵，好决定要不要开新对话 */
-  const [lastTurnUsage, setLastTurnUsage] = useState<AiUsage>(EMPTY_USAGE)
-
-  /* ---------------- 批量录入 ---------------- */
-  const [text, setText] = useState('')
-  const [extractDrafts, setExtractDrafts] = useState<ItemDraft[] | null>(null)
-  const [extractError, setExtractError] = useState<string | null>(null)
-  const [extractNotes, setExtractNotes] = useState<string[]>([])
-
-  /* ---------------- 整理已有 ---------------- */
-  const [scope, setScope] = useState<TidyScope>('active')
-  const [scopeCategoryId, setScopeCategoryId] = useState('')
-  const [tidyDrafts, setTidyDrafts] = useState<TidyDraft[] | null>(null)
-  const [tidyError, setTidyError] = useState<string | null>(null)
-
-  /* ---------------- 共用运行状态 ---------------- */
   const [running, setRunning] = useState(false)
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [usage, setUsage] = useState<AiUsage>(EMPTY_USAGE)
+  const [lastTurnUsage, setLastTurnUsage] = useState<AiUsage>(EMPTY_USAGE)
   const cancelRef = useRef<(() => void) | null>(null)
 
-  const chunks = useMemo(
-    () => (text.trim() === '' ? [] : splitIntoChunks(text, MAX_CHARS_PER_CHUNK)),
-    [text],
+  /** 采纳时会发生什么 —— 实时显示，让人心里有数 */
+  const applyPlan = useMemo(
+    () => draftsToApply(drafts, data.items, derived, removedKeys),
+    [drafts, data.items, derived, removedKeys],
   )
 
-  const live = useMemo(() => liveItems(data), [data])
+  const existingCount = drafts.filter((d) => d.sourceItemId).length
+  const newCount = drafts.filter((d) => !d.sourceItemId).length
+  const selectedCount = drafts.filter((d) => d.include).length
 
-  const scopeItems = useMemo(() => {
-    switch (scope) {
-      case 'idle':
-        return live.filter((item) => item.status === 'idle')
-      case 'uncategorized':
-        return live.filter((item) => item.categoryIds.length === 0)
-      case 'unassigned':
-        return live.filter((item) => !item.locationId)
-      case 'category':
-        return scopeCategoryId === ''
-          ? []
-          : live.filter((item) => item.categoryIds.includes(scopeCategoryId))
-      case 'active':
-      default:
-        return live
-    }
-  }, [live, scope, scopeCategoryId])
-
-  /* ---------------- 运行：批量录入 ---------------- */
-
-  const runExtract = async () => {
-    if (aiApiKey.trim() === '') {
-      notify('请先填入 DeepSeek API Key', 'error')
-      return
-    }
-    if (text.trim() === '') {
-      notify('先粘贴一些文字', 'error')
-      return
-    }
-
-    setRunning(true)
-    setExtractError(null)
-    setExtractDrafts(null)
-    setExtractNotes([])
-    setUsage(EMPTY_USAGE)
-
-    const controller = createRequestController()
-    cancelRef.current = controller.cancel
-
-    try {
-      const context = buildAiContext(data, derived)
-      const parts = splitIntoChunks(text, MAX_CHARS_PER_CHUNK)
-      const collected: RawExtractedItem[] = []
-      const notes: string[] = []
-      let dropped = 0
-      let spent = EMPTY_USAGE
-
-      for (let i = 0; i < parts.length; i++) {
-        setProgress({ done: i, total: parts.length })
-
-        const result = await chat({
-          apiKey: aiApiKey,
-          messages: buildExtractionMessages(context, parts[i], {
-            index: i + 1,
-            total: parts.length,
-          }),
-          signal: controller.signal,
-        })
-
-        spent = addUsage(spent, result.usage)
-        setUsage(spent)
-
-        if (result.finishReason === 'length') {
-          notes.push(
-            `第 ${i + 1} 批的结果被截断了（这一段的物品可能没认全）。建议把文字拆成更小的段再试。`,
-          )
-        }
-
-        const parsed = parseExtraction(extractJson(result.content))
-        collected.push(...parsed.items)
-        dropped += parsed.dropped
-      }
-
-      setProgress({ done: parts.length, total: parts.length })
-
-      if (dropped > 0) {
-        notes.push(`有 ${dropped} 条因为缺少名称被丢弃。`)
-      }
-      if (collected.length === 0) {
-        notes.push('这段文字里没有识别出任何物品。可以写得更具体一点，例如「衣柜里有一件灰色羊毛衫、两条牛仔裤」。')
-      }
-
-      const fresh = useAppStore.getState()
-      const matchCtx = createMatchContext(fresh.data, fresh.derived)
-      setExtractDrafts(collected.map((raw) => toItemDraft(raw, matchCtx, fresh.derived)))
-      setExtractNotes(notes)
-    } catch (err) {
-      setExtractError(errorText(err))
-    } finally {
-      setRunning(false)
-      controller.dispose()
-      cancelRef.current = null
-    }
-  }
-
-  const applyExtract = () => {
-    if (!extractDrafts) return
-    const selected = extractDrafts.filter((draft) => draft.include && draft.name.trim() !== '')
-    if (selected.length === 0) {
-      notify('没有勾选任何条目', 'error')
-      return
-    }
-
-    const fresh = useAppStore.getState()
-    const matchCtx = createMatchContext(fresh.data, fresh.derived)
-    const plan = draftsToBulkAddItems(selected, matchCtx, fresh.derived)
-    const result = bulkAddItems(plan)
-
-    const extras: string[] = []
-    if (result.createdCategories > 0) extras.push(`新建 ${result.createdCategories} 个分类`)
-    if (result.createdLocations > 0) extras.push(`新建 ${result.createdLocations} 个位置`)
-    notify(
-      `已录入 ${result.items} 件物品${extras.length > 0 ? `，${extras.join('、')}` : ''}`,
-      'success',
-    )
-
-    setExtractDrafts(null)
-    setText('')
-    navigate('/items')
-  }
-
-  /* ---------------- 运行：整理已有 ---------------- */
-
-  const runTidy = async () => {
-    if (aiApiKey.trim() === '') {
-      notify('请先填入 DeepSeek API Key', 'error')
-      return
-    }
-    if (scopeItems.length === 0) {
-      notify('这个范围里没有物品', 'error')
-      return
-    }
-
-    setRunning(true)
-    setTidyError(null)
-    setTidyDrafts(null)
-    setUsage(EMPTY_USAGE)
-
-    const controller = createRequestController()
-    cancelRef.current = controller.cancel
-
-    try {
-      const context = buildAiContext(data, derived)
-      const targets = scopeItems.slice(0, TIDY_MAX_ITEMS)
-      const batches = chunkItems(targets, TIDY_BATCH_SIZE)
-
-      const assignments: RawAssignment[] = []
-      let spent = EMPTY_USAGE
-
-      for (let i = 0; i < batches.length; i++) {
-        setProgress({ done: i, total: batches.length })
-
-        const inputs: TidyInputItem[] = batches[i].map((item) => ({
-          id: item.id,
-          name: item.name,
-          quantity: item.quantity,
-          categoryPaths: item.categoryIds
-            .map((id) => derived.categoryIndex.pathNames(id))
-            .filter((path) => path.length > 0),
-          locationPath: item.locationId ? derived.index.pathString(item.locationId, ' / ') : null,
-          tags: item.tags,
-        }))
-
-        const result = await chat({
-          apiKey: aiApiKey,
-          messages: buildTidyMessages(context, inputs, {
-            index: i + 1,
-            total: batches.length,
-          }),
-          signal: controller.signal,
-        })
-
-        spent = addUsage(spent, result.usage)
-        setUsage(spent)
-        assignments.push(...parseAssignments(extractJson(result.content)))
-      }
-
-      setProgress({ done: batches.length, total: batches.length })
-
-      const fresh = useAppStore.getState()
-      const matchCtx = createMatchContext(fresh.data, fresh.derived)
-      const byId = new Map<string, Item>(fresh.data.items.map((item) => [item.id, item]))
-
-      const drafts = assignments
-        .map((assignment) => {
-          const item = byId.get(assignment.id)
-          return item ? toTidyDraft(assignment, item, matchCtx, fresh.derived) : null
-        })
-        .filter((draft): draft is TidyDraft => draft !== null)
-
-      setTidyDrafts(drafts)
-      if (drafts.length === 0) {
-        notify('AI 觉得现有的分类和位置都挺合适，没有需要改的', 'success')
-      }
-    } catch (err) {
-      setTidyError(errorText(err))
-    } finally {
-      setRunning(false)
-      controller.dispose()
-      cancelRef.current = null
-    }
-  }
-
-  const applyTidy = () => {
-    if (!tidyDrafts) return
-    const selected = tidyDrafts.filter((draft) => draft.include)
-    if (selected.length === 0) {
-      notify('没有勾选任何一条建议', 'error')
-      return
-    }
-
-    const fresh = useAppStore.getState()
-    const matchCtx = createMatchContext(fresh.data, fresh.derived)
-    const updates = draftsToBulkUpdates(selected, matchCtx, fresh.derived)
-    const result = bulkUpdateItems(updates)
-
-    const extras: string[] = []
-    if (result.createdCategories > 0) extras.push(`新建 ${result.createdCategories} 个分类`)
-    if (result.createdLocations > 0) extras.push(`新建 ${result.createdLocations} 个位置`)
-    notify(
-      `已修改 ${result.items} 件物品${extras.length > 0 ? `，${extras.join('、')}` : ''}`,
-      'success',
-    )
-
-    setTidyDrafts(null)
-  }
-
-  /* ---------------- 运行：对话整理 ---------------- */
-
-  const resetChat = () => {
-    setChatBubbles([])
-    setChatHistory([])
-    setChatDrafts([])
-    setChatChangedKeys([])
-    setChatError(null)
+  const reset = () => {
+    setBubbles([])
+    setHistory([])
+    setDrafts([])
+    setChangedKeys([])
+    setRemovedKeys([])
+    setError(null)
     setLastTurnUsage(EMPTY_USAGE)
   }
 
-  const runChat = async (instruction: string) => {
+  const send = async (instruction: string) => {
     if (aiApiKey.trim() === '') {
       notify('请先填入 DeepSeek API Key', 'error')
       return
     }
 
-    setChatBubbles((prev) => [...prev, { id: uid(), role: 'user', text: instruction }])
+    setBubbles((prev) => [...prev, { id: uid(), role: 'user', text: instruction }])
     setRunning(true)
-    setChatError(null)
+    setError(null)
 
     const controller = createRequestController()
     cancelRef.current = controller.cancel
 
     try {
-      const fresh = useAppStore.getState()
-      const context = buildAiContext(fresh.data, fresh.derived)
-      const serialized = serializeDrafts(chatDrafts, fresh.derived)
-      const messages = buildChatMessages(context, chatHistory, serialized, instruction)
+      let historyNow = history
+      let draftsNow = drafts
+      let removedNow = removedKeys
+      let pending = instruction
 
-      const result = await chat({
-        apiKey: aiApiKey,
-        messages,
-        signal: controller.signal,
-      })
-      setUsage((prev) => addUsage(prev, result.usage))
-      setLastTurnUsage(result.usage)
+      for (let turn = 0; turn < MAX_AUTO_TURNS; turn++) {
+        const fresh = useAppStore.getState()
+        const matchCtx = createMatchContext(fresh.data, fresh.derived)
+        const context = buildAiContext(fresh.data, fresh.derived)
+        const digest = buildInventoryDigest(fresh.data, fresh.derived)
 
-      const parsed = parseChatResponse(extractJson(result.content))
-      const matchCtx = createMatchContext(fresh.data, fresh.derived)
+        const result = await chat({
+          apiKey: aiApiKey,
+          messages: buildChatMessages(
+            context,
+            digest,
+            historyNow,
+            serializeDrafts(draftsNow, fresh.derived),
+            pending,
+          ),
+          signal: controller.signal,
+        })
 
-      setChatHistory((prev) => [
-        ...prev,
-        { role: 'user', content: instruction },
-        { role: 'assistant', content: parsed.reply || '（这一轮没有说明）' },
-      ])
+        setUsage((prev) => addUsage(prev, result.usage))
+        setLastTurnUsage(result.usage)
 
-      // 纯问答：AI 只回了一句话、没给任何改动，草稿保持原样
-      if (parsed.noChanges) {
-        setChatBubbles((prev) => [
+        const parsed = parseChatResponse(extractJson(result.content))
+        historyNow = [
+          ...historyNow,
+          { role: 'user', content: pending },
+          { role: 'assistant', content: parsed.reply || '（这一轮没有说明）' },
+        ]
+
+        // ---- AI 说要先看现有物品：拉进草稿，然后自动再问一轮 ----
+        if (parsed.loadScope) {
+          const loaded = scopeToDrafts(parsed.loadScope, fresh, matchCtx)
+          const known = new Set(draftsNow.map((d) => d.key))
+          const added = loaded.filter((d) => !known.has(d.key))
+
+          if (added.length > 0) draftsNow = [...draftsNow, ...added]
+          setDrafts(draftsNow)
+
+          setBubbles((prev) => [
+            ...prev,
+            {
+              id: uid(),
+              role: 'assistant',
+              text: parsed.reply || '需要先看一下你现有的物品',
+              meta:
+                added.length > 0
+                  ? `已把 ${added.length} 条现有物品拉进草稿（采纳时是更新，不会新建）`
+                  : '没有找到符合条件的物品',
+            },
+          ])
+
+          if (added.length === 0) break
+
+          pending = '（上面那些物品已经拉进来了，请继续完成我刚才的指令）'
+          continue
+        }
+
+        // ---- 纯问答 ----
+        if (parsed.noChanges) {
+          setBubbles((prev) => [
+            ...prev,
+            { id: uid(), role: 'assistant', text: parsed.reply, meta: '这条没有改动草稿' },
+          ])
+          break
+        }
+
+        // ---- 正常改动 ----
+        const outcome = mergeChatResponse(parsed, draftsNow, matchCtx, fresh.derived)
+        draftsNow = outcome.drafts
+        removedNow = [...new Set([...removedNow, ...outcome.removedKeys])]
+
+        setDrafts(draftsNow)
+        setRemovedKeys(removedNow)
+        setChangedKeys(outcome.changedKeys)
+
+        const parts: string[] = []
+        if (outcome.added > 0) parts.push(`新增 ${outcome.added}`)
+        if (outcome.updated > 0) parts.push(`修改 ${outcome.updated}`)
+        if (outcome.removed > 0) parts.push(`移入回收站 ${outcome.removed}`)
+        if (parts.length === 0) parts.push('没有改动')
+        else if (outcome.unchanged > 0) parts.push(`其余 ${outcome.unchanged} 条未动`)
+        if (outcome.unknownIds > 0) parts.push(`忽略 ${outcome.unknownIds} 个不存在的 id`)
+
+        setBubbles((prev) => [
           ...prev,
           {
             id: uid(),
             role: 'assistant',
-            text: parsed.reply,
-            meta: '这条没有改动草稿',
+            text: parsed.reply || '（这一轮没有说明）',
+            meta: parts.join(' · '),
           },
         ])
-        return
+        break
       }
 
-      const outcome = mergeChatResponse(parsed, chatDrafts, matchCtx, fresh.derived)
-      setChatDrafts(outcome.drafts)
-      setChatChangedKeys(outcome.changedKeys)
-
-      const parts: string[] = []
-      if (outcome.added > 0) parts.push(`新增 ${outcome.added}`)
-      if (outcome.updated > 0) parts.push(`修改 ${outcome.updated}`)
-      if (outcome.removed > 0) parts.push(`删除 ${outcome.removed}`)
-
-      if (parts.length === 0) {
-        parts.push('没有改动')
-      } else if (outcome.unchanged > 0) {
-        parts.push(`其余 ${outcome.unchanged} 条未动`)
-      }
-      if (outcome.unknownIds > 0) parts.push(`忽略 ${outcome.unknownIds} 个不存在的 id`)
-
-      setChatBubbles((prev) => [
-        ...prev,
-        {
-          id: uid(),
-          role: 'assistant',
-          text: parsed.reply || '（这一轮没有说明）',
-          meta: parts.join(' · '),
-        },
-      ])
+      setHistory(historyNow)
     } catch (err) {
-      setChatError(errorText(err))
+      setError(errorText(err))
     } finally {
       setRunning(false)
       controller.dispose()
@@ -438,38 +220,37 @@ export function Ai() {
     }
   }
 
-  const applyChatDrafts = () => {
-    const selected = chatDrafts.filter((draft) => draft.include && draft.name.trim() !== '')
-    if (selected.length === 0) {
-      notify('没有勾选任何条目', 'error')
+  /** 把 AI 要的那批现有物品转成草稿 */
+  const scopeToDrafts = (
+    scope: LoadScopeRequest,
+    fresh: ReturnType<typeof useAppStore.getState>,
+    matchCtx: ReturnType<typeof createMatchContext>,
+  ): ItemDraft[] => {
+    const loaded = itemsForLoadScope(scope, fresh.data, fresh.derived)
+    return draftsFromItems(loaded, matchCtx, fresh.derived)
+  }
+
+  const apply = () => {
+    if (applyPlan.plan.length === 0 && applyPlan.discardIds.length === 0) {
+      notify('没有需要写入的改动', 'error')
       return
     }
 
-    const fresh = useAppStore.getState()
-    const matchCtx = createMatchContext(fresh.data, fresh.derived)
-    const plan = draftsToBulkAddItems(selected, matchCtx, fresh.derived)
-    const result = bulkAddItems(plan)
+    const result = applyDraftItems({ items: applyPlan.plan, discardIds: applyPlan.discardIds })
 
-    const extras: string[] = []
-    if (result.createdCategories > 0) extras.push(`新建 ${result.createdCategories} 个分类`)
-    if (result.createdLocations > 0) extras.push(`新建 ${result.createdLocations} 个位置`)
-    notify(
-      `已录入 ${result.items} 件物品${extras.length > 0 ? `，${extras.join('、')}` : ''}`,
-      'success',
-    )
+    const parts: string[] = []
+    if (result.updated > 0) parts.push(`更新 ${result.updated} 条`)
+    if (result.added > 0) parts.push(`新增 ${result.added} 条`)
+    if (result.discarded > 0) parts.push(`移入回收站 ${result.discarded} 条`)
+    if (result.createdCategories > 0) parts.push(`新建 ${result.createdCategories} 个分类`)
+    if (result.createdLocations > 0) parts.push(`新建 ${result.createdLocations} 个位置`)
 
-    resetChat()
-    navigate('/items')
+    notify(parts.length > 0 ? `已${parts.join('、')}` : '没有变化', 'success')
+    reset()
+    if (result.added > 0 && result.updated === 0) navigate('/items')
   }
 
-  const cancel = () => {
-    cancelRef.current?.()
-  }
-
-  /* ---------------- 渲染 ---------------- */
-
-  const isExtract = mode === 'extract'
-  const isChat = mode === 'chat'
+  const cancel = () => cancelRef.current?.()
 
   return (
     <>
@@ -477,377 +258,111 @@ export function Ai() {
         <div>
           <div className="page-header__title">AI 助手</div>
           <div className="page-header__sub">
-            让 DeepSeek 帮你把一段文字变成录好的物品 —— 结果会先给你过目，确认后才写入
+            写要录的东西，或者说要改什么 —— 它会自己去找相关的物品，改完给你过目
           </div>
         </div>
       </div>
 
       <AiKeyPanel />
 
-      {/* ---------------- 模式切换 ---------------- */}
-      <div className="segmented" style={{ marginBottom: 'var(--gap-5)' }}>
-        <button
-          type="button"
-          className={`segmented__item${isChat ? ' is-active' : ''}`}
-          onClick={() => setMode('chat')}
-        >
-          对话整理
-        </button>
-        <button
-          type="button"
-          className={`segmented__item${isExtract ? ' is-active' : ''}`}
-          onClick={() => setMode('extract')}
-        >
-          一次性录入
-        </button>
-        <button
-          type="button"
-          className={`segmented__item${!isChat && !isExtract ? ' is-active' : ''}`}
-          onClick={() => setMode('tidy')}
-        >
-          整理已有物品
-        </button>
-      </div>
+      <div className="chat-layout">
+        <AiChatPanel
+          bubbles={bubbles}
+          running={running}
+          error={error}
+          usage={usage}
+          lastTurnUsage={lastTurnUsage}
+          draftCount={drafts.length}
+          onSend={(text) => void send(text)}
+          onCancel={cancel}
+          onReset={reset}
+        />
 
-      {/* ================= 对话整理 ================= */}
-      {isChat ? (
-        <div className="chat-layout">
-          <AiChatPanel
-            bubbles={chatBubbles}
-            running={running}
-            error={chatError}
-            usage={usage}
-            lastTurnUsage={lastTurnUsage}
-            draftCount={chatDrafts.length}
-            onSend={(text) => void runChat(text)}
-            onCancel={cancel}
-            onReset={resetChat}
-          />
-
-          <div className="chat-layout__draft">
-            {chatDrafts.length === 0 ? (
-              <EmptyState
-                title="这里会显示 AI 整理出来的物品"
-                hint={
-                  <>
-                    在左边写下要录的东西，或者直接说你想怎么整理。
-                    <br />
-                    AI 每轮都会告诉你改了哪几条，你可以继续让它改，也可以只采纳其中一部分。
-                  </>
-                }
-              />
-            ) : (
-              <div className="stack">
-                <div className="row-between wrap">
-                  <div className="small muted">
-                    草稿共 <strong className="numeric">{chatDrafts.length}</strong> 条，已选{' '}
-                    <strong className="numeric">
-                      {chatDrafts.filter((d) => d.include).length}
-                    </strong>{' '}
-                    条
-                    {chatChangedKeys.length > 0 ? (
-                      <span className="dim">· 加粗的是这一轮改过的</span>
-                    ) : null}
-                  </div>
-                  {chatChangedKeys.length > 0 ? (
-                    <Button size="sm" variant="ghost" onClick={() => setChatChangedKeys([])}>
-                      取消高亮
-                    </Button>
+        <div className="chat-layout__draft">
+          {drafts.length === 0 ? (
+            <EmptyState
+              title="这里会显示要改的东西"
+              hint={
+                <>
+                  在左边告诉 AI 你想做什么。两种都行：
+                  <br />
+                  · <strong>录新的</strong>：把一段文字写在聊天框里，它拆成一条条物品
+                  <br />
+                  · <strong>改现有的</strong>：直接说「把药品改成 药品/补剂」，
+                  它会自己把你现有的物品找出来、拉到这里
+                  <br />
+                  <br />
+                  不管哪种，都要你点「采纳」才会写进数据库。
+                </>
+              }
+            />
+          ) : (
+            <div className="stack">
+              <div className="row-between wrap">
+                <div className="small muted">
+                  草稿共 <strong className="numeric">{drafts.length}</strong> 条
+                  {existingCount > 0 ? (
+                    <>
+                      （其中 <strong className="numeric">{existingCount}</strong> 条是已有物品，
+                      采纳时<strong>更新</strong>而不是新建）
+                    </>
+                  ) : null}
+                  {newCount > 0 ? (
+                    <>
+                      {existingCount > 0 ? '，' : '（'}
+                      <strong className="numeric">{newCount}</strong> 条是新录入的，采纳时创建
+                      {existingCount > 0 ? '' : '）'}
+                    </>
+                  ) : null}
+                  {changedKeys.length > 0 ? (
+                    <span className="dim">· 加粗的是这一轮改过的</span>
                   ) : null}
                 </div>
-
-                <AiExtractPreview
-                  drafts={chatDrafts}
-                  onChange={setChatDrafts}
-                  highlightKeys={chatChangedKeys}
-                />
-
-                <div className="row wrap" style={{ paddingTop: 'var(--gap-3)' }}>
-                  <Button variant="primary" size="lg" onClick={applyChatDrafts}>
-                    采纳选中的 {chatDrafts.filter((d) => d.include).length} 条
+                {changedKeys.length > 0 ? (
+                  <Button size="sm" variant="ghost" onClick={() => setChangedKeys([])}>
+                    取消高亮
                   </Button>
-                  <Button size="lg" onClick={resetChat}>
-                    全部放弃
-                  </Button>
-                </div>
-
-                <div className="dim small">
-                  采纳之后草稿会清空，想继续录下一批就再跟 AI 说。你的数据只有点了这个按钮才会被写入。
-                  <br />
-                  省 tokens 的窍门：<strong>AI 每轮只返回改动过的条目</strong>，
-                  所以放心多问几轮；但对话越长、草稿越大，每轮要重发的内容也越多 ——
-                  收拾完一批就点「采纳」再来个「新对话」，最划算。
-                </div>
+                ) : null}
               </div>
-            )}
-          </div>
-        </div>
-      ) : isExtract ? (
-        /* ================= 批量录入 ================= */
-        <div className="stack">
-          <div className="field">
-            <label className="field__label" htmlFor="ai-text">
-              把要录入的东西一次性写在这里
-            </label>
-            <textarea
-              id="ai-text"
-              className="textarea ai-textarea"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder={
-                '随便怎么写都行，比如：\n\n' +
-                '衣柜里有一件灰色的羊毛衫，还有两条牛仔裤。\n' +
-                '床头柜上放着一个旧手机，已经不用了。\n' +
-                '厨房的橱柜里有一个平底锅，大概两百块买的。'
-              }
-              disabled={running}
-            />
-            <div className="row-between wrap">
-              <span className="field__hint">
-                {text.trim() === ''
-                  ? '写得越具体，AI 认出来的东西越准。提到位置和分类它会自动对上你已有的。'
-                  : `共 ${text.trim().length} 字，将分成 ${chunks.length} 批识别`}
-              </span>
-              {text !== '' && !running ? (
-                <Button size="sm" variant="ghost" onClick={() => setText('')}>
-                  清空
-                </Button>
-              ) : null}
-            </div>
-          </div>
 
-          <div className="row wrap">
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={() => void runExtract()}
-              disabled={running || text.trim() === '' || aiApiKey.trim() === ''}
-            >
-              {running ? '识别中…' : '开始识别'}
-            </Button>
-            {running ? <Button size="lg" onClick={cancel}>取消</Button> : null}
-            {aiApiKey.trim() === '' ? (
-              <span className="small dim">先在上面填入 API Key</span>
-            ) : null}
-          </div>
+              <AiExtractPreview
+                drafts={drafts}
+                onChange={setDrafts}
+                highlightKeys={changedKeys}
+              />
 
-          {running ? <ProgressLine progress={progress} usage={usage} /> : null}
-
-          {extractError !== null ? (
-            <div className="notice notice--alert">
-              <span className="notice__icon">
-                <IconAlert />
-              </span>
-              <span className="notice__body">{extractError}</span>
-            </div>
-          ) : null}
-
-          {!running && usage.totalTokens > 0 ? (
-            <UsageLine usage={usage} />
-          ) : null}
-
-          {extractNotes.length > 0 ? (
-            <div className="notice">
-              <span className="notice__icon">
-                <IconAlert />
-              </span>
-              <span className="notice__body">
-                {extractNotes.map((note, index) => (
-                  <div key={index}>{note}</div>
-                ))}
-              </span>
-            </div>
-          ) : null}
-
-          {extractDrafts !== null && extractDrafts.length > 0 ? (
-            <>
-              <hr className="divider" />
-              <AiExtractPreview drafts={extractDrafts} onChange={setExtractDrafts} />
               <div className="row wrap" style={{ paddingTop: 'var(--gap-3)' }}>
-                <Button variant="primary" size="lg" onClick={applyExtract}>
-                  确认录入 {extractDrafts.filter((d) => d.include).length} 件
+                <Button variant="primary" size="lg" onClick={apply} disabled={running}>
+                  采纳
+                  {applyPlan.updating > 0 ? ` · 更新 ${applyPlan.updating}` : ''}
+                  {applyPlan.creating > 0 ? ` · 新建 ${applyPlan.creating}` : ''}
+                  {applyPlan.discarding > 0 ? ` · 删除 ${applyPlan.discarding}` : ''}
+                  {applyPlan.plan.length === 0 && applyPlan.discardIds.length === 0
+                    ? '（没有改动）'
+                    : ''}
                 </Button>
-                <Button size="lg" onClick={() => setExtractDrafts(null)}>
-                  放弃
-                </Button>
-              </div>
-            </>
-          ) : null}
-
-          {extractDrafts === null && !running && extractError === null && usage.totalTokens === 0 ? (
-            <div className="ai-tips">
-              <div className="ai-tips__title">怎么写效果最好</div>
-              <ul>
-                <li>一次写一个区域（一个抽屉、一个柜子），比一次铺开写整间屋子更容易对准位置。</li>
-                <li>提到位置时用你已有的叫法，比如「衣柜」「床头柜」，AI 会自动对上你的位置树。</li>
-                <li>说清楚数量：「两条牛仔裤」比「牛仔裤」更好。</li>
-                <li>
-                  文本里<strong>自己写归类名</strong>（比如「化妆品：口红、眼影」）最省事 ——
-                  AI 会直接用它当分类，没有的话会建一个。
-                </li>
-                <li>
-                  想让它严格按<strong>你自己的</strong>分类体系归，就先去「分类」页面把
-                  顶层和子分类建好；AI 会优先往你建好的结构里放。
-                </li>
-                <li>认出来的结果<strong>不会直接写进去</strong> —— 你可以在预览里逐条改完再确认。</li>
-              </ul>
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        /* ================= 整理已有物品 ================= */
-        <div className="stack">
-          <div className="field">
-            <span className="field__label">要整理哪些物品</span>
-            <div className="picker-grid">
-              {(
-                [
-                  ['active', '全部在用物品'],
-                  ['idle', '仅闲置物品'],
-                  ['uncategorized', '未分类的'],
-                  ['unassigned', '未归位的'],
-                  ['category', '某个分类…'],
-                ] as Array<[TidyScope, string]>
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={`chip${scope === value ? ' is-active' : ''}`}
-                  onClick={() => setScope(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {scope === 'category' ? (
-              <select
-                className="select"
-                style={{ marginTop: 'var(--gap-2)', maxWidth: 260 }}
-                value={scopeCategoryId}
-                onChange={(e) => setScopeCategoryId(e.target.value)}
-                aria-label="选择分类"
-              >
-                <option value="">请选择分类…</option>
-                {[...data.categories]
-                  .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'zh-CN'))
-                  .map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-              </select>
-            ) : null}
-
-            <div className="field__hint">
-              这个范围里有 <strong className="numeric">{scopeItems.length}</strong> 件物品
-              {scopeItems.length > TIDY_MAX_ITEMS
-                ? `，本次只处理前 ${TIDY_MAX_ITEMS} 件`
-                : ''}
-              。AI 只会对「明显可以改进」的给出建议，已经很合理的会跳过。
-            </div>
-          </div>
-
-          <div className="row wrap">
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={() => void runTidy()}
-              disabled={running || scopeItems.length === 0 || aiApiKey.trim() === ''}
-            >
-              {running ? '整理中…' : '开始整理'}
-            </Button>
-            {running ? <Button size="lg" onClick={cancel}>取消</Button> : null}
-          </div>
-
-          {running ? <ProgressLine progress={progress} usage={usage} /> : null}
-
-          {tidyError !== null ? (
-            <div className="notice notice--alert">
-              <span className="notice__icon">
-                <IconAlert />
-              </span>
-              <span className="notice__body">{tidyError}</span>
-            </div>
-          ) : null}
-
-          {!running && usage.totalTokens > 0 ? <UsageLine usage={usage} /> : null}
-
-          {tidyDrafts !== null && tidyDrafts.length > 0 ? (
-            <>
-              <hr className="divider" />
-              <AiTidyPreview drafts={tidyDrafts} onChange={setTidyDrafts} />
-              <div className="row wrap" style={{ paddingTop: 'var(--gap-3)' }}>
-                <Button variant="primary" size="lg" onClick={applyTidy}>
-                  应用 {tidyDrafts.filter((d) => d.include).length} 项修改
-                </Button>
-                <Button size="lg" onClick={() => setTidyDrafts(null)}>
-                  放弃
+                <Button size="lg" onClick={reset} disabled={running}>
+                  全部放弃
                 </Button>
               </div>
-            </>
-          ) : null}
 
-          {tidyDrafts === null && !running && tidyError === null && usage.totalTokens === 0 ? (
-            <div className="ai-tips">
-              <div className="ai-tips__title">这个功能会做什么</div>
-              <ul>
-                <li>把你已有的物品连同当前分类和位置一起发给 AI，让它提出更合理的归类。</li>
-                <li>只会显示「有变化」的建议，没建议就说明现有的已经很合理。</li>
-                <li>每条都是「当前 → 建议」的对照，逐条勾选后才写入。</li>
-                <li>
-                  最实用的起手式：选「未分类的」或「未归位的」，先把最乱的那批收拾干净。
-                </li>
-              </ul>
+              <div className="dim small">
+                已勾选 <strong className="numeric">{selectedCount}</strong> 条。
+                {applyPlan.untouched > 0 ? (
+                  <>
+                    {' '}
+                    另有 <span className="numeric">{applyPlan.untouched}</span> 条没被你改动过，
+                    采纳时会跳过 —— 不会白刷它们的修改时间。
+                  </>
+                ) : null}
+                <br />
+                只有点了「采纳」才会写进数据库。删掉的已有物品是进<strong>回收站</strong>，
+                可以恢复。
+              </div>
             </div>
-          ) : null}
+          )}
         </div>
-      )}
+      </div>
     </>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-/* 小片段                                                              */
-/* ------------------------------------------------------------------ */
-
-function ProgressLine({
-  progress,
-  usage,
-}: {
-  progress: { done: number; total: number } | null
-  usage: AiUsage
-}) {
-  const percent = progress && progress.total > 0 ? (progress.done / progress.total) * 100 : 0
-
-  return (
-    <div className="ai-progress">
-      <div className="row-between">
-        <span className="small">
-          {progress
-            ? `正在识别第 ${Math.min(progress.done + 1, progress.total)} / ${progress.total} 批…`
-            : '正在等待 DeepSeek 响应…'}
-        </span>
-        <span className="tiny dim numeric">已用 {usage.totalTokens} tokens</span>
-      </div>
-      <div className="ai-progress__track">
-        <div className="ai-progress__fill" style={{ width: `${percent}%` }} />
-      </div>
-    </div>
-  )
-}
-
-function UsageLine({ usage }: { usage: AiUsage }) {
-  return (
-    <div className="notice">
-      <span className="notice__icon">
-        <IconCheck />
-      </span>
-      <span className="notice__body small">
-        本次共消耗 <strong className="numeric">{usage.totalTokens}</strong> tokens
-        （输入 {usage.promptTokens} / 输出 {usage.completionTokens}）。
-        乘以官方单价就是这次的实际花费 —— 我不在这里写死价格，因为官方调过几次。
-      </span>
-    </div>
   )
 }

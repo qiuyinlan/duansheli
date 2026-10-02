@@ -12,10 +12,11 @@
 
 import type { AppData, Item, TreeItem } from '../types'
 import type { DerivedContext } from '../store/selectors'
-import type { BulkAddItem, BulkUpdateItem } from '../store/useAppStore'
+import { itemsInCategory, itemsInLocation } from '../store/selectors'
+import type { DraftApplyItem } from '../store/useAppStore'
 import type { TreeIndex } from '../lib/tree'
 import { uid } from '../lib/id'
-import type { RawAssignment, RawExtractedItem } from './parse'
+import type { LoadScopeRequest, RawExtractedItem } from './parse'
 
 /* ------------------------------------------------------------------ */
 /* 路径匹配                                                            */
@@ -113,6 +114,12 @@ function matchPath(path: string[], matcher: PathMatcher): string | null {
 
 export interface ItemDraft {
   key: string
+  /**
+   * 有值 = 这条草稿来自**已经录入的物品**（值就是那件物品的 id）。
+   * 采纳时会**更新**它，而不是新建一条。
+   * 没值 = 这次新录入的，采纳时创建。
+   */
+  sourceItemId?: string
   name: string
   quantity: number
   /** 匹配到的已有位置的 id；没匹配上就是 null */
@@ -191,146 +198,244 @@ export function toItemDraft(
 }
 
 /* ------------------------------------------------------------------ */
-/* 二、整理已有物品的草稿                                              */
+/* 把已有物品拿进草稿（对话模式改现有数据用）                            */
 /* ------------------------------------------------------------------ */
 
-export interface TidyDraft {
-  key: string
-  itemId: string
-  itemName: string
-  /** 当前分类的完整名称路径 */
-  currentCategoryPaths: string[][]
-  currentLocationLabel: string
-
-  matchedCategoryIds: string[]
-  newCategoryPaths: string[][]
-  locationId: string | null
-  newLocationPath: string[] | null
-
-  reason: string
-  include: boolean
-  adoptNewCategories: boolean
-  adoptNewLocation: boolean
+/** 物品的属性值：id 存的，发给 AI 要换成属性名 */
+function attrNamesOf(item: Item, derived: DerivedContext): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [defId, value] of Object.entries(item.attrs)) {
+    if (value === null || value === undefined || value === '') continue
+    const def = derived.attrDefById.get(defId)
+    if (def) out[def.name] = String(value)
+  }
+  return out
 }
-
-export function toTidyDraft(
-  assignment: RawAssignment,
-  item: Item,
-  ctx: MatchContext,
-  derived: DerivedContext,
-): TidyDraft | null {
-  const locationId = assignment.location ? matchPath(assignment.location, ctx.locations) : null
-  const newLocationPath = assignment.location && !locationId ? assignment.location : null
-
-  const matchedCategoryIds: string[] = []
-  const newCategoryPaths: string[][] = []
-  for (const path of assignment.categoryPaths) {
-    const id = matchPath(path, ctx.categories)
-    if (id) {
-      if (!matchedCategoryIds.includes(id)) matchedCategoryIds.push(id)
-    } else if (path.length > 0) {
-      newCategoryPaths.push(path)
-    }
-  }
-
-  const currentCategoryPaths = item.categoryIds
-    .map((id) => derived.categoryIndex.pathNames(id))
-    .filter((path) => path.length > 0)
-
-  const currentLocationLabel = item.locationId
-    ? derived.index.pathString(item.locationId, ' / ')
-    : '未归位'
-
-  // 完全没变、也没提出任何新东西 → 这条建议没有价值，直接丢掉
-  const locationUnchanged =
-    (locationId === null && newLocationPath === null) || locationId === item.locationId
-
-  const categoriesUnchanged =
-    matchedCategoryIds.length === item.categoryIds.length &&
-    matchedCategoryIds.every((id) => item.categoryIds.includes(id))
-
-  if (locationUnchanged && categoriesUnchanged && newCategoryPaths.length === 0) {
-    return null
-  }
-
-  return {
-    key: uid(),
-    itemId: item.id,
-    itemName: item.name,
-    currentCategoryPaths,
-    currentLocationLabel,
-    matchedCategoryIds,
-    newCategoryPaths,
-    locationId,
-    newLocationPath,
-    reason: assignment.reason,
-    include: true,
-    adoptNewCategories: false,
-    adoptNewLocation: false,
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* 草稿 → 提交给 store 的计划                                          */
-/* ------------------------------------------------------------------ */
 
 /**
- * 批量录入计划。
+ * 把数据库里的物品转成草稿。
  *
- * 这里刻意用「分类路径 / 位置路径」而不是 id —— 因为不存在的分类和位置
- * 需要在写入时被创建出来，创建这件事由 store 统一处理。
- * 类型定义在 store 里，因为写入方才是它的归属方。
+ * 用**物品自己的 id** 当草稿 key —— 这样下一轮发给 AI 的 id 就是稳定的，
+ * AI 改完返回时也能对上，采纳时才知道该更新哪一件。
  */
-export function draftsToBulkAddItems(
+export function draftsFromItems(
+  items: Item[],
+  ctx: MatchContext,
+  derived: DerivedContext,
+): ItemDraft[] {
+  return items.map((item) => {
+    const draft = toItemDraft(
+      {
+        name: item.name,
+        quantity: item.quantity,
+        categoryPaths: item.categoryIds
+          .map((id) => derived.categoryIndex.pathNames(id))
+          .filter((path) => path.length > 0),
+        location: item.locationId ? derived.index.pathNames(item.locationId) : null,
+        tags: item.tags,
+        attributes: attrNamesOf(item, derived),
+        note: item.note,
+      },
+      ctx,
+      derived,
+    )
+    return { ...draft, key: item.id, sourceItemId: item.id }
+  })
+}
+
+/** 一条草稿「要是落库，最终会写成什么」的指纹 */
+function effectiveSignable(draft: ItemDraft, derived: DerivedContext): string {
+  const locations = [
+    ...draft.matchedCategoryIds.map((id) => derived.categoryIndex.pathNames(id).join('/')),
+    ...(draft.adoptNewCategories
+      ? draft.newCategoryPaths.map((path) => path.join('/'))
+      : []),
+  ]
+    .filter(Boolean)
+    .sort()
+    .join('|')
+
+  const location = draft.locationId
+    ? derived.index.pathNames(draft.locationId).join('/')
+    : draft.adoptNewLocation && draft.newLocationPath
+      ? draft.newLocationPath.join('/')
+      : ''
+
+  return [
+    draft.name.trim(),
+    String(draft.quantity),
+    locations,
+    location,
+    [...draft.tags].sort().join('|'),
+    Object.entries(draft.attrs)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => `${key}=${value}`)
+      .join('|'),
+    draft.note.trim(),
+  ].join('\u0000')
+}
+
+/** 已有物品的指纹（直接看数据库里那条） */
+function itemSignature(item: Item, derived: DerivedContext): string {
+  return [
+    item.name.trim(),
+    String(item.quantity),
+    item.categoryIds
+      .map((id) => derived.categoryIndex.pathNames(id).join('/'))
+      .filter(Boolean)
+      .sort()
+      .join('|'),
+    item.locationId ? derived.index.pathNames(item.locationId).join('/') : '',
+    [...item.tags].sort().join('|'),
+    Object.entries(item.attrs)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => `${derived.attrDefById.get(key)?.name ?? key}=${String(value)}`)
+      .join('|'),
+    item.note.trim(),
+  ].join('\u0000')
+}
+
+export interface DraftApplyResult {
+  plan: DraftApplyItem[]
+  /** 要软删除的已有物品 id（移入回收站，可恢复） */
+  discardIds: string[]
+  /** 已经是已有物品、且内容变了 → 会被更新 */
+  updating: number
+  /** 新录入的 → 会被创建 */
+  creating: number
+  /** 被删掉的已有物品数 */
+  discarding: number
+  /** 已有物品但内容没动 → 跳过，不去动它的 updatedAt */
+  untouched: number
+}
+
+/**
+ * 草稿 → 落库计划。
+ *
+ * 三个关键点：
+ *   · 带 sourceItemId 的走**更新**，不带的走**新建**
+ *   · 已有物品里**内容没变的直接跳过** —— 否则你把 74 件药品拉进来只改了 3 件，
+ *     落库时那 74 件的修改时间全被刷新，排序和「最近修改」就全乱了
+ *   · 被移出草稿的已有物品 → **软删除**（进回收站），不是硬删
+ */
+export function draftsToApply(
   drafts: ItemDraft[],
-  _ctx: MatchContext,
+  currentItems: Item[],
   derived: DerivedContext,
-): BulkAddItem[] {
-  return drafts
-    .filter((draft) => draft.include && draft.name.trim() !== '')
-    .map((draft) => {
-      const categoryPaths = [
-        ...draft.matchedCategoryIds.map((id) => derived.categoryIndex.pathNames(id)),
-        ...(draft.adoptNewCategories ? draft.newCategoryPaths : []),
-      ].filter((path) => path.length > 0)
+  removedKeys: readonly string[] = [],
+): DraftApplyResult {
+  const byId = new Map(currentItems.map((item) => [item.id, item]))
+  const plan: DraftApplyItem[] = []
+  let updating = 0
+  let creating = 0
+  let untouched = 0
 
-      const locationPath = draft.locationId
-        ? derived.index.pathNames(draft.locationId)
-        : draft.adoptNewLocation && draft.newLocationPath
-          ? draft.newLocationPath
-          : null
+  for (const draft of drafts) {
+    if (!draft.include || draft.name.trim() === '') continue
 
-      return {
-        name: draft.name.trim(),
-        quantity: draft.quantity,
-        categoryPaths,
-        locationPath,
-        tags: draft.tags,
-        attrs: draft.attrs,
-        note: draft.note,
+    const categoryPaths = [
+      ...draft.matchedCategoryIds.map((id) => derived.categoryIndex.pathNames(id)),
+      ...(draft.adoptNewCategories ? draft.newCategoryPaths : []),
+    ].filter((path) => path.length > 0)
+
+    const locationPath = draft.locationId
+      ? derived.index.pathNames(draft.locationId)
+      : draft.adoptNewLocation && draft.newLocationPath
+        ? draft.newLocationPath
+        : null
+
+    const entry: DraftApplyItem = {
+      name: draft.name.trim(),
+      quantity: draft.quantity,
+      categoryPaths,
+      locationPath,
+      tags: draft.tags,
+      attrs: draft.attrs,
+      note: draft.note,
+    }
+
+    if (draft.sourceItemId) {
+      const existing = byId.get(draft.sourceItemId)
+      if (!existing) continue // 期间被删了，跳过
+      if (effectiveSignable(draft, derived) === itemSignature(existing, derived)) {
+        untouched++
+        continue
       }
-    })
+      plan.push({ ...entry, existingId: draft.sourceItemId })
+      updating++
+      continue
+    }
+
+    plan.push(entry)
+    creating++
+  }
+
+  // 只有确实存在于数据库里的 key 才去软删，AI 编的 id 一律忽略
+  const discardIds = removedKeys.filter((key) => byId.has(key))
+
+  return { plan, discardIds, updating, creating, discarding: discardIds.length, untouched }
 }
 
-export function draftsToBulkUpdates(
-  drafts: TidyDraft[],
-  _ctx: MatchContext,
+/* ------------------------------------------------------------------ */
+/* 按 AI 的请求挑出现有物品（loadScope）                                 */
+/* ------------------------------------------------------------------ */
+
+/** 名称路径 → id。跟匹配规则一样保守：完整路径优先，其次后缀唯一，有歧义就不选。 */
+function resolvePathToId<T extends TreeItem>(path: string[], index: TreeIndex<T>): string | null {
+  const wanted = path.map((part) => part.trim()).filter((part) => part !== '')
+  if (wanted.length === 0) return null
+
+  const exact = [...index.byId.values()].find(
+    (node) => index.pathNames(node.id).join('/') === wanted.join('/'),
+  )
+  if (exact) return exact.id
+
+  const suffixMatches = [...index.byId.values()].filter((node) => {
+    const names = index.pathNames(node.id)
+    if (names.length < wanted.length) return false
+    const tail = names.slice(names.length - wanted.length)
+    return tail.every((name, i) => name === wanted[i])
+  })
+
+  return suffixMatches.length === 1 ? (suffixMatches[0] as TreeItem).id : null
+}
+
+/**
+ * 把 AI 的 loadScope 请求解析成实际物品。
+ *
+ * 几种条件取**并集**：AI 说「药品下的和未分类的」，两块都要。
+ * 同一件物品命中多个条件只会出现一次。
+ */
+export function itemsForLoadScope(
+  scope: LoadScopeRequest,
+  data: AppData,
   derived: DerivedContext,
-): BulkUpdateItem[] {
-  return drafts
-    .filter((draft) => draft.include)
-    .map((draft) => {
-      const categoryPaths = [
-        ...draft.matchedCategoryIds.map((id) => derived.categoryIndex.pathNames(id)),
-        ...(draft.adoptNewCategories ? draft.newCategoryPaths : []),
-      ].filter((path) => path.length > 0)
+): Item[] {
+  const live = data.items.filter((item) => item.status !== 'discarded')
+  const picked = new Map<string, Item>()
+  const add = (items: Item[]) => {
+    for (const item of items) picked.set(item.id, item)
+  }
 
-      const locationPath = draft.locationId
-        ? derived.index.pathNames(draft.locationId)
-        : draft.adoptNewLocation && draft.newLocationPath
-          ? draft.newLocationPath
-          : null
+  if (scope.all) add(live)
+  if (scope.idle) add(live.filter((item) => item.status === 'idle'))
+  if (scope.uncategorized) {
+    add(live.filter((item) => item.categoryIds.filter((id) => derived.categoryIndex.has(id)).length === 0))
+  }
+  if (scope.unassigned) {
+    add(live.filter((item) => !item.locationId || !derived.index.has(item.locationId)))
+  }
 
-      return { id: draft.itemId, categoryPaths, locationPath }
-    })
+  for (const path of scope.categoryPaths ?? []) {
+    const id = resolvePathToId(path, derived.categoryIndex)
+    if (id) add(itemsInCategory(live, id, true, derived))
+  }
+
+  for (const path of scope.locationPaths ?? []) {
+    const id = resolvePathToId(path, derived.index)
+    if (id) add(itemsInLocation(live, id, true, derived))
+  }
+
+  return [...picked.values()]
 }
+

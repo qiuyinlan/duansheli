@@ -26,8 +26,8 @@
 
 import type { ParsedChatResponse, RawRevisedItem } from './parse'
 import type { ChatMessage } from './deepseek'
-import type { AiContext } from './prompts'
-import { renderContextBlock } from './prompts'
+import type { AiContext, InventoryDigest } from './prompts'
+import { renderContextBlock, renderInventoryDigest } from './prompts'
 import type { ItemDraft, MatchContext } from './convert'
 import { toItemDraft } from './convert'
 import type { DerivedContext } from '../store/selectors'
@@ -125,7 +125,11 @@ const CHAT_SYSTEM = `你是「断舍离」这款个人物品整理工具里的�
 下面【已有分类】【已有位置】【已有属性】【已有标签】列出了用户目前的体系。
 
 每条用户消息里你会看到：
-【当前的物品草稿】—— 一个 json，每条带 id，代表这批东西"现在长什么样"
+【当前的物品草稿】—— 一个 json，每条带 id。里面可能是两种情况混在一起：
+    · 用户**已经录进数据库**的物品（用户要整理现有的东西时，会把它们拉进来）
+    · 这次新录入的
+    你不需要区分、也不用知道 —— 按 id 处理就行。
+    程序自己知道哪些该更新、哪些该新建。
 【用户的指令】—— 用户这一轮想让你做什么
 
 你要输出一个 json 对象：
@@ -151,7 +155,33 @@ const CHAT_SYSTEM = `你是「断舍离」这款个人物品整理工具里的�
 - 没有改动的物品**不要**写进 items —— 程序会让它们保持原样。这样又快又省。
 - 新增物品：id 自己起一个，例如 "new-1"
 - 修改已有物品：id 必须原样填草稿里的那个
-- 删除物品：把 id 放进 removedIds，**不要**直接省略它
+- 删除物品：把 id 放进 removedIds
+  （已有物品会被**移入回收站**，可以恢复，不是真的删掉）
+
+**改动某件物品时，要给出它的完整样子。**
+省略的字段会被当成空值 —— 比如没写 location，就等于「把位置清空」。
+所以别只写改动的那个字段，把这一条**现在完整的样子**写出来，包括没改的字段。
+
+**要改现有的物品？先用 loadScope 把它们拉进来。**
+【你现有的物品】那一块只有**统计**（哪个分类有多少件），你手里并没有具体条目。
+所以当用户说「把药品改成…」「把没分类的归一下」这类话时，
+你要先请求把这些物品拉进来：
+
+  { "reply": "你「药品」下有 74 件，我先拉进来看看", "loadScope": { "categoryPaths": [["药品"]] } }
+
+程序收到 loadScope 后会把这些物品放进草稿，并**自动再问你一次**。
+那一轮你就能看到具体条目，按正常方式返回 items 去改它们。
+
+loadScope 可以这么写（几种条件可以混用）：
+  { "all": true }                         全部在用物品
+  { "idle": true }                        只要标记为闲置的
+  { "uncategorized": true }               只要未分类的
+  { "unassigned": true }                  只要未归位的
+  { "categoryPaths": [["药品"]] }          某个分类下的（含子分类）
+  { "locationPaths": [["家","卧室"]] }      某个位置下的（含子位置）
+
+**只在确实需要具体条目时才用它。** 用户只是问问题、或者要录新东西，就别用。
+一次要太多（比如全库几千件）也没必要 —— 按用户说的范围取就行。
 
 其他规则：
 1. 如果【当前的物品草稿】是空的，说明这是第一轮 —— 用户的指令里通常是一段
@@ -163,6 +193,7 @@ const CHAT_SYSTEM = `你是「断舍离」这款个人物品整理工具里的�
    **绝对不要把物品塞进不相干的已有分类。** 把「口红」归到「日用品」是错的，
    正确做法是新建「化妆品」。清单里的名字只是"可以复用的选项"。
    分类是多级的，物品可以挂在任意一级，所以 [["化妆品"]] 也是合法的。
+   **把物品改成某条路径，是"换成"这条路径，不是"加在原来分类后面"。**
 3. location 只能从【已有位置】里挑，输出名称路径。拿不准就填 null，不要猜。
 4. attributes 的 key 只能用【已有属性】里的名字，没有的不要写。
 5. reply 里说清楚你改动了哪几条、怎么改的，用户才知道该检查哪里。
@@ -183,6 +214,7 @@ export interface ChatTurn {
 
 export function buildChatMessages(
   context: AiContext,
+  digest: InventoryDigest,
   history: ChatTurn[],
   drafts: DraftForAi[],
   instruction: string,
@@ -190,9 +222,21 @@ export function buildChatMessages(
   const messages: ChatMessage[] = [
     {
       role: 'system',
-      // 用户体系放在 system 里，是为了让 system + 历史 构成稳定的前缀，
-      // 好命中 DeepSeek 的前缀缓存。放进每轮的用户消息就没有这个好处了。
-      content: `${CHAT_SYSTEM}\n\n---\n\n${renderContextBlock(context)}`,
+      // 用户体系 + 现有物品的目录放在 system 里，是为了让 system + 历史
+      // 构成稳定的前缀，好命中 DeepSeek 的前缀缓存。
+      // 放进每轮的用户消息就没有这个好处了。
+      //
+      // 目录只放「哪个分类有多少件」，不放具体条目 ——
+      // 具体条目等 AI 用 loadScope 要的时候再拉，不然 500 件就是一万多 token。
+      content: [
+        CHAT_SYSTEM,
+        '',
+        '---',
+        '',
+        renderContextBlock(context),
+        '',
+        renderInventoryDigest(digest),
+      ].join('\n'),
     },
   ]
 
@@ -234,6 +278,8 @@ export interface MergeOutcome {
   removed: number
   /** 内容有变化的草稿 key，用于在预览里高亮 */
   changedKeys: string[]
+  /** 被移出草稿的 key。若是已有物品，采纳时会软删除（进回收站），不是硬删 */
+  removedKeys: string[]
   /** AI 报了个本地不存在的 id 要删（大概率是它自己编的） */
   unknownIds: number
 }
@@ -296,6 +342,9 @@ export function mergeChatResponse(
         include: existing.include,
         adoptNewCategories: existing.adoptNewCategories,
         adoptNewLocation: existing.adoptNewLocation,
+        // 最要紧的一条：保住「这是已有物品」的标记，
+        // 否则采纳时会把它当新条目又创建一遍
+        sourceItemId: existing.sourceItemId,
       })
       usedKeys.add(existing.key)
       continue
@@ -311,10 +360,12 @@ export function mergeChatResponse(
 
   // 按原顺序拼：改过的就地替换，没提到的原样保留，被删的丢掉
   const drafts: ItemDraft[] = []
+  const removedKeys: string[] = []
   let removed = 0
   for (const draft of current) {
     if (removedSet.has(draft.key)) {
       removed++
+      removedKeys.push(draft.key)
       continue
     }
     drafts.push(replaced.get(draft.key) ?? draft)
@@ -329,7 +380,7 @@ export function mergeChatResponse(
 
   const unchanged = drafts.length - added - updated
 
-  return { drafts, added, updated, unchanged, removed, changedKeys, unknownIds }
+  return { drafts, added, updated, unchanged, removed, changedKeys, removedKeys, unknownIds }
 }
 
 /** 供测试与调试用：看看一条草稿发出去大概长什么样 */

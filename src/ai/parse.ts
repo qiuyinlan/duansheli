@@ -249,48 +249,6 @@ export function parseExtraction(payload: unknown): ParsedExtraction {
 }
 
 /* ------------------------------------------------------------------ */
-/* 整理已有物品的结果                                                  */
-/* ------------------------------------------------------------------ */
-
-export interface RawAssignment {
-  id: string
-  categoryPaths: string[][]
-  location: string[] | null
-  reason: string
-}
-
-export function parseAssignments(payload: unknown): RawAssignment[] {
-  let list: unknown[] | null = null
-
-  if (Array.isArray(payload)) {
-    list = payload
-  } else if (isRecord(payload)) {
-    const candidate =
-      payload.assignments ?? payload.items ?? payload.物品 ?? payload.list ?? payload.data
-    if (Array.isArray(candidate)) list = candidate
-  }
-
-  if (list === null) {
-    throw new AiError('bad_response', 'AI 的回复里没有找到整理建议。')
-  }
-
-  const out: RawAssignment[] = []
-  for (const raw of list) {
-    if (!isRecord(raw)) continue
-    const id = asString(raw.id ?? raw.物品id)
-    if (id === '') continue
-    const location = asPathList(raw.location ?? raw.位置)
-    out.push({
-      id,
-      categoryPaths: asPathListOfLists(raw.categories ?? raw.分类 ?? raw.category),
-      location: location.length > 0 ? location : null,
-      reason: asString(raw.reason ?? raw.理由),
-    })
-  }
-  return out
-}
-
-/* ------------------------------------------------------------------ */
 /* 对话整理：AI 返回修改后的完整草稿                                    */
 /* ------------------------------------------------------------------ */
 
@@ -301,13 +259,34 @@ export interface RawRevisedItem extends RawExtractedItem {
   removed: boolean
 }
 
+/**
+ * AI 请求「把哪些现有物品拉进草稿」。
+ *
+ * 为什么要有这个：把用户全部物品塞进 prompt 太贵（500 件就是一万多 token）。
+ * 所以 system 里只放**目录**（分类/位置 + 件数），AI 真需要具体条目时再要。
+ * 程序收到这个请求会把对应物品放进草稿，并**自动再问 AI 一轮**。
+ */
+export interface LoadScopeRequest {
+  /** 全部在用物品（不含已舍弃） */
+  all?: boolean
+  idle?: boolean
+  uncategorized?: boolean
+  unassigned?: boolean
+  /** 这些分类下的（含子分类） */
+  categoryPaths?: string[][]
+  /** 这些位置下的（含子位置） */
+  locationPaths?: string[][]
+}
+
 export interface ParsedChatResponse {
   reply: string
   /** 只有**新增或改动过**的条目 */
   items: RawRevisedItem[]
   /** 要删掉的物品 id */
   removedIds: string[]
-  /** AI 既没给 items 也没给 removedIds（纯问答），草稿应原样保留 */
+  /** 请求先把这些现有物品拉进草稿 */
+  loadScope: LoadScopeRequest | null
+  /** AI 什么都没做（纯问答），草稿应原样保留 */
   noChanges: boolean
 }
 
@@ -321,14 +300,39 @@ function normalizeRevisedItem(raw: unknown): RawRevisedItem | null {
   return { ...base, id, removed: raw.removed === true || raw.删除 === true }
 }
 
+function normalizeLoadScope(raw: unknown): LoadScopeRequest | null {
+  if (!isRecord(raw)) return null
+
+  const scope: LoadScopeRequest = {}
+  if (raw.all === true) scope.all = true
+  if (raw.idle === true) scope.idle = true
+  if (raw.uncategorized === true) scope.uncategorized = true
+  if (raw.unassigned === true) scope.unassigned = true
+
+  const categories = asPathListOfLists(raw.categoryPaths ?? raw.categories)
+  if (categories.length > 0) scope.categoryPaths = categories
+
+  const locations = asPathListOfLists(raw.locationPaths ?? raw.locations)
+  if (locations.length > 0) scope.locationPaths = locations
+
+  // 一个字都没给，就不算请求
+  const empty =
+    !scope.all &&
+    !scope.idle &&
+    !scope.uncategorized &&
+    !scope.unassigned &&
+    !scope.categoryPaths &&
+    !scope.locationPaths
+  return empty ? null : scope
+}
+
 /**
  * 解析对话模式的回复。
  *
- * 两类宽容是刻意的：
+ * 三类宽容是刻意的：
  *   · AI 只回一句话、不带任何改动（用户只是问了个问题）→ 不算错
+ *   · AI 只要数据不给改动（loadScope）→ 是正常的一步
  *   · AI 偷懒把整份草稿都返回了 → 也能正常处理，只是多花点 token
- *
- * `removedIds` 里可能混进 AI 编的 id，合并层会忽略掉，不用在这里挡。
  */
 export function parseChatResponse(payload: unknown): ParsedChatResponse {
   if (!isRecord(payload)) {
@@ -336,6 +340,8 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
   }
 
   const reply = asString(payload.reply ?? payload.说明 ?? payload.message)
+  const loadScope = normalizeLoadScope(payload.loadScope ?? payload.拉取范围)
+
   const rawItems = payload.items ?? payload.物品 ?? payload.list
   const rawRemoved = payload.removedIds ?? payload.removed ?? payload.删除的id
 
@@ -344,7 +350,10 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
     : []
 
   if (!Array.isArray(rawItems) && removedIds.length === 0) {
-    if (reply !== '') return { reply, items: [], removedIds: [], noChanges: true }
+    if (loadScope) return { reply, items: [], removedIds: [], loadScope, noChanges: false }
+    if (reply !== '') {
+      return { reply, items: [], removedIds: [], loadScope: null, noChanges: true }
+    }
     throw new AiError('bad_response', 'AI 的回复里既没有说明也没有物品列表。')
   }
 
@@ -356,5 +365,5 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
     }
   }
 
-  return { reply, items, removedIds, noChanges: false }
+  return { reply, items, removedIds, loadScope, noChanges: false }
 }

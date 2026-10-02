@@ -26,9 +26,9 @@ interface Props {
 }
 
 const STARTERS = [
-  '先看一下这段：\n\n衣柜里有一件灰色羊毛衫，两条牛仔裤，床头柜上有个旧手机。',
-  '把分类不合适的都纠正一下，该新建就新建，不要塞进不相干的分类',
-  '把你没把握的条目列出来，我自己判断',
+  '先把这段录进去：\n\n衣柜里有一件灰色羊毛衫，两条牛仔裤，床头柜上有个旧手机。',
+  '把没分类的那些都归一下类，该新建分类就新建',
+  '把我所有的物品按分类和位置检查一遍，明显不合适的纠正过来',
 ]
 
 /**
@@ -98,9 +98,10 @@ export function AiChatPanel({
         {bubbles.length === 0 ? (
           <div className="chat-panel__empty">
             <div className="small" style={{ marginBottom: 'var(--gap-3)' }}>
-              把要录的东西写在这里发给 AI，它会拆成一条条物品放到右边。
+              <strong>要录新的</strong>：把东西写在这里，它拆成一条条物品。
               <br />
-              之后你可以继续用大白话让它改 —— 比如「口红别归日用品，单独建个化妆品」。
+              <strong>要改现有的</strong>：直接说 —— 比如「把药品改成 药品/补剂」，
+              它会自己把你现有的物品找出来放到右边。
             </div>
             <div className="stack-sm">
               {STARTERS.map((starter) => (
@@ -148,8 +149,8 @@ export function AiChatPanel({
           disabled={running}
           placeholder={
             draftCount === 0
-              ? '写下要录入的东西，或者直接说你想怎么整理…'
-              : `继续让它改（当前草稿 ${draftCount} 条）。Enter 发送，Shift+Enter 换行`
+              ? '写下要录的东西，或者说要改什么…'
+              : `继续说（右边草稿 ${draftCount} 条）。Enter 发送，Shift+Enter 换行`
           }
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {

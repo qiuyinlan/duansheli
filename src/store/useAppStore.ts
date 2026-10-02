@@ -202,34 +202,31 @@ export interface ItemInput {
 }
 
 /* ------------------------------------------------------------------ */
-/* 按「名称」批量写入（AI 录入用）                                      */
+/* AI 落库计划                                                          */
 /* ------------------------------------------------------------------ */
 
 /**
- * 批量录入计划。
- * 用分类名和位置名称路径而不是 id —— 因为不存在的分类和位置需要在写入时创建出来。
+ * 落库计划的一条。
+ *
+ * `existingId` 有值 → **更新**那件已有物品；没有 → **新建**。
+ * 用它把「对话整理」里新录入的和拉进来修改的两种条目一次写完。
  */
-export interface BulkAddItem {
+export interface DraftApplyItem {
+  existingId?: string
   name: string
   quantity: number
-  /** 每条是一条从顶层到末级的分类名称路径，例如 [['化妆品','眼妆']] */
   categoryPaths: string[][]
-  /** 从顶层到末级的名称路径；null = 未归位 */
   locationPath: string[] | null
   tags: string[]
-  /** 属性名 → 值 */
   attrs: Record<string, string>
   note: string
 }
 
-export interface BulkUpdateItem {
-  id: string
-  categoryPaths: string[][]
-  locationPath: string[] | null
-}
-
-export interface BulkWriteResult {
-  items: number
+export interface ApplyDraftResult {
+  added: number
+  updated: number
+  /** 被移入回收站的已有物品数 */
+  discarded: number
   createdCategories: number
   createdLocations: number
 }
@@ -388,12 +385,13 @@ export interface AppState {
   /** 传空字符串表示清除（同时从 localStorage 删掉） */
   setAiApiKey: (key: string) => void
 
-  /* ---------------- 按名称批量写入 ---------------- */
+  /* ---------------- AI 草稿落库 ---------------- */
 
-  /** 批量录入：分类 / 位置不存在时自动创建 */
-  bulkAddItems: (items: BulkAddItem[]) => BulkWriteResult
-  /** 批量更新已有物品的分类与位置 */
-  bulkUpdateItems: (updates: BulkUpdateItem[]) => BulkWriteResult
+  /**
+   * 把草稿落库：带 existingId 的更新、不带的创建、discardIds 的移入回收站，
+   * **一次提交**。AI 对话的「采纳」走这条路。
+   */
+  applyDraftItems: (plan: { items: DraftApplyItem[]; discardIds?: string[] }) => ApplyDraftResult
 
   setUi: (patch: Partial<UiPrefs>) => void
   /** 展开 / 收起某个分组。展开和折叠分别记录，因为默认值会随分组维度变化。 */
@@ -536,19 +534,18 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ aiApiKey: trimmed })
     },
 
-    /* ---------------- 按名称批量写入 ---------------- */
-
-    bulkAddItems: (plan) => {
+    applyDraftItems: ({ items: plan, discardIds = [] }) => {
       const data = get().data
       const now = new Date().toISOString()
       const resolvers = createNameResolvers(data, now)
       const items = [...data.items]
+      const indexById = new Map(items.map((item, index) => [item.id, index]))
+
       let added = 0
+      let updated = 0
+      let discarded = 0
 
       for (const entry of plan) {
-        const name = entry.name.trim()
-        if (name === '') continue
-
         const categoryIds = resolvers.resolveCategoryPaths(entry.categoryPaths)
         const locationId = resolvers.resolveLocation(entry.locationPath)
 
@@ -558,14 +555,38 @@ export const useAppStore = create<AppState>()((set, get) => {
           if (def && value !== '') attrs[def.id] = value
         }
 
+        const tags = uniq((entry.tags ?? []).map((t) => t.trim()).filter(Boolean))
+        const name = entry.name.trim()
+        const quantity = Math.max(1, Math.round(entry.quantity || 1))
+
+        const index = entry.existingId ? indexById.get(entry.existingId) : undefined
+
+        if (index !== undefined) {
+          // 更新：只动这几项，status / createdAt / 闲置时间都保持原样
+          items[index] = {
+            ...items[index],
+            name: name || items[index].name,
+            quantity,
+            categoryIds,
+            locationId,
+            tags,
+            attrs,
+            note: entry.note ?? '',
+            updatedAt: now,
+          }
+          updated++
+          continue
+        }
+
+        if (name === '') continue
         items.push({
           id: uid(),
           name,
+          quantity,
           categoryIds,
           locationId,
-          quantity: Math.max(1, Math.round(entry.quantity || 1)),
           status: 'active',
-          tags: uniq((entry.tags ?? []).map((t) => t.trim()).filter(Boolean)),
+          tags,
           attrs,
           note: entry.note ?? '',
           createdAt: now,
@@ -574,6 +595,20 @@ export const useAppStore = create<AppState>()((set, get) => {
           discardedAt: null,
         })
         added++
+      }
+
+      // 被移出草稿的已有物品 → 软删除进回收站，不是硬删
+      for (const id of discardIds) {
+        const index = indexById.get(id)
+        if (index === undefined) continue
+        const prev = items[index]
+        if (prev.status === 'discarded') continue
+        items[index] = { ...prev, status: 'discarded', discardedAt: now, updatedAt: now }
+        discarded++
+      }
+
+      if (added + updated + discarded === 0) {
+        return { added: 0, updated: 0, discarded: 0, createdCategories: 0, createdLocations: 0 }
       }
 
       const { createdCategories, createdLocations } = resolvers.stats()
@@ -593,43 +628,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         'auto',
       )
 
-      return { items: added, createdCategories, createdLocations }
-    },
-
-    bulkUpdateItems: (updates) => {
-      const data = get().data
-      const now = new Date().toISOString()
-      const resolvers = createNameResolvers(data, now)
-      const byId = new Map(updates.map((update) => [update.id, update]))
-
-      let changed = 0
-      const items = data.items.map((item) => {
-        const update = byId.get(item.id)
-        if (!update) return item
-
-        const categoryIds = resolvers.resolveCategoryPaths(update.categoryPaths)
-        const locationId = resolvers.resolveLocation(update.locationPath)
-        changed++
-        return { ...item, categoryIds, locationId, updatedAt: now }
-      })
-
-      if (changed === 0) {
-        return { items: 0, createdCategories: 0, createdLocations: 0 }
-      }
-
-      const { createdCategories, createdLocations } = resolvers.stats()
-
-      commit(
-        {
-          ...data,
-          items,
-          categories: resolvers.categories,
-          locations: resolvers.locations,
-        },
-        'auto',
-      )
-
-      return { items: changed, createdCategories, createdLocations }
+      return { added, updated, discarded, createdCategories, createdLocations }
     },
 
     /* ---------------- 界面偏好 ---------------- */

@@ -5,8 +5,14 @@
  * 让 AI 优先复用，而不是天马行空地自创一套跟现有数据对不上的词汇。
  */
 
-import type { AppData } from '../types'
+import type { AppData, TreeItem } from '../types'
+import { UNASSIGNED_ID, UNCATEGORIZED_ID } from '../types'
 import type { DerivedContext } from '../store/selectors'
+import {
+  countByCategoryIncludingDescendants,
+  countByLocationIncludingDescendants,
+} from '../store/selectors'
+import type { TreeIndex, TreeNode } from '../lib/tree'
 import type { ChatMessage } from './deepseek'
 
 /* ------------------------------------------------------------------ */
@@ -22,6 +28,25 @@ export interface AiContext {
   tags: string[]
   /** 是否因为太多而被截断（界面上要如实提示） */
   truncated: boolean
+}
+
+/**
+ * 用户现有物品的「目录」：每个分类 / 位置下有多少件。
+ *
+ * 这一份是给对话模式用的 —— 让 AI 在用户说「把药品改成…」时，
+ * 知道「药品」是什么、有多少件，从而能主动要求把这些条目拉进来。
+ * 只放名字和数量，很便宜（20 个分类约一百多 token），
+ * 而且因为放在 system 里、前缀稳定，能命中缓存。
+ */
+export interface InventoryDigest {
+  totalItems: number
+  categories: Array<{ path: string[]; count: number }>
+  /** 没有分类的物品数 */
+  uncategorized: number
+  locations: Array<{ path: string[]; count: number }>
+  /** 没有位置的物品数 */
+  unassigned: number
+  idle: number
 }
 
 export interface ContextLimits {
@@ -105,6 +130,74 @@ export function renderContextBlock(ctx: AiContext): string {
 }
 
 /* ------------------------------------------------------------------ */
+/* 现有物品的目录（对话模式用）                                          */
+/* ------------------------------------------------------------------ */
+
+/** 每个节点下的物品数（含子孙），以及「未分类 / 未归位」的数量 */
+export function buildInventoryDigest(data: AppData, derived: DerivedContext): InventoryDigest {
+  const live = data.items.filter((item) => item.status !== 'discarded')
+
+  // 这两个函数已经算好了「含子孙的合计」和「未分类 / 未归位」的计数，直接复用
+  const categoryCounts = countByCategoryIncludingDescendants(live, derived)
+  const locationCounts = countByLocationIncludingDescendants(live, derived)
+
+  const toEntries = <T extends TreeItem>(
+    index: TreeIndex<T>,
+    flat: TreeNode<T>[],
+    counts: Map<string, number>,
+  ): Array<{ path: string[]; count: number }> =>
+    flat
+      .filter((node) => (counts.get(node.node.id) ?? 0) > 0)
+      .map((node) => ({
+        path: index.pathNames(node.node.id),
+        count: counts.get(node.node.id) ?? 0,
+      }))
+
+  return {
+    totalItems: live.length,
+    categories: toEntries(derived.categoryIndex, derived.categoryFlat, categoryCounts),
+    uncategorized: categoryCounts.get(UNCATEGORIZED_ID) ?? 0,
+    locations: toEntries(derived.index, derived.flat, locationCounts),
+    unassigned: locationCounts.get(UNASSIGNED_ID) ?? 0,
+    idle: live.filter((item) => item.status === 'idle').length,
+  }
+}
+
+/**
+ * 把目录渲染成给 AI 看的一段文字。
+ * 只放名字和数量，不放具体条目 —— 具体条目等 AI 要的时候再拉。
+ */
+export function renderInventoryDigest(digest: InventoryDigest): string {
+  if (digest.totalItems === 0) {
+    return '【你现有的物品】一件都还没有。'
+  }
+
+  const categories =
+    digest.categories.length > 0
+      ? digest.categories.map((entry) => `${entry.path.join(' / ')}（${entry.count}）`).join('、')
+      : '（没有任何分类）'
+
+  const locations =
+    digest.locations.length > 0
+      ? digest.locations.map((entry) => `${entry.path.join(' / ')}（${entry.count}）`).join('、')
+      : '（没有任何位置）'
+
+  return [
+    `【你现有的物品】共 ${digest.totalItems} 件（不含已舍弃）`,
+    `· 按分类：${categories}`,
+    digest.uncategorized > 0 ? `· 其中未分类 ${digest.uncategorized} 件` : '',
+    `· 按位置：${locations}`,
+    digest.unassigned > 0 ? `· 其中未归位 ${digest.unassigned} 件` : '',
+    digest.idle > 0 ? `· 其中标记为闲置 ${digest.idle} 件` : '',
+    '',
+    '注意：上面只是**统计**，你手里还没有这些物品的具体条目。',
+    '要修改它们，你需要用 loadScope 先让程序把它们拉进来（见下面的说明）。',
+  ]
+    .filter((line) => line !== '')
+    .join('\n')
+}
+
+/* ------------------------------------------------------------------ */
 /* 一、从自由文字里批量抽取物品                                        */
 /* ------------------------------------------------------------------ */
 
@@ -180,92 +273,6 @@ export function buildExtractionMessages(
         '<<<',
         chunkText,
         '>>>',
-      ]
-        .filter((line) => line !== '')
-        .join('\n'),
-    },
-  ]
-}
-
-/* ------------------------------------------------------------------ */
-/* 二、整理已有物品                                                    */
-/* ------------------------------------------------------------------ */
-
-export interface TidyInputItem {
-  id: string
-  name: string
-  quantity: number
-  /** 当前分类的完整名称路径 */
-  categoryPaths: string[][]
-  /** 完整位置路径字符串，未归位时为 null */
-  locationPath: string | null
-  tags: string[]
-}
-
-const TIDY_SYSTEM = `你是「断舍离」的物品整理助手。
-用户会给你一批他已经录入的物品，请你为其中「明显可以改进」的，建议更合适的分类和位置。
-
-输出格式（一个 json 对象，不要输出任何解释性文字）：
-{
-  "assignments": [
-    {
-      "id": "原样返回物品的 id，一个字都不能改",
-      "categories": [["衣物"]],
-      "location": ["家", "卧室", "衣柜"],
-      "reason": "不超过 15 个字的中文理由"
-    }
-  ]
-}
-
-规则：
-1. id 必须原样返回，不能修改、不能遗漏、不能编造。
-2. categories 是一个**二维数组**，每一项是一条分类路径（从顶层到末级）。
-   分类是多级的，物品可以挂在任意一级。
-   如果物品当前的分类**明显不合适**（比如「口红」被归到了「日用品」），
-   就改成正确的路径 —— **该新建就新建**，不要因为清单里没有就把错就错。
-   除此之外，优先复用【已有分类】里语义相符的，不要造同义词。
-3. location 只能从【已有位置】里挑，输出名称路径。拿不准就填 null。
-4. **只对明显可以改进的物品给出建议。** 已经很合理的直接跳过，
-   不要为了显得有用而硬改。宁可少给建议，也不要给错的建议。
-5. reason 用不超过 15 个字说明为什么这么改。`
-
-export function buildTidyMessages(
-  context: AiContext,
-  items: TidyInputItem[],
-  chunkInfo?: { index: number; total: number },
-): ChatMessage[] {
-  const lines = items.map((item) =>
-    [
-      `id: ${item.id}`,
-      `名称: ${item.name}`,
-      item.quantity > 1 ? `数量: ${item.quantity}` : '',
-      `当前分类: ${
-        item.categoryPaths.length > 0
-          ? item.categoryPaths.map((path) => path.join(' / ')).join('、')
-          : '（未分类）'
-      }`,
-      `当前位置: ${item.locationPath ?? '（未归位）'}`,
-      item.tags.length > 0 ? `标签: ${item.tags.join('、')}` : '',
-    ]
-      .filter((line) => line !== '')
-      .join(' | '),
-  )
-
-  const header =
-    chunkInfo && chunkInfo.total > 1
-      ? `这是第 ${chunkInfo.index} / ${chunkInfo.total} 批，只处理下面这些物品。`
-      : ''
-
-  return [
-    { role: 'system', content: TIDY_SYSTEM },
-    {
-      role: 'user',
-      content: [
-        renderContextBlock(context),
-        '',
-        header,
-        '【待整理的物品】',
-        ...lines,
       ]
         .filter((line) => line !== '')
         .join('\n'),

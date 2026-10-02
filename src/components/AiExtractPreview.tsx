@@ -129,6 +129,12 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
             <div className="ai-row__main">
               {/* ---------------- 名称与数量 ---------------- */}
               <div className="row" style={{ gap: 'var(--gap-2)' }}>
+                {/* 已有物品要标出来 —— 采纳时是「更新」不是「新建」 */}
+                {draft.sourceItemId ? (
+                  <span className="badge badge--accent" title="这条来自数据库，采纳时会更新它">
+                    已有
+                  </span>
+                ) : null}
                 <input
                   className="input grow"
                   value={draft.name}
