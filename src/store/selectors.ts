@@ -513,17 +513,138 @@ export function sortByIdleDuration(items: Item[]): Item[] {
 /* 分组                                                                */
 /* ------------------------------------------------------------------ */
 
-export interface ItemGroup {
+/**
+ * 一个分组节点。
+ *
+ * 分类和位置是树，所以分组也是树 —— 一级一级往下展开，
+ * 而不是把「眼妆」「唇妆」平铺成一堆同级标题。
+ */
+export interface ItemGroupNode {
   key: string
   label: string
-  /** 标题下的次要说明（完整路径） */
+  /** 次要说明。树形分组里不用（层级本身就说明了位置） */
   sublabel?: string
+  /** **直接**挂在这个节点上的物品 */
   items: Item[]
+  /** 含全部子孙的**去重**总数 —— 同一件物品挂在同一棵子树的两个节点上只算一次 */
+  total: number
+  children: ItemGroupNode[]
 }
 
-export function groupItems(items: Item[], groupBy: GroupBy, ctx: DerivedContext): ItemGroup[] {
+/** 目前只有分类和位置是树，其它维度是平的 */
+export function isTreeGrouping(groupBy: GroupBy): boolean {
+  return groupBy === 'category' || groupBy === 'location'
+}
+
+/** 内部用：既要算去重总数，也要留着重算，所以额外带着 itemIds */
+interface BuiltNode extends ItemGroupNode {
+  itemIds: Set<string>
+}
+
+function buildTreeNodes<T extends TreeItem>(
+  nodes: TreeNode<T>[],
+  direct: Map<string, Item[]>,
+): BuiltNode[] {
+  const out: BuiltNode[] = []
+
+  for (const node of nodes) {
+    const own = direct.get(node.node.id) ?? []
+    const children = buildTreeNodes(node.children, direct)
+
+    const itemIds = new Set(own.map((item) => item.id))
+    for (const child of children) {
+      for (const id of child.itemIds) itemIds.add(id)
+    }
+
+    // 一件东西都没有的分支直接不显示 —— 空分类没必要占地方
+    if (itemIds.size === 0) continue
+
+    out.push({
+      key: node.node.id,
+      label: node.node.name,
+      items: own,
+      total: itemIds.size,
+      children: children.map(({ itemIds: _drop, ...rest }) => rest),
+      itemIds,
+    })
+  }
+
+  return out
+}
+
+/**
+ * 按树分组（分类 / 位置）。
+ *
+ * 物品挂在哪一级就归到哪一级：挂在「化妆品」上的直接算在化妆品名下，
+ * 挂在「化妆品 / 眼妆」上的算在眼妆名下 —— 上层只是把子孙的合计出来。
+ */
+export function groupItemsTree(
+  items: Item[],
+  dimension: 'category' | 'location',
+  ctx: DerivedContext,
+): ItemGroupNode[] {
+  const direct = new Map<string, Item[]>()
+  const loose: Item[] = []
+
+  if (dimension === 'category') {
+    for (const item of items) {
+      const valid = item.categoryIds.filter((id) => ctx.categoryIndex.has(id))
+      if (valid.length === 0) {
+        loose.push(item)
+        continue
+      }
+      for (const id of new Set(valid)) {
+        const bucket = direct.get(id)
+        if (bucket) bucket.push(item)
+        else direct.set(id, [item])
+      }
+    }
+  } else {
+    for (const item of items) {
+      if (!item.locationId || !ctx.index.has(item.locationId)) {
+        loose.push(item)
+        continue
+      }
+      const bucket = direct.get(item.locationId)
+      if (bucket) bucket.push(item)
+      else direct.set(item.locationId, [item])
+    }
+  }
+
+  const roots: ItemGroupNode[] = buildTreeNodes(
+    dimension === 'category' ? ctx.categoryTree : ctx.tree,
+    direct,
+  ).map(({ itemIds: _drop, ...rest }) => rest)
+
+  if (loose.length > 0) {
+    roots.push({
+      key: dimension === 'category' ? UNCATEGORIZED_ID : UNASSIGNED_ID,
+      label: dimension === 'category' ? '未分类' : '未归位',
+      items: loose,
+      total: loose.length,
+      children: [],
+    })
+  }
+
+  return roots
+}
+
+/** 平铺分组（标签 / 状态 / 不分组）—— 这些维度本来就没有层级 */
+export function groupItemsFlat(
+  items: Item[],
+  groupBy: GroupBy,
+  ctx: DerivedContext,
+): ItemGroupNode[] {
+  const leaf = (key: string, label: string, bucket: Item[]): ItemGroupNode => ({
+    key,
+    label,
+    items: bucket,
+    total: bucket.length,
+    children: [],
+  })
+
   if (groupBy === 'none') {
-    return [{ key: '__all__', label: '全部', items }]
+    return [leaf('__all__', '全部', items)]
   }
 
   if (groupBy === 'status') {
@@ -533,85 +654,14 @@ export function groupItems(items: Item[], groupBy: GroupBy, ctx: DerivedContext)
       if (bucket) bucket.push(item)
       else buckets.set(item.status, [item])
     }
-    return STATUS_ORDER.filter((s) => buckets.has(s)).map((s) => ({
-      key: s,
-      label: STATUS_LABEL[s],
-      items: buckets.get(s) as Item[],
-    }))
+    return STATUS_ORDER.filter((s) => buckets.has(s)).map((s) =>
+      leaf(s, STATUS_LABEL[s], buckets.get(s) as Item[]),
+    )
   }
 
-  if (groupBy === 'category') {
-    // 按「物品实际挂的那个分类节点」分组（可以是任意层级），
-    // 标题显示节点名，次要说明显示完整路径，方便区分同名的子分类。
-    const buckets = new Map<string, Item[]>()
-    const uncategorized: Item[] = []
-
-    for (const item of items) {
-      if (item.categoryIds.length === 0) {
-        uncategorized.push(item)
-        continue
-      }
-      for (const id of new Set(item.categoryIds)) {
-        const bucket = buckets.get(id)
-        if (bucket) bucket.push(item)
-        else buckets.set(id, [item])
-      }
-    }
-
-    const groups: ItemGroup[] = [...buckets]
-      .map(([id, groupItemsList]): ItemGroup => ({
-        key: id,
-        label: ctx.categoryById.get(id)?.name ?? '（已删除的分类）',
-        sublabel: ctx.categoryIndex.pathString(id, ' / '),
-        items: groupItemsList,
-      }))
-      .sort(
-        (a, b) =>
-          (ctx.categoryOrder.get(a.key) ?? 1e6) - (ctx.categoryOrder.get(b.key) ?? 1e6) ||
-          b.items.length - a.items.length,
-      )
-
-    if (uncategorized.length > 0) {
-      groups.push({ key: UNCATEGORIZED_ID, label: '未分类', items: uncategorized })
-    }
-    return groups
-  }
-
-  if (groupBy === 'location') {
-    const buckets = new Map<string, Item[]>()
-    const unassigned: Item[] = []
-
-    for (const item of items) {
-      if (!item.locationId || !ctx.index.has(item.locationId)) {
-        unassigned.push(item)
-        continue
-      }
-      const bucket = buckets.get(item.locationId)
-      if (bucket) bucket.push(item)
-      else buckets.set(item.locationId, [item])
-    }
-
-    const groups: ItemGroup[] = [...buckets]
-      .map(([id, groupItemsList]): ItemGroup => ({
-        key: id,
-        label: ctx.locationById.get(id)?.name ?? '（已删除的位置）',
-        sublabel: ctx.index.pathString(id, ' / '),
-        items: groupItemsList,
-      }))
-      .sort(
-        (a, b) => (ctx.locationOrder.get(a.key) ?? 1e6) - (ctx.locationOrder.get(b.key) ?? 1e6),
-      )
-
-    if (unassigned.length > 0) {
-      groups.push({ key: UNASSIGNED_ID, label: '未归位', items: unassigned })
-    }
-    return groups
-  }
-
-  // groupBy === 'tag'：一件物品有多个标签时会出现在多个分组里（与分类同理）
+  // 标签：一件物品有多个标签时会出现在多个分组里（与分类同理）
   const buckets = new Map<string, Item[]>()
   const untagged: Item[] = []
-
   for (const item of items) {
     if (item.tags.length === 0) {
       untagged.push(item)
@@ -624,14 +674,12 @@ export function groupItems(items: Item[], groupBy: GroupBy, ctx: DerivedContext)
     }
   }
 
-  const groups: ItemGroup[] = [...buckets]
-    .map(([tag, groupItemsList]): ItemGroup => ({ key: tag, label: tag, items: groupItemsList }))
-    .sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label, 'zh-CN'))
+  const out = [...buckets]
+    .map(([tag, bucket]) => leaf(tag, tag, bucket))
+    .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, 'zh-CN'))
 
-  if (untagged.length > 0) {
-    groups.push({ key: UNTAGGED_ID, label: '未加标签', items: untagged })
-  }
-  return groups
+  if (untagged.length > 0) out.push(leaf(UNTAGGED_ID, '未加标签', untagged))
+  return out
 }
 
 /** 分组后每个分组内也要排序 */
@@ -641,8 +689,66 @@ export function groupAndSort(
   sortBy: SortBy,
   sortDir: SortDir,
   ctx: DerivedContext,
-): ItemGroup[] {
-  return groupItems(sortItems(items, sortBy, sortDir, ctx), groupBy, ctx)
+): ItemGroupNode[] {
+  const sorted = sortItems(items, sortBy, sortDir, ctx)
+  return isTreeGrouping(groupBy)
+    ? groupItemsTree(sorted, groupBy as 'category' | 'location', ctx)
+    : groupItemsFlat(sorted, groupBy, ctx)
+}
+
+/* ------------------------------------------------------------------ */
+/* 分组展开状态                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 某个分组当前该不该展开。
+ *
+ * 默认值分两种情况：
+ *   · **有子级的节点** → 折叠。先看一级标题，想看细的再点开 ——
+ *     分类一多，全铺开根本看不出结构。
+ *   · **没有子级的叶子** → 展开。它下面没有结构可钻，
+ *     折叠只会把内容藏起来，白白多点一次。
+ *
+ * 用户点过的选择优先于默认值。因为默认值会随节点和数据变化，
+ * 所以「展开」和「折叠」要分别记，不能只记一个。
+ */
+export function isGroupExpanded(
+  key: string,
+  hasChildren: boolean,
+  groupBy: GroupBy,
+  expandedGroups: readonly string[],
+  collapsedGroups: readonly string[],
+): boolean {
+  if (collapsedGroups.includes(key)) return false
+  if (expandedGroups.includes(key)) return true
+  if (!hasChildren) return true
+  return !isTreeGrouping(groupBy)
+}
+
+/** 递归找出某个 key 的节点，测试和"定位到某个分组"时用得上 */
+export function findGroupNode(
+  nodes: ItemGroupNode[],
+  key: string,
+): ItemGroupNode | undefined {
+  for (const node of nodes) {
+    if (node.key === key) return node
+    const found = findGroupNode(node.children, key)
+    if (found) return found
+  }
+  return undefined
+}
+
+/** 按显示顺序拍平所有分组节点（含子孙），用于分配颜色、判断哪些还有内容 */
+export function flattenGroupNodes(nodes: ItemGroupNode[]): ItemGroupNode[] {
+  const out: ItemGroupNode[] = []
+  const walk = (list: ItemGroupNode[]) => {
+    for (const node of list) {
+      out.push(node)
+      walk(node.children)
+    }
+  }
+  walk(nodes)
+  return out
 }
 
 /* ------------------------------------------------------------------ */

@@ -1,11 +1,21 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { FilterPanel } from '../components/FilterPanel'
 import { ItemRow } from '../components/ItemRow'
 import { LocationPicker, TagInput } from '../components/pickers'
 import { IconChevronRight, IconTrash } from '../components/ui/icons'
 import { Button, ConfirmDialog, EmptyState, Modal, SearchInput } from '../components/ui/primitives'
-import { EMPTY_FILTER, countByLocationIncludingDescendants, filterItems, groupAndSort, liveItems, type ItemFilter } from '../store/selectors'
+import {
+  EMPTY_FILTER,
+  countByLocationIncludingDescendants,
+  filterItems,
+  flattenGroupNodes,
+  groupAndSort,
+  isGroupExpanded,
+  liveItems,
+  type ItemFilter,
+  type ItemGroupNode,
+} from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
 import { assignGroupColors, NEUTRAL_GROUP_COLOR } from '../lib/palette'
 import type { GroupBy, ItemStatus, SortBy, SortDir } from '../types'
@@ -76,7 +86,7 @@ export function Items() {
   const derived = useAppStore((s) => s.derived)
   const ui = useAppStore((s) => s.ui)
   const setUi = useAppStore((s) => s.setUi)
-  const toggleGroupCollapsed = useAppStore((s) => s.toggleGroupCollapsed)
+  const setGroupExpanded = useAppStore((s) => s.setGroupExpanded)
   const setIdle = useAppStore((s) => s.setIdle)
   const markDiscarded = useAppStore((s) => s.markDiscarded)
   const batchSetStatus = useAppStore((s) => s.batchSetStatus)
@@ -129,11 +139,12 @@ export function Items() {
     [data, derived],
   )
 
-  // 每个分组一种颜色，方便一眼区分；同一个分类的颜色是稳定的（由 key 哈希决定）
-  const groupColors = useMemo(
-    () => assignGroupColors(groups.map((group) => group.key)),
-    [groups],
-  )
+  // 每个分组一种颜色，方便一眼区分；同一个分类的颜色是稳定的（由 key 哈希决定）。
+  // 要给整棵树都分上色，所以先拍平。
+  const groupColors = useMemo(() => {
+    const all = flattenGroupNodes(groups)
+    return assignGroupColors(all.map((node) => node.key))
+  }, [groups])
 
   const activeConditionCount =
     filter.categoryIds.length +
@@ -203,6 +214,101 @@ export function Items() {
           }
         />
       </>
+    )
+  }
+
+  /**
+   * 递归渲染一个分组。
+   *
+   * 分类和位置是树，所以分组也一层层往下展开 ——
+   * 默认只看到一级标题（分类一多，全铺开根本看不出结构），
+   * 点开一层才看到子分类，子分类还能再点开。展开状态会记住。
+   *
+   * 子分组渲染在父分组的框里，父级那条彩色竖条就把整棵子树括起来了。
+   */
+  const renderGroupNode = (node: ItemGroupNode, depth: number): ReactNode => {
+    const expanded = isGroupExpanded(
+      node.key,
+      node.children.length > 0,
+      groupBy,
+      ui.expandedGroups,
+      ui.collapsedGroups,
+    )
+    const color = groupColors.get(node.key) ?? NEUTRAL_GROUP_COLOR
+
+    return (
+      <div
+        key={node.key}
+        className={`item-group${depth > 0 ? ' item-group--nested' : ''}`}
+        style={{ borderLeftColor: color.bar }}
+      >
+        <button
+          type="button"
+          className="group-head"
+          style={{ background: color.soft }}
+          onClick={() => setGroupExpanded(node.key, !expanded)}
+          aria-expanded={expanded}
+        >
+          <span className={`group-head__caret${expanded ? ' is-open' : ''}`}>
+            <IconChevronRight size={10} />
+          </span>
+          <span className="group-head__dot" style={{ background: color.bar }} />
+          <span className="group-head__label" style={{ color: color.text }}>
+            {node.label}
+          </span>
+          <span className="group-head__count numeric">{node.total} 件</span>
+          <span className="group-head__line" style={{ background: color.line }} />
+        </button>
+
+        {expanded ? (
+          <div className="item-group__body">
+            {/* 先列子分类（结构），再列直接挂在这一层的东西 */}
+            {node.children.length > 0 ? (
+              <div className="item-group__children">
+                {node.children.map((child) => renderGroupNode(child, depth + 1))}
+              </div>
+            ) : null}
+
+            {node.items.length > 0 ? (
+              <ul className="list item-group__list">
+                {node.items.map((item) => (
+                  <ItemRow
+                    key={`${node.key}-${item.id}`}
+                    item={item}
+                    ctx={derived}
+                    selectable
+                    selected={selected.has(item.id)}
+                    onToggleSelect={toggleSelect}
+                    onOpen={(id) => navigate(`/items/${id}`)}
+                    actions={
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setIdle(item.id, item.status !== 'idle')}
+                        >
+                          {item.status === 'idle' ? '改回在用' : '闲置'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="舍弃（可在设置里找回）"
+                          onClick={() => {
+                            markDiscarded(item.id)
+                            notify('已移入「已舍弃」，可在设置里找回', 'success')
+                          }}
+                        >
+                          <IconTrash size={14} />
+                        </Button>
+                      </>
+                    }
+                  />
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     )
   }
 
@@ -417,76 +523,7 @@ export function Items() {
           }
         />
       ) : (
-        groups.map((group) => {
-          const collapsed = ui.collapsedGroups.includes(group.key)
-          const color = groupColors.get(group.key) ?? NEUTRAL_GROUP_COLOR
-          const showItems = !collapsed || groupBy === 'none'
-
-          return (
-            <div key={group.key} className="item-group" style={{ borderLeftColor: color.bar }}>
-              <button
-                type="button"
-                className="group-head"
-                style={{ background: color.soft }}
-                onClick={() => toggleGroupCollapsed(group.key)}
-                aria-expanded={showItems}
-              >
-                {groupBy !== 'none' ? (
-                  <span className={`group-head__caret${collapsed ? '' : ' is-open'}`}>
-                    <IconChevronRight size={10} />
-                  </span>
-                ) : null}
-                <span className="group-head__dot" style={{ background: color.bar }} />
-                <span className="group-head__label" style={{ color: color.text }}>
-                  {group.label}
-                </span>
-                {group.sublabel && group.sublabel !== group.label ? (
-                  <span className="group-head__count">{group.sublabel}</span>
-                ) : null}
-                <span className="group-head__count numeric">{group.items.length} 件</span>
-                <span className="group-head__line" style={{ background: color.line }} />
-              </button>
-
-              {showItems ? (
-                <ul className="list item-group__list">
-                  {group.items.map((item) => (
-                    <ItemRow
-                      key={`${group.key}-${item.id}`}
-                      item={item}
-                      ctx={derived}
-                      selectable
-                      selected={selected.has(item.id)}
-                      onToggleSelect={toggleSelect}
-                      onOpen={(id) => navigate(`/items/${id}`)}
-                      actions={
-                        <>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setIdle(item.id, item.status !== 'idle')}
-                          >
-                            {item.status === 'idle' ? '改回在用' : '闲置'}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title="舍弃（可在设置里找回）"
-                            onClick={() => {
-                              markDiscarded(item.id)
-                              notify('已移入「已舍弃」，可在设置里找回', 'success')
-                            }}
-                          >
-                            <IconTrash size={14} />
-                          </Button>
-                        </>
-                      }
-                    />
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          )
-        })
+        groups.map((node) => renderGroupNode(node, 0))
       )}
 
       {/* ---------------- 弹窗 ---------------- */}

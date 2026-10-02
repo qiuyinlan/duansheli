@@ -229,8 +229,16 @@ export interface UiPrefs {
   lastStatus: ItemStatus
   /** 分类 id → 上次为该分类勾选的属性 id 组合 */
   attrsByCategory: Record<string, string[]>
-  /** 列表中被折叠的分组 key */
+  /** 用户点过「收起」的分组 key */
   collapsedGroups: string[]
+  /**
+   * 用户点过「展开」的分组 key。
+   *
+   * 为什么「展开」要单独记一份：树形分组（分类 / 位置）默认是**折叠**的，
+   * 所以「没记过」等于折叠；要区分「用户主动展开过」和「默认状态」，
+   * 就得把两边分别记下来。
+   */
+  expandedGroups: string[]
   /** 上次导出 JSON 备份的时间 —— 用于在界面上温和提醒该备份了 */
   lastExportAt: string | null
 }
@@ -245,5 +253,6 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
   lastStatus: 'active',
   attrsByCategory: {},
   collapsedGroups: [],
+  expandedGroups: [],
   lastExportAt: null,
 }

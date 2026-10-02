@@ -36,11 +36,14 @@ import {
   createDerived,
   filterItems,
   groupAndSort,
+  isGroupExpanded,
+  findGroupNode,
+  liveItems,
   sortByIdleDuration,
 } from '../src/store/selectors'
 import { flushWrites, useAppStore } from '../src/store/useAppStore'
 import { SCHEMA_VERSION, UNASSIGNED_ID, UNCATEGORIZED_ID, UNTAGGED_ID } from '../src/types'
-import type { AppData } from '../src/types'
+import type { AppData, Category } from '../src/types'
 import { OLD_DATE, deepEq, eq, fixture, item, match, must, mustParse, ok, suite, test } from './harness'
 
 /* ------------------------------------------------------------------ */
@@ -278,6 +281,36 @@ suite('筛选、分组与统计')
 const fx = fixture()
 const ctx = createDerived(fx)
 
+/** 带两级分类的场景：化妆品 › 眼妆 / 唇妆（都不挂东西，用来验证树的形状） */
+function nestedCategories(): { data: AppData; derived: ReturnType<typeof createDerived> } {
+  const base = fixture()
+  const now = new Date().toISOString()
+  const cosmetics: Category = {
+    id: 'c-cos',
+    name: '化妆品',
+    parentId: null,
+    order: 20,
+    createdAt: now,
+  }
+  const eye: Category = {
+    id: 'c-eye',
+    name: '眼妆',
+    parentId: 'c-cos',
+    order: 0,
+    createdAt: now,
+  }
+  const lip: Category = {
+    id: 'c-lip',
+    name: '唇妆',
+    parentId: 'c-cos',
+    order: 1,
+    createdAt: now,
+  }
+
+  const data: AppData = { ...base, categories: [...base.categories, cosmetics, eye, lip] }
+  return { data, derived: createDerived(data) }
+}
+
 await test('按分类筛选', () => {
   const clothing = must(fx.categories.find((c) => c.name === '衣物'), '找不到衣物分类').id
   const result = filterItems(fx.items, { ...EMPTY_FILTER, categoryIds: [clothing] }, ctx)
@@ -343,18 +376,115 @@ await test('一件物品属于两个分类时，两个分组里都会出现', ()
   ok(daily.items.some((i) => i.name === '平底锅'))
 })
 
-await test('按位置分组时用完整路径做次要标题', () => {
-  const wardrobeId = must(fx.locations.find((l) => l.name === '衣柜'), '找不到衣柜').id
+await test('位置分组是树：顶层只有顶层位置，子位置嵌在父级下面', () => {
   const groups = groupAndSort(fx.items, 'location', 'name', 'asc', ctx)
-  const group = must(groups.find((g) => g.key === wardrobeId), '找不到衣柜分组')
-  eq(group.sublabel, '家 / 卧室 / 衣柜')
-  eq(group.items.length, 2)
+
+  // 顶层应该只有「家」和「未归位」两类，不会把 卧室 / 衣柜 这些平铺出来
+  deepEq(
+    [...groups.map((g) => g.label)].sort(),
+    ['未归位', '家'].sort(),
+    '顶层不该出现子位置',
+  )
+
+  const home = must(
+    groups.find((g) => g.label === '家'),
+    '找不到「家」',
+  )
+  eq(home.total, 4, '「家」含子孙共 4 件')
+  ok(home.children.length > 0, '「家」下面应该有子位置')
+
+  // 衣柜嵌在卧室下面，不该自己占一个顶层分组
+  const wardrobe = must(fx.locations.find((l) => l.name === '衣柜'), '找不到衣柜')
+  ok(!groups.some((g) => g.key === wardrobe.id), '衣柜不该出现在顶层')
+  const nested = must(findGroupNode(groups, wardrobe.id), '衣柜应该嵌在树里')
+  eq(nested.items.length, 2)
+  eq(nested.total, 2)
 })
 
-await test('未归位的物品被单独归集', () => {
+await test('未归位的物品单独成组，不带子级', () => {
   const groups = groupAndSort(fx.items, 'location', 'name', 'asc', ctx)
-  const unassigned = must(groups.find((g) => g.label === '未归位'), '找不到未归位分组')
+  const unassigned = must(
+    groups.find((g) => g.label === '未归位'),
+    '找不到未归位分组',
+  )
   eq(unassigned.items.length, 1)
+  eq(unassigned.children.length, 0)
+})
+
+await test('分类分组也是树：子分类嵌在父分类下', () => {
+  const { data } = nestedCategories()
+  const eye = must(data.categories.find((c) => c.name === '眼妆'), '找不到眼妆')
+  const lip = must(data.categories.find((c) => c.name === '唇妆'), '找不到唇妆')
+
+  const withItems: AppData = {
+    ...data,
+    items: [
+      ...data.items,
+      item({ id: 'e1', name: '眼影盘', categoryIds: [eye.id] }),
+      item({ id: 'e2', name: '睫毛膏', categoryIds: [eye.id] }),
+      item({ id: 'l1', name: '口红', categoryIds: [lip.id] }),
+    ],
+  }
+  const ctx2 = createDerived(withItems)
+  const groups = groupAndSort(liveItems(withItems), 'category', 'name', 'asc', ctx2)
+
+  const cosmetics = must(withItems.categories.find((c) => c.name === '化妆品'), '找不到化妆品')
+  const node = must(findGroupNode(groups, cosmetics.id), '化妆品应该是一级分组')
+  eq(node.total, 3, '含子分类共 3 件')
+  eq(node.items.length, 0, '没有东西直接挂在「化妆品」上')
+  eq(node.children.length, 2, '下面应该有眼妆和唇妆两组')
+
+  ok(
+    !groups.some((g) => g.key === eye.id),
+    '眼妆不该出现在顶层',
+  )
+})
+
+await test('空分类不占地方', () => {
+  const { data, derived } = nestedCategories()
+  const groups = groupAndSort(liveItems(data), 'category', 'name', 'asc', derived)
+  const cosmetics = must(data.categories.find((c) => c.name === '化妆品'), '找不到化妆品')
+  eq(
+    findGroupNode(groups, cosmetics.id),
+    undefined,
+    '一件东西都没有的分类不该显示出来',
+  )
+})
+await test('父分类的合计含子分类，同一子树里不重复计', () => {
+  const { data } = nestedCategories()
+  const eye = must(data.categories.find((c) => c.name === '眼妆'), '找不到眼妆')
+  const lip = must(data.categories.find((c) => c.name === '唇妆'), '找不到唇妆')
+
+  // 一件东西同时挂在同一棵子树的两个节点上
+  const withItems: AppData = {
+    ...data,
+    items: [item({ id: 'both', name: '彩妆盘', categoryIds: [eye.id, lip.id] })],
+  }
+  const ctx2 = createDerived(withItems)
+  const groups = groupAndSort(liveItems(withItems), 'category', 'name', 'asc', ctx2)
+
+  const cosmetics = must(withItems.categories.find((c) => c.name === '化妆品'), '找不到化妆品')
+  eq(must(findGroupNode(groups, eye.id), '找不到眼妆').total, 1)
+  eq(must(findGroupNode(groups, lip.id), '找不到唇妆').total, 1)
+  eq(
+    must(findGroupNode(groups, cosmetics.id), '找不到化妆品').total,
+    1,
+    '同一件东西挂在同一棵子树的两个节点上，父级只该算一次',
+  )
+})
+
+await test('默认展开规则：有子级的折叠，叶子展开', () => {
+  eq(isGroupExpanded('x', false, 'category', [], []), true, '叶子没有结构可钻，直接展开')
+  eq(isGroupExpanded('x', true, 'category', [], []), false, '有子级的先折叠，要看细的再点开')
+  eq(isGroupExpanded('x', false, 'location', [], []), true)
+  eq(isGroupExpanded('x', true, 'location', [], []), false)
+  eq(isGroupExpanded('x', false, 'tag', [], []), true, '平铺分组本来就只有一层')
+})
+
+await test('用户点过的选择优先于默认值', () => {
+  eq(isGroupExpanded('x', true, 'category', ['x'], []), true, '展开过就展开，哪怕默认是折叠')
+  eq(isGroupExpanded('x', false, 'category', [], ['x']), false, '折叠过就折叠，哪怕默认是展开')
+  eq(isGroupExpanded('x', true, 'category', ['x'], ['x']), false, '两份都记着时以折叠为准')
 })
 
 await test('统计数字正确', () => {

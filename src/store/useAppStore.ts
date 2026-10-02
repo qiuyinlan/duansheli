@@ -396,7 +396,8 @@ export interface AppState {
   bulkUpdateItems: (updates: BulkUpdateItem[]) => BulkWriteResult
 
   setUi: (patch: Partial<UiPrefs>) => void
-  toggleGroupCollapsed: (key: string) => void
+  /** 展开 / 收起某个分组。展开和折叠分别记录，因为默认值会随分组维度变化。 */
+  setGroupExpanded: (key: string, expanded: boolean) => void
   rememberAttrSelection: (categoryIds: string[], attrIds: string[]) => void
 
   /* 物品 */
@@ -639,12 +640,17 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ ui: next })
     },
 
-    toggleGroupCollapsed: (key) => {
+    setGroupExpanded: (key, expanded) => {
       const ui = get().ui
-      const collapsed = ui.collapsedGroups.includes(key)
-        ? ui.collapsedGroups.filter((k) => k !== key)
-        : [...ui.collapsedGroups, key]
-      const next = { ...ui, collapsedGroups: collapsed }
+      const next: UiPrefs = {
+        ...ui,
+        expandedGroups: expanded
+          ? [...new Set([...ui.expandedGroups, key])]
+          : ui.expandedGroups.filter((k) => k !== key),
+        collapsedGroups: expanded
+          ? ui.collapsedGroups.filter((k) => k !== key)
+          : [...new Set([...ui.collapsedGroups, key])],
+      }
       persistUiPrefs(next)
       set({ ui: next })
     },
