@@ -3,7 +3,7 @@
 > 录入你的所有物品，给它们指定位置，按分类随时回看。
 > 目标只有一个：**让你看清自己到底有多少东西，然后扔掉该扔的。**
 
-电脑和手机都能用，界面极简无彩色，数据只存在你自己的设备上。
+电脑和手机都能用，每个板块有自己的主色，数据只存在你自己的设备上。
 
 ---
 
@@ -49,7 +49,7 @@ npm run dev     # 启动开发服务器，打开提示的地址即可
 ```bash
 npm run build      # 类型检查 + 打包到 dist/
 npm run preview    # 本地预览打包结果
-npm test           # 运行测试（127 项）
+npm test           # 运行测试（134 项）
 npm run typecheck  # 只做类型检查
 npm run icons      # 重新生成 PWA 图标
 ```
@@ -313,21 +313,25 @@ UI 组件全部手写 —— 因为「极简无彩色」的风格自己写反而
 ```
 ├─ docs/设计文档.md              完整设计文档
 ├─ public/                       PWA 图标、favicon
+├─ 测试用例-AI.md                 手工验收测试清单（AI 功能，照着走一遍）
+├─ 示例数据-导入用.json            24 件示例物品，导入后就能试各种功能
 ├─ scripts/
 │  ├─ generate-icons.mjs         用 zlib 手写 PNG 编码生成图标
 │  ├─ run-tests.mjs              用 esbuild 打包后跑测试
+│  ├─ sampleData.ts              示例数据的定义（改数据改这里）
+│  ├─ make-sample-backup.mjs     生成上面的示例数据文件
 │  └─ probe-deepseek-cors.mjs    验证 DeepSeek 是否允许浏览器直连
 ├─ src/
 │  ├─ types/index.ts             全部数据模型
 │  ├─ ai/                        DeepSeek 客户端 · Prompt · 解析 · 名称匹配
-│  ├─ lib/                       id / 格式化 / 树工具 / 下载
+│  ├─ lib/                       id / 格式化 / 树工具 / 下载 / 板块配色
 │  ├─ storage/                   idb 封装 · Repository · 快照 · 种子数据
 │  ├─ data/                      导出 JSON / 导出 CSV / 导入校验与合并
 │  ├─ store/                     zustand store · 派生数据（筛选/分组/统计）
 │  ├─ components/                外壳、位置树、物品行、选择器、AI 预览、UI 基础件
 │  ├─ pages/                     10 个页面
 │  └─ styles/                    global / layout / components / pages
-└─ tests/                        127 项测试
+└─ tests/                        134 项测试
 ```
 
 ### 测试
@@ -349,8 +353,9 @@ npm test
 - IndexedDB 存取、快照的分钟级节流与 30 份上限
 - store 端到端：录入 → 落盘 → 导出 → 清空 → 从快照回退
 - **AI 回复解析**：代码围栏、前言后语、中文键名、字符串数量、缺字段 —— 全部要能降级而不是崩掉
-- **AI 名称匹配**：路径精确匹配、单名匹配、危险的同名跨分支必须**不**匹配
+- **AI 名称匹配**：路径精确匹配、后缀唯一匹配、危险的同名跨分支必须**不**匹配
 - **API Key 安全**：确认它不会出现在导出文件、IndexedDB、localStorage 中的任何一处
+- **板块配色**：每条路由都能拿到主色、九个板块不撞色、未知路由回落默认色
 - **每个页面在真实 DOM 里挂载一遍**，覆盖空数据、悬空引用、300 件数据等边界情况
 
 测试不覆盖网络请求本身 —— 那是在测 DeepSeek，不是测这个项目。
