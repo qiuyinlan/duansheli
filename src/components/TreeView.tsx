@@ -1,40 +1,54 @@
 import type { ReactNode } from 'react'
-import type { Location } from '../types'
+import type { TreeItem } from '../types'
 import type { TreeNode } from '../lib/tree'
 import { IconChevronRight, IconFolder } from './ui/icons'
 
-interface LocationTreeProps {
-  nodes: TreeNode<Location>[]
-  selectedId: string | null
+/**
+ * 通用树形视图。
+ *
+ * 位置和分类都是不限层级的树，长得也一样，
+ * 所以渲染逻辑只写这一份 —— 省得两边各写一遍然后样式慢慢跑偏。
+ */
+export interface TreeViewProps<T extends TreeItem> {
+  nodes: TreeNode<T>[]
+  /**
+   * 当前选中项，支持多选（分类选择器里一件物品可以属于多个分类）。
+   * 「未归位」「未分类」这两个虚拟节点用它们的哨兵 id 表示
+   * （UNASSIGNED_ID / UNCATEGORIZED_ID），跟筛选器里的表示保持一致。
+   */
+  selectedIds: readonly string[]
+  /** 点某个节点。虚拟节点（未归位 / 未分类）传 null。 */
   onSelect: (id: string | null) => void
-  /** 含子孙位置的数量，用于行尾徽标 */
+  /** 含子孙的数量，显示在行尾 */
   counts: Map<string, number>
   expanded: Set<string>
   onToggle: (id: string) => void
-  /** 行尾的操作按钮（重命名 / 新建子位置 / 删除） */
-  renderActions?: (node: Location) => ReactNode
-  /** 是否在树顶显示「未归位」这一项 */
-  showUnassigned?: boolean
-  unassignedCount?: number
+  /** 行尾的操作按钮（新建子级 / 移动 / 重命名 / 删除） */
+  renderActions?: (node: T) => ReactNode
+  /** 树顶的虚拟节点，例如「未归位」「未分类」 */
+  virtualRoot?: { id: string; label: string; count: number } | null
+  emptyText?: string
 }
 
-export function LocationTree({
+export function TreeView<T extends TreeItem>({
   nodes,
-  selectedId,
+  selectedIds,
   onSelect,
   counts,
   expanded,
   onToggle,
   renderActions,
-  showUnassigned = false,
-  unassignedCount = 0,
-}: LocationTreeProps) {
-  const renderNodes = (list: TreeNode<Location>[], depth: number): ReactNode =>
+  virtualRoot = null,
+  emptyText = '还没有内容',
+}: TreeViewProps<T>) {
+  const selected = new Set(selectedIds)
+
+  const renderNodes = (list: TreeNode<T>[], depth: number): ReactNode =>
     list.map((node) => {
       const id = node.node.id
       const hasChildren = node.children.length > 0
       const isOpen = expanded.has(id)
-      const isActive = selectedId === id
+      const isActive = selected.has(id)
       const count = counts.get(id) ?? 0
 
       return (
@@ -61,14 +75,16 @@ export function LocationTree({
               type="button"
               className={`tree-node__label${count === 0 ? ' tree-node__label--empty-loc' : ''}`}
               onClick={() => onSelect(id)}
-              title={node.node.note || node.node.name}
+              aria-pressed={isActive}
             >
               <span className="truncate">{node.node.name}</span>
             </button>
 
             <span className="tree-node__count">{count > 0 ? count : ''}</span>
 
-            {renderActions ? <div className="tree-node__actions">{renderActions(node.node)}</div> : null}
+            {renderActions ? (
+              <div className="tree-node__actions">{renderActions(node.node)}</div>
+            ) : null}
           </div>
 
           {hasChildren && isOpen ? renderNodes(node.children, depth + 1) : null}
@@ -78,27 +94,32 @@ export function LocationTree({
 
   return (
     <div className="tree">
-      {showUnassigned ? (
+      {virtualRoot ? (
         <div
-          className={`tree-node__row${selectedId === null ? ' is-active' : ''}`}
+          className={`tree-node__row${selected.has(virtualRoot.id) ? ' is-active' : ''}`}
           style={{ paddingLeft: 'var(--gap-2)' }}
         >
           <span className="tree-node__toggle tree-node__toggle--empty" />
           <button
             type="button"
-            className={`tree-node__label${unassignedCount === 0 ? ' tree-node__label--empty-loc' : ''}`}
+            className={`tree-node__label${
+              virtualRoot.count === 0 ? ' tree-node__label--empty-loc' : ''
+            }`}
             onClick={() => onSelect(null)}
+            aria-pressed={selected.has(virtualRoot.id)}
           >
             <IconFolder size={13} />
-            <span className="truncate">未归位</span>
+            <span className="truncate">{virtualRoot.label}</span>
           </button>
-          <span className="tree-node__count">{unassignedCount > 0 ? unassignedCount : ''}</span>
+          <span className="tree-node__count">
+            {virtualRoot.count > 0 ? virtualRoot.count : ''}
+          </span>
         </div>
       ) : null}
 
-      {nodes.length === 0 && !showUnassigned ? (
+      {nodes.length === 0 ? (
         <div className="dim small" style={{ padding: 'var(--gap-3)' }}>
-          还没有位置
+          {emptyText}
         </div>
       ) : null}
 

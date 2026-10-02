@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AttributeDef } from '../types'
+import { UNASSIGNED_ID } from '../types'
 import type { DerivedContext } from '../store/selectors'
+import { countByCategoryIncludingDescendants, liveItems } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
-import { LocationTree } from './LocationTree'
+import { TreeView } from './TreeView'
 import { IconClose, IconPlus } from './ui/icons'
 import { Button, Modal } from './ui/primitives'
 
@@ -35,12 +37,12 @@ export function LocationPicker({
     for (const node of ctx.tree) set.add(node.node.id)
 
     if (value) {
-      const seenGuard = new Set<string>()
-      let cur = ctx.index.byId.get(value)
-      while (cur?.parentId && !seenGuard.has(cur.id)) {
-        seenGuard.add(cur.id)
-        set.add(cur.parentId)
-        cur = ctx.index.byId.get(cur.parentId)
+      const guard = new Set<string>()
+      let current = ctx.index.byId.get(value)
+      while (current?.parentId && !guard.has(current.id)) {
+        guard.add(current.id)
+        set.add(current.parentId)
+        current = ctx.index.byId.get(current.parentId)
       }
     }
     return set
@@ -51,15 +53,6 @@ export function LocationPicker({
   useEffect(() => {
     if (open) setExpanded(initialExpanded)
   }, [open, initialExpanded])
-
-  const toggle = (id: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
 
   const currentPath = value ? ctx.index.pathString(value, ' / ') : '未归位'
 
@@ -74,31 +67,36 @@ export function LocationPicker({
         当前：{currentPath}
       </div>
 
-      <LocationTree
+      <TreeView
         nodes={ctx.tree}
-        selectedId={value}
+        selectedIds={value ? [value] : [UNASSIGNED_ID]}
         onSelect={(id) => {
           onSelect(id)
           onClose()
         }}
         counts={counts}
         expanded={expanded}
-        onToggle={toggle}
-        showUnassigned={allowUnassigned}
-        unassignedCount={counts.get('__unassigned__') ?? 0}
+        onToggle={(id) =>
+          setExpanded((prev) => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+          })
+        }
+        virtualRoot={
+          allowUnassigned
+            ? { id: UNASSIGNED_ID, label: '未归位', count: counts.get(UNASSIGNED_ID) ?? 0 }
+            : null
+        }
+        emptyText="还没有位置，可以在「位置」页面里创建。"
       />
-
-      {ctx.tree.length === 0 ? (
-        <div className="dim small" style={{ marginTop: 'var(--gap-3)' }}>
-          还没有位置，可以在「位置」页面里创建。
-        </div>
-      ) : null}
     </Modal>
   )
 }
 
 /* ------------------------------------------------------------------ */
-/* 分类选择器（多选）                                                   */
+/* 分类选择器（树形多选）                                              */
 /* ------------------------------------------------------------------ */
 
 interface CategoryPickerProps {
@@ -109,14 +107,23 @@ interface CategoryPickerProps {
 }
 
 export function CategoryPicker({ open, onClose, selectedIds, onChange }: CategoryPickerProps) {
-  const categories = useAppStore((s) => s.data.categories)
+  const data = useAppStore((s) => s.data)
+  const derived = useAppStore((s) => s.derived)
   const addCategory = useAppStore((s) => s.addCategory)
   const notify = useAppStore((s) => s.notify)
+
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [newName, setNewName] = useState('')
 
-  const sorted = useMemo(
-    () => [...categories].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'zh-CN')),
-    [categories],
+  // 分类树一般不大，打开时全展开
+  useEffect(() => {
+    if (!open) return
+    setExpanded(new Set(derived.categoryFlat.map((node) => node.node.id)))
+  }, [open, derived.categoryFlat])
+
+  const counts = useMemo(
+    () => countByCategoryIncludingDescendants(liveItems(data), derived),
+    [data, derived],
   )
 
   const toggle = (id: string) => {
@@ -125,12 +132,12 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
     )
   }
 
-  const createAndSelect = () => {
+  const createTopLevel = () => {
     const name = newName.trim()
     if (name === '') return
-    const created = addCategory(name)
+    const created = addCategory(name, null)
     if (!created) {
-      notify(`已经有一个叫「${name}」的分类了`, 'error')
+      notify(`顶层已经有一个叫「${name}」的分类了`, 'error')
       return
     }
     onChange([...selectedIds, created.id])
@@ -151,48 +158,64 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
         </>
       }
     >
-      <div className="picker-grid" style={{ marginBottom: 'var(--gap-4)' }}>
-        {sorted.map((cat) => {
-          const active = selectedIds.includes(cat.id)
-          return (
-            <button
-              key={cat.id}
-              type="button"
-              className={`chip${active ? ' is-active' : ''}`}
-              onClick={() => toggle(cat.id)}
-              aria-pressed={active}
-            >
-              {cat.name}
-            </button>
-          )
-        })}
-        {sorted.length === 0 ? (
-          <div className="dim small">还没有分类，在下面新建一个。</div>
-        ) : null}
+      <div className="dim small" style={{ marginBottom: 'var(--gap-3)' }}>
+        点分类名切换选中，可以选多个。分类是多级的，物品挂在哪一级都可以。
       </div>
 
-      <div className="field">
+      <div
+        style={{
+          border: '1px solid var(--line)',
+          borderRadius: 'var(--radius)',
+          padding: 'var(--gap-2)',
+          maxHeight: 320,
+          overflowY: 'auto',
+        }}
+      >
+        <TreeView
+          nodes={derived.categoryTree}
+          selectedIds={selectedIds}
+          onSelect={(id) => {
+            if (id) toggle(id)
+          }}
+          counts={counts}
+          expanded={expanded}
+          onToggle={(id) =>
+            setExpanded((prev) => {
+              const next = new Set(prev)
+              if (next.has(id)) next.delete(id)
+              else next.add(id)
+              return next
+            })
+          }
+          emptyText="还没有分类，在下面新建一个。"
+        />
+      </div>
+
+      <div className="field" style={{ marginTop: 'var(--gap-4)' }}>
         <label className="field__label" htmlFor="new-category-name">
-          新建分类
+          新建顶层分类
         </label>
         <div className="row">
           <input
             id="new-category-name"
             className="input grow"
-            placeholder="例如：冬季衣物"
+            placeholder="例如：化妆品"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault()
-                createAndSelect()
+                createTopLevel()
               }
             }}
           />
-          <Button onClick={createAndSelect} disabled={newName.trim() === ''}>
+          <Button onClick={createTopLevel} disabled={newName.trim() === ''}>
             <IconPlus size={13} />
             新建
           </Button>
+        </div>
+        <div className="field__hint">
+          想建子分类（比如「化妆品 › 眼妆」）请到「分类」页面，那里可以建任意层级。
         </div>
       </div>
     </Modal>
@@ -266,12 +289,7 @@ export function TagInput({ value, onChange, suggestions }: TagInputProps) {
       {available.length > 0 ? (
         <div className="chip-list">
           {available.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              className="chip chip--dashed"
-              onClick={() => add(tag)}
-            >
+            <button key={tag} type="button" className="chip chip--dashed" onClick={() => add(tag)}>
               <IconPlus size={11} />
               {tag}
             </button>

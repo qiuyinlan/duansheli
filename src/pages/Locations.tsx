@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ItemRow } from '../components/ItemRow'
-import { LocationTree } from '../components/LocationTree'
+import { TreeView } from '../components/TreeView'
 import { LocationPicker } from '../components/pickers'
 import { IconPencil, IconPlus, IconTrash } from '../components/ui/icons'
 import { Button, ConfirmDialog, EmptyState, Modal, Switch } from '../components/ui/primitives'
@@ -11,6 +11,7 @@ import {
   liveItems,
 } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
+import { UNASSIGNED_ID } from '../types'
 
 interface NameDialogState {
   mode: 'add' | 'rename'
@@ -167,9 +168,9 @@ export function Locations() {
         <div className="split">
           {/* ---------------- 左：位置树 ---------------- */}
           <div className="split__side">
-            <LocationTree
+            <TreeView
               nodes={derived.tree}
-              selectedId={activeId}
+              selectedIds={activeId ? [activeId] : [UNASSIGNED_ID]}
               onSelect={(id) => {
                 setSelected(id)
                 setTouched(true)
@@ -184,8 +185,11 @@ export function Locations() {
                   return next
                 })
               }
-              showUnassigned
-              unassignedCount={live.filter((i) => !i.locationId).length}
+              virtualRoot={{
+                id: UNASSIGNED_ID,
+                label: '未归位',
+                count: counts.get(UNASSIGNED_ID) ?? 0,
+              }}
               renderActions={(node) => (
                 <>
                   <Button

@@ -141,7 +141,19 @@ function normalizeCategory(raw: unknown, now: string, warn: string[]): Category 
     warn.push('发现一条缺少 id 或名称的分类，已跳过')
     return null
   }
-  return { id, name, order: num(raw.order, 0), createdAt: isoDate(raw.createdAt, now) }
+  // parentId 是 v2 新增的。老备份（v1）里没有这个字段，
+  // 读出来是 null，正好就是「顶层分类」—— 不需要额外的迁移逻辑。
+  const parentIdRaw = raw.parentId
+  const parentId =
+    typeof parentIdRaw === 'string' && parentIdRaw.trim() !== '' ? parentIdRaw : null
+
+  return {
+    id,
+    name,
+    parentId,
+    order: num(raw.order, 0),
+    createdAt: isoDate(raw.createdAt, now),
+  }
 }
 
 function normalizeAttributeDef(raw: unknown, now: string, warn: string[]): AttributeDef | null {
@@ -351,6 +363,15 @@ export function parseExportFile(text: string): ParseOutcome {
   for (const loc of parentFixed) {
     loc.parentId = null
     warnings.push(`位置「${loc.name}」的上级位置不存在，已提升为顶层`)
+  }
+
+  // 分类父子引用修复（分类现在也是树，同样要处理）
+  const categoryParentFixed = dedupedCategories.filter(
+    (c) => c.parentId !== null && !catIds.has(c.parentId),
+  )
+  for (const category of categoryParentFixed) {
+    category.parentId = null
+    warnings.push(`分类「${category.name}」的上级分类不存在，已提升为顶层`)
   }
 
   const data: AppData = {

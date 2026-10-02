@@ -4,7 +4,7 @@ import { UNASSIGNED_ID, UNCATEGORIZED_ID, UNTAGGED_ID } from '../types'
 import type { AttrFilter, AttrOp, DerivedContext, ItemFilter } from '../store/selectors'
 import { EMPTY_FILTER, STATUS_LABEL, STATUS_ORDER } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
-import { LocationTree } from './LocationTree'
+import { TreeView } from './TreeView'
 import { Button, Modal, Switch } from './ui/primitives'
 
 const OP_LABELS: Record<AttrOp, string> = {
@@ -190,9 +190,9 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
               overflowY: 'auto',
             }}
           >
-            <LocationTree
+            <TreeView
               nodes={ctx.tree}
-              selectedId={null}
+              selectedIds={draft.locationIds}
               onSelect={(id) => toggleIn('locationIds', id === null ? UNASSIGNED_ID : id)}
               counts={counts}
               expanded={expanded}
@@ -204,8 +204,11 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
                   return next
                 })
               }
-              showUnassigned
-              unassignedCount={counts.get(UNASSIGNED_ID) ?? 0}
+              virtualRoot={{
+                id: UNASSIGNED_ID,
+                label: '未归位',
+                count: counts.get(UNASSIGNED_ID) ?? 0,
+              }}
             />
           </div>
           <div className="row-between wrap" style={{ marginTop: 'var(--gap-2)' }}>

@@ -147,7 +147,9 @@ export function Overview() {
       <section className="section">
         <div className="section__head">
           <div className="section__title">按分类</div>
-          <div className="section__note">一件物品可属多个分类，合计可能大于总数</div>
+          <div className="section__note">
+            只统计顶层分类；一件物品在同一顶层下只算一次
+          </div>
         </div>
         <BarChart
           data={byCategory}

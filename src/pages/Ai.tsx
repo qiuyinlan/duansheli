@@ -254,9 +254,9 @@ export function Ai() {
           id: item.id,
           name: item.name,
           quantity: item.quantity,
-          categoryNames: item.categoryIds
-            .map((id) => derived.categoryById.get(id)?.name)
-            .filter((name): name is string => Boolean(name)),
+          categoryPaths: item.categoryIds
+            .map((id) => derived.categoryIndex.pathNames(id))
+            .filter((path) => path.length > 0),
           locationPath: item.locationId ? derived.index.pathString(item.locationId, ' / ') : null,
           tags: item.tags,
         }))

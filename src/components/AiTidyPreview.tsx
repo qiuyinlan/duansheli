@@ -15,7 +15,7 @@ interface Props {
  */
 export function AiTidyPreview({ drafts, onChange }: Props) {
   const derived = useAppStore((s) => s.derived)
-  const hasNewCategories = drafts.some((d) => d.newCategoryNames.length > 0)
+  const hasNewCategories = drafts.some((d) => d.newCategoryPaths.length > 0)
   const hasNewLocations = drafts.some((d) => d.newLocationPath !== null)
 
   const update = (key: string, patch: Partial<TidyDraft>) => {
@@ -44,7 +44,7 @@ export function AiTidyPreview({ drafts, onChange }: Props) {
             <Button
               size="sm"
               onClick={() =>
-                mapAll((d) => (d.newCategoryNames.length > 0 ? { adoptNewCategories: true } : {}))
+                mapAll((d) => (d.newCategoryPaths.length > 0 ? { adoptNewCategories: true } : {}))
               }
             >
               采纳全部新分类
@@ -80,24 +80,24 @@ export function AiTidyPreview({ drafts, onChange }: Props) {
                 <span className="ai-row__label">分类</span>
                 <span className="row wrap" style={{ gap: 'var(--gap-2)' }}>
                   <span className="dim">
-                    {draft.currentCategoryNames.length > 0
-                      ? draft.currentCategoryNames.join('、')
+                    {draft.currentCategoryPaths.length > 0
+                      ? draft.currentCategoryPaths.map((path) => path.join(' / ')).join('、')
                       : '未分类'}
                   </span>
                   <span className="dim">→</span>
                   {draft.matchedCategoryIds.length === 0 &&
-                  draft.newCategoryNames.length === 0 ? (
+                  draft.newCategoryPaths.length === 0 ? (
                     <span className="dim small">不变</span>
                   ) : (
                     <span className="chip-list">
                       {draft.matchedCategoryIds.map((id) => (
                         <span key={id} className="chip is-active">
-                          {derived.categoryById.get(id)?.name ?? '（已删除）'}
+                          {derived.categoryIndex.pathString(id, ' / ')}
                         </span>
                       ))}
-                      {draft.newCategoryNames.map((name) => (
+                      {draft.newCategoryPaths.map((path) => (
                         <button
-                          key={name}
+                          key={path.join('/')}
                           type="button"
                           className={`chip${draft.adoptNewCategories ? ' is-active' : ' chip--dashed'}`}
                           onClick={() =>
@@ -106,7 +106,7 @@ export function AiTidyPreview({ drafts, onChange }: Props) {
                           title="AI 建议的新分类。点击切换：是否创建"
                         >
                           {draft.adoptNewCategories ? '' : '+ '}
-                          {name}
+                          {path.join(' / ')}
                         </button>
                       ))}
                     </span>

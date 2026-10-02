@@ -16,7 +16,7 @@ import { buildCsv } from '../src/data/exportCsv'
 import { buildExportFile } from '../src/data/exportJson'
 import { mergeAppData } from '../src/data/importData'
 import { parseExportFile } from '../src/data/validate'
-import { buildLocationTree, canReparent, createLocationIndex, flattenTree } from '../src/lib/tree'
+import { buildTree, canReparent, createTreeIndex, flattenTree } from '../src/lib/tree'
 import { SECTION_THEMES, themeForPath } from '../src/lib/sections'
 import { LocalRepository } from '../src/storage/localRepository'
 import { getRepository } from '../src/storage/repository'
@@ -50,13 +50,13 @@ suite('位置树')
 
 await test('所有位置都能从顶层到达（无孤儿、无环）', () => {
   const seed = createSeedData()
-  const flat = flattenTree(buildLocationTree(seed.locations))
+  const flat = flattenTree(buildTree(seed.locations))
   eq(flat.length, seed.locations.length, '每个位置都应该出现在树里')
 })
 
 await test('路径按层级正确拼接', () => {
   const seed = createSeedData()
-  const index = createLocationIndex(seed.locations)
+  const index = createTreeIndex(seed.locations)
   const wardrobe = must(seed.locations.find((l) => l.name === '衣柜'), '找不到衣柜')
   eq(index.pathString(wardrobe.id, ' / '), '家 / 卧室 / 衣柜')
   eq(index.depthOf(wardrobe.id), 2)
@@ -68,13 +68,13 @@ await test('数据里即使有环，也不会死循环或让节点消失', () =>
   const child = must(seed.locations.find((l) => l.parentId === root.id), '找不到顶层位置的子节点')
   const broken = seed.locations.map((l) => (l.id === root.id ? { ...l, parentId: child.id } : l))
 
-  const flat = flattenTree(buildLocationTree(broken))
+  const flat = flattenTree(buildTree(broken))
   eq(flat.length, broken.length, '环被拆掉之后节点数应保持不变')
 })
 
 await test('禁止把位置移动到它自己的子孙下', () => {
   const seed = createSeedData()
-  const index = createLocationIndex(seed.locations)
+  const index = createTreeIndex(seed.locations)
   const home = must(seed.locations.find((l) => l.name === '家'), '找不到家')
   const wardrobe = must(seed.locations.find((l) => l.name === '衣柜'), '找不到衣柜')
 

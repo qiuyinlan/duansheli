@@ -11,7 +11,7 @@
 import { buildExportFile } from '../src/data/exportJson'
 import { parseExportFile } from '../src/data/validate'
 import { createSeedData } from '../src/storage/seed'
-import type { AppData, AttrValue, Item, ItemStatus } from '../src/types'
+import type { AppData, AttrValue, Category, Item, ItemStatus } from '../src/types'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -19,9 +19,25 @@ function daysAgo(days: number): string {
   return new Date(Date.now() - days * DAY).toISOString()
 }
 
+/**
+ * 种子里只有 10 个扁平分类。这里再补一棵小的分类树，
+ * 好让示例数据能演示「分类也支持不限层级」这件事。
+ * parent 为 null 表示顶层。
+ */
+const EXTRA_CATEGORIES: Array<{ name: string; parent: string | null }> = [
+  { name: '化妆品', parent: null },
+  { name: '眼妆', parent: '化妆品' },
+  { name: '唇妆', parent: '化妆品' },
+  { name: '护肤', parent: '化妆品' },
+  { name: '底妆', parent: '化妆品' },
+  { name: '数码配件', parent: null },
+  { name: '数据线', parent: '数码配件' },
+]
+
 interface Spec {
   name: string
   quantity?: number
+  /** 分类**名称路径**，例如 '化妆品/眼妆' 或 '衣物' */
   categories?: string[]
   location?: string
   status?: ItemStatus
@@ -103,6 +119,19 @@ const ITEMS: Spec[] = [
   { name: '户外帐篷', categories: ['工具', '纪念品'], location: '储物间/货架', attrs: { 价格: 680 } }, // 多分类
   { name: '旧拖鞋', categories: ['日用品'], status: 'discarded', note: '已经扔了，留个记录' }, // 进回收站
   { name: '只剩一只的手套', categories: ['衣物'], status: 'idle', idleDays: 620, tags: ['想送人'] },
+
+  // ---- 多级分类：化妆品 › 眼妆 / 唇妆 / 护肤 / 底妆 ----
+  { name: '大地色眼影盘', categories: ['化妆品/眼妆'], attrs: { 品牌: '某品牌', 价格: 268 }, note: '用了两年，还剩一半' },
+  { name: '睫毛膏', categories: ['化妆品/眼妆'], attrs: { 价格: 89 } },
+  { name: '正红色口红', categories: ['化妆品/唇妆'], attrs: { 品牌: 'MAC', 价格: 190 } },
+  { name: '润唇膏', categories: ['化妆品/唇妆'], attrs: { 价格: 39 } },
+  { name: '保湿面霜', categories: ['化妆品/护肤'], status: 'idle', idleDays: 150, attrs: { 价格: 320 }, note: '开了没用完' },
+  { name: '粉底液', categories: ['化妆品/底妆'], attrs: { 价格: 450 } },
+  { name: '化妆包', categories: ['化妆品'], note: '挂在中间层 —— 它算不上眼妆也算不上唇妆' },
+
+  // ---- 多级分类：数码配件 › 数据线 ----
+  { name: 'USB-C 数据线', quantity: 3, categories: ['数码配件/数据线'], location: '书房/书桌', attrs: { 价格: 29 } },
+  { name: 'Lightning 数据线', categories: ['数码配件/数据线'], location: '书房/书桌', status: 'idle', idleDays: 260 },
 ]
 
 export interface SampleBackupResult {
@@ -114,14 +143,68 @@ export interface SampleBackupResult {
 export function buildSampleBackup(): SampleBackupResult {
   const seed = createSeedData()
   const warnings: string[] = []
+  const now = new Date().toISOString()
 
-  const categoryId = (name: string): string | null => {
-    const found = seed.categories.find((c) => c.name === name)
+  /* ---------------- 先补出多级分类 ---------------- */
+
+  const categories: Category[] = seed.categories.map((c) => ({ ...c }))
+  const idByPath = new Map<string, string>()
+
+  /** 算出某个分类的完整名称路径 */
+  const pathOf = (id: string): string[] => {
+    const names: string[] = []
+    const seen = new Set<string>()
+    let current = categories.find((c) => c.id === id)
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id)
+      names.unshift(current.name)
+      const parentId: string | null = current.parentId
+      current = parentId ? categories.find((c) => c.id === parentId) : undefined
+    }
+    return names
+  }
+
+  const rebuildIndex = () => {
+    idByPath.clear()
+    for (const category of categories) idByPath.set(pathOf(category.id).join('/'), category.id)
+  }
+  rebuildIndex()
+
+  for (const spec of EXTRA_CATEGORIES) {
+    const parentId = spec.parent ? idByPath.get(spec.parent) : null
+    if (spec.parent && !parentId) {
+      warnings.push(`分类「${spec.parent}」不存在，已跳过子分类「${spec.name}」`)
+      continue
+    }
+
+    const path = spec.parent ? `${spec.parent}/${spec.name}` : spec.name
+    if (idByPath.has(path)) continue
+
+    categories.push({
+      id: `sample-cat-${path.replace(/\//g, '-')}`,
+      name: spec.name,
+      parentId: parentId ?? null,
+      order: categories.filter((c) => (c.parentId ?? null) === (parentId ?? null)).length,
+      createdAt: now,
+    })
+    rebuildIndex()
+  }
+
+  /* ---------------- 再解析物品里的引用 ---------------- */
+
+  /** 按名称路径找分类，例如 '化妆品/眼妆' */
+  const categoryId = (path: string): string | null => {
+    const key = path
+      .split('/')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join('/')
+    const found = idByPath.get(key)
     if (!found) {
-      warnings.push(`分类「${name}」在种子里不存在，已忽略`)
+      warnings.push(`分类「${path}」找不到，该物品会变成未分类`)
       return null
     }
-    return found.id
+    return found
   }
 
   /** 算出一个位置的完整名称路径，例如 ['家','卧室','衣柜'] */
@@ -205,7 +288,7 @@ export function buildSampleBackup(): SampleBackupResult {
     }
   })
 
-  const data: AppData = { ...seed, items }
+  const data: AppData = { ...seed, categories, items }
 
   // 生成之后立刻用真实的导入校验读回来对比 —— 不通过就说明这份示例数据是坏的，
   // 宁可当场炸掉，也不要把一个导不进去的文件交给用户。

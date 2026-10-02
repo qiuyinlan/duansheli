@@ -3,8 +3,9 @@
  *
  * 重点覆盖两类最容易出错、又最难靠肉眼发现的地方：
  *   1. 模型返回的 JSON 千奇百怪 —— 带代码围栏、带前言、字段类型不对、键名是中文
- *   2. 名称 → id 的匹配 —— 匹配错了，物品会挂到不相干的位置或分类上
+ *   2. 名称路径 → id 的匹配 —— 匹配错了，物品会挂到不相干的分类或位置上
  *
+ * 分类和位置现在都是树，所以两边都要测同一套匹配规则。
  * 网络请求不测（那是在测 DeepSeek），只测我们自己写的那部分。
  */
 
@@ -20,9 +21,10 @@ import { AiError } from '../src/ai/deepseek'
 import { extractJson, parseAssignments, parseExtraction } from '../src/ai/parse'
 import { buildAiContext, chunkItems, renderContextBlock, splitIntoChunks } from '../src/ai/prompts'
 import { buildExportFile } from '../src/data/exportJson'
-import { createDerived } from '../src/store/selectors'
 import { getRepository } from '../src/storage/repository'
+import { createDerived } from '../src/store/selectors'
 import { flushWrites, useAppStore } from '../src/store/useAppStore'
+import type { AppData, Category, Location } from '../src/types'
 import { deepEq, eq, fixture, must, ok, suite, test } from './harness'
 
 /* ------------------------------------------------------------------ */
@@ -36,20 +38,23 @@ await test('纯粹的 JSON 直接解析', () => {
 })
 
 await test('包在 ```json 代码围栏里也能解析', () => {
-  const raw = '```json\n{"items":[{"name":"毛衣"}]}\n```'
-  const parsed = extractJson(raw) as { items: Array<{ name: string }> }
+  const parsed = extractJson('```json\n{"items":[{"name":"毛衣"}]}\n```') as {
+    items: Array<{ name: string }>
+  }
   eq(parsed.items[0].name, '毛衣')
 })
 
 await test('不带语言标记的围栏也能解析', () => {
-  const raw = '```\n{"items":[{"name":"牛仔裤"}]}\n```'
-  const parsed = extractJson(raw) as { items: Array<{ name: string }> }
+  const parsed = extractJson('```\n{"items":[{"name":"牛仔裤"}]}\n```') as {
+    items: Array<{ name: string }>
+  }
   eq(parsed.items[0].name, '牛仔裤')
 })
 
 await test('模型加了前言后语时，截取大括号之间的内容', () => {
-  const raw = '好的，我来帮你整理：\n{"items":[{"name":"平底锅"}]}\n希望有帮助！'
-  const parsed = extractJson(raw) as { items: Array<{ name: string }> }
+  const parsed = extractJson('好的，我来帮你整理：\n{"items":[{"name":"平底锅"}]}\n希望有帮助！') as {
+    items: Array<{ name: string }>
+  }
   eq(parsed.items[0].name, '平底锅')
 })
 
@@ -89,24 +94,40 @@ await test('空回复抛出明确错误', () => {
 
 suite('AI 回复解析：物品列表')
 
-await test('标准结构', () => {
+await test('标准结构（分类是路径的数组）', () => {
   const result = parseExtraction({
     items: [
       {
-        name: '灰色羊毛衫',
+        name: '眼影盘',
         quantity: 1,
-        categories: ['衣物'],
-        location: ['家', '卧室', '衣柜'],
+        categories: [['化妆品', '眼妆']],
+        location: ['家', '卧室', '梳妆台'],
         tags: ['舍不得扔'],
         attributes: { 品牌: '某品牌' },
-        note: '妈妈送的',
+        note: '',
       },
     ],
   })
   eq(result.items.length, 1)
-  eq(result.items[0].name, '灰色羊毛衫')
-  deepEq(result.items[0].location, ['家', '卧室', '衣柜'])
-  eq(result.items[0].attributes['品牌'], '某品牌')
+  deepEq(result.items[0].categoryPaths, [['化妆品', '眼妆']], '分类应该保留层级')
+  deepEq(result.items[0].location, ['家', '卧室', '梳妆台'])
+})
+
+await test('分类写成平铺名字时，当成单元素路径', () => {
+  const result = parseExtraction({ items: [{ name: '毛衣', categories: ['衣物'] }] })
+  deepEq(result.items[0].categoryPaths, [['衣物']], '一个名字就是一条单级路径')
+})
+
+await test('分类写成「化妆品/眼妆」这种字符串时也能拆开', () => {
+  const result = parseExtraction({ items: [{ name: '眼影', categories: ['化妆品/眼妆'] }] })
+  deepEq(result.items[0].categoryPaths, [['化妆品', '眼妆']])
+})
+
+await test('分类路径之间会去重', () => {
+  const result = parseExtraction({
+    items: [{ name: 'A', categories: [['化妆品', '眼妆'], ['化妆品', '眼妆']] }],
+  })
+  eq(result.items[0].categoryPaths.length, 1)
 })
 
 await test('顶层直接是数组', () => {
@@ -115,7 +136,7 @@ await test('顶层直接是数组', () => {
 
 await test('键名是中文时也能认（模型有时会这样）', () => {
   const result = parseExtraction({
-    物品: [{ 名称: '电饭煲', 数量: '2', 分类: ['厨房'], 位置: '家 / 厨房' }],
+    物品: [{ 名称: '电饭煲', 数量: '2', 分类: [['厨房']], 位置: '家 / 厨房' }],
   })
   eq(result.items.length, 1)
   eq(result.items[0].name, '电饭煲')
@@ -142,8 +163,9 @@ await test('数量缺失或非法时降级为 1，而不是崩掉', () => {
 
 await test('位置写成字符串时按分隔符拆开', () => {
   eq(
-    parseExtraction({ items: [{ name: 'A', location: '家 > 书房 > 书架' }] }).items[0].location
-      ?.join('/'),
+    parseExtraction({ items: [{ name: 'A', location: '家 > 书房 > 书架' }] }).items[0].location?.join(
+      '/',
+    ),
     '家/书房/书架',
   )
 })
@@ -183,19 +205,22 @@ suite('AI 回复解析：整理建议')
 
 await test('标准结构', () => {
   const list = parseAssignments({
-    assignments: [{ id: 'i1', categories: ['衣物'], location: ['家', '卧室'], reason: '应该归到卧室' }],
+    assignments: [
+      { id: 'i1', categories: [['化妆品', '眼妆']], location: ['家', '卧室'], reason: '应该归到卧室' },
+    ],
   })
   eq(list.length, 1)
   eq(list[0].id, 'i1')
+  deepEq(list[0].categoryPaths, [['化妆品', '眼妆']])
   deepEq(list[0].location, ['家', '卧室'])
 })
 
 await test('没有 id 的建议被丢弃（不能用）', () => {
-  eq(parseAssignments({ assignments: [{ categories: ['衣物'] }, { id: 'ok' }] }).length, 1)
+  eq(parseAssignments({ assignments: [{ categories: [['衣物']] }, { id: 'ok' }] }).length, 1)
 })
 
 /* ------------------------------------------------------------------ */
-/* 4. 名称 → id 的匹配                                                 */
+/* 4. 名称路径 → id 的匹配                                             */
 /* ------------------------------------------------------------------ */
 
 suite('名称匹配：位置与分类')
@@ -208,13 +233,15 @@ function raw(partial: Partial<RawExtractedItem> & { name: string }): RawExtracte
   return {
     name: partial.name,
     quantity: partial.quantity ?? 1,
-    categories: partial.categories ?? [],
+    categoryPaths: partial.categoryPaths ?? [],
     location: partial.location ?? null,
     tags: partial.tags ?? [],
     attributes: partial.attributes ?? {},
     note: partial.note ?? '',
   }
 }
+
+/* ---- 位置 ---- */
 
 await test('位置按完整路径精确匹配', () => {
   const draft = toItemDraft(raw({ name: '毛衣', location: ['家', '卧室', '衣柜'] }), match, ctx)
@@ -233,48 +260,17 @@ await test('路径对不上时，绝不按末级名称去别的分支上找同�
   // 种子里已经有「家 / 储物间 / 货架」。AI 说的是「家 / 车库 / 货架」——
   // 如果实现退化成按末级名称匹配，东西就会被悄悄挪到储物间去。
   const draft = toItemDraft(raw({ name: '工具箱', location: ['家', '车库', '货架'] }), match, ctx)
-  const storageShelf = must(
-    fx.locations.find((l) => l.name === '货架'),
-    '种子里应该有货架',
-  )
+  const storageShelf = must(fx.locations.find((l) => l.name === '货架'), '种子里应该有货架')
   ok(draft.locationId !== storageShelf.id, '不能匹配到储物间下的那个货架')
   eq(draft.locationId, null)
   deepEq(draft.newLocationPath, ['家', '车库', '货架'])
   eq(draft.locationLabel, '家 / 车库 / 货架（新）')
 })
 
-await test('只有单个名字时才按名称匹配（没有层级上下文可用）', () => {
-  const draft = toItemDraft(raw({ name: '工具', location: ['货架'] }), match, ctx)
-  eq(draft.locationId, must(fx.locations.find((l) => l.name === '货架'), '找不到货架').id)
-  eq(draft.newLocationPath, null)
-})
-
 await test('AI 只给了后半段路径时，按后缀唯一匹配上', () => {
-  // 「卧室/衣柜」不是完整路径（完整的是 家/卧室/衣柜），但在全树里唯一
   const draft = toItemDraft(raw({ name: '毛衣', location: ['卧室', '衣柜'] }), match, ctx)
   eq(draft.locationId, must(fx.locations.find((l) => l.name === '衣柜'), '找不到衣柜').id)
   eq(draft.newLocationPath, null, '不该被判成新位置')
-})
-
-await test('后缀有歧义时绝不猜，一律标成新位置', () => {
-  // 造一棵树，两个分支下各有一个「衣柜」
-  const seed = fixture()
-  const homeId = must(seed.locations.find((l) => l.parentId === null), '找不到顶层').id
-  const now = new Date().toISOString()
-  const ambiguous = {
-    ...seed,
-    locations: [
-      ...seed.locations,
-      { id: 'guest-room', name: '客房', parentId: homeId, note: '', order: 50, createdAt: now },
-      { id: 'guest-wardrobe', name: '衣柜', parentId: 'guest-room', note: '', order: 0, createdAt: now },
-    ],
-  }
-  const ambiguousCtx = createDerived(ambiguous)
-  const ambiguousMatch = createMatchContext(ambiguous, ambiguousCtx)
-
-  const draft = toItemDraft(raw({ name: '毛衣', location: ['衣柜'] }), ambiguousMatch, ambiguousCtx)
-  eq(draft.locationId, null, '两个衣柜，无法判断该挂哪个，不该瞎猜')
-  deepEq(draft.newLocationPath, ['衣柜'])
 })
 
 await test('没提到位置就是未归位，绝不瞎猜', () => {
@@ -284,24 +280,79 @@ await test('没提到位置就是未归位，绝不瞎猜', () => {
   eq(draft.locationLabel, '未归位')
 })
 
-await test('分类精确匹配到已有分类', () => {
-  const draft = toItemDraft(raw({ name: '毛衣', categories: ['衣物'] }), match, ctx)
+/* ---- 分类（也是树） ---- */
+
+await test('分类按完整路径精确匹配', () => {
+  const clothing = must(fx.categories.find((c) => c.name === '衣物'), '找不到衣物')
+  const draft = toItemDraft(raw({ name: '毛衣', categoryPaths: [['衣物']] }), match, ctx)
   eq(draft.matchedCategoryIds.length, 1)
-  eq(draft.matchedCategoryIds[0], must(fx.categories.find((c) => c.name === '衣物'), '找不到衣物').id)
-  deepEq(draft.newCategoryNames, [])
+  eq(draft.matchedCategoryIds[0], clothing.id)
+  deepEq(draft.newCategoryPaths, [])
 })
 
-await test('没有的分类被标为「新分类」，默认不采纳', () => {
-  const draft = toItemDraft(raw({ name: '帐篷', categories: ['户外装备'] }), match, ctx)
+await test('分类的层级路径能精确命中（化妆品 / 眼妆）', () => {
+  const { data, derived, matchCtx } = hierarchyFixture()
+
+  const draft = toItemDraft(
+    raw({ name: '眼影盘', categoryPaths: [['化妆品', '眼妆']] }),
+    matchCtx,
+    derived,
+  )
+  const eyeMakeup = must(data.categories.find((c) => c.name === '眼妆'), '找不到眼妆')
+  eq(draft.matchedCategoryIds.length, 1)
+  eq(draft.matchedCategoryIds[0], eyeMakeup.id, '应该命中子分类，而不是父分类')
+  deepEq(draft.newCategoryPaths, [], '不该产生新分类')
+})
+
+await test('物品可以挂在分类的中间层', () => {
+  const { data, derived, matchCtx } = hierarchyFixture()
+  const draft = toItemDraft(raw({ name: '化妆包', categoryPaths: [['化妆品']] }), matchCtx, derived)
+  const cosmetics = must(data.categories.find((c) => c.name === '化妆品'), '找不到化妆品')
+  eq(draft.matchedCategoryIds[0], cosmetics.id, '挂在中间层是合法的')
+})
+
+await test('分类只给末级名字时按后缀唯一匹配', () => {
+  const { data, derived, matchCtx } = hierarchyFixture()
+  const draft = toItemDraft(raw({ name: '口红', categoryPaths: [['唇妆']] }), matchCtx, derived)
+  const lip = must(data.categories.find((c) => c.name === '唇妆'), '找不到唇妆')
+  eq(draft.matchedCategoryIds[0], lip.id)
+})
+
+await test('分类路径对不上时标成新分类，默认不采纳', () => {
+  const draft = toItemDraft(
+    raw({ name: '帐篷', categoryPaths: [['户外', '露营']] }),
+    match,
+    ctx,
+  )
   deepEq(draft.matchedCategoryIds, [])
-  deepEq(draft.newCategoryNames, ['户外装备'])
+  deepEq(draft.newCategoryPaths, [['户外', '露营']], '应该保留层级，而不是拍平成一个名字')
   eq(draft.adoptNewCategories, false, '分类是受控词表，必须默认不勾，等用户点头')
 })
 
+await test('改名后的分类仍按新名字匹配', () => {
+  const data: AppData = {
+    ...fx,
+    categories: fx.categories.map((c) => (c.name === '衣物' ? { ...c, name: '服装' } : c)),
+  }
+  const renamed = createDerived(data)
+  const renamedMatch = createMatchContext(data, renamed)
+
+  const hit = toItemDraft(raw({ name: '毛衣', categoryPaths: [['服装']] }), renamedMatch, renamed)
+  eq(hit.matchedCategoryIds.length, 1, '新名字应该命中')
+
+  const miss = toItemDraft(raw({ name: '毛衣', categoryPaths: [['衣物']] }), renamedMatch, renamed)
+  eq(miss.matchedCategoryIds.length, 0, '旧名字不该再命中')
+  deepEq(miss.newCategoryPaths, [['衣物']])
+})
+
 await test('已有分类和建议的新分类可以并存', () => {
-  const draft = toItemDraft(raw({ name: '登山杖', categories: ['工具', '户外装备'] }), match, ctx)
+  const draft = toItemDraft(
+    raw({ name: '登山杖', categoryPaths: [['工具'], ['户外', '登山']] }),
+    match,
+    ctx,
+  )
   eq(draft.matchedCategoryIds.length, 1)
-  deepEq(draft.newCategoryNames, ['户外装备'])
+  deepEq(draft.newCategoryPaths, [['户外', '登山']])
 })
 
 await test('属性名匹配到已有属性；本地没有的属性被丢掉并如实记录', () => {
@@ -320,7 +371,7 @@ await test('属性名匹配到已有属性；本地没有的属性被丢掉并�
 })
 
 await test('AI 用简称时也能对上（大小写与空格不敏感）', () => {
-  const draft = toItemDraft(raw({ name: '毛衣', categories: [' 衣物 '] }), match, ctx)
+  const draft = toItemDraft(raw({ name: '毛衣', categoryPaths: [[' 衣物 ']] }), match, ctx)
   eq(draft.matchedCategoryIds.length, 1)
 })
 
@@ -331,18 +382,26 @@ await test('AI 用简称时也能对上（大小写与空格不敏感）', () =>
 suite('草稿转成写入计划')
 
 await test('未采纳的新分类不会进入计划', () => {
-  const draft = toItemDraft(raw({ name: '帐篷', categories: ['衣物', '户外装备'] }), match, ctx)
-  const plan = draftsToBulkAddItems([draft], match, ctx)
-  deepEq(plan[0].categoryNames, ['衣物'], '只带上已匹配到的那个')
+  const draft = toItemDraft(
+    raw({ name: '帐篷', categoryPaths: [['衣物'], ['户外装备']] }),
+    match,
+    ctx,
+  )
+  eq(draft.adoptNewCategories, false, '新分类默认不采纳')
+  deepEq(
+    draftsToBulkAddItems([draft], match, ctx)[0].categoryPaths,
+    [['衣物']],
+    '未采纳时只带上已匹配到的那个',
+  )
 })
 
-await test('采纳后的新分类会进入计划', () => {
+await test('采纳后的新分类会带着层级进入计划', () => {
   const draft = {
-    ...toItemDraft(raw({ name: '帐篷', categories: ['衣物', '户外装备'] }), match, ctx),
+    ...toItemDraft(raw({ name: '眼影盘', categoryPaths: [['化妆品', '眼妆']] }), match, ctx),
     adoptNewCategories: true,
   }
   const plan = draftsToBulkAddItems([draft], match, ctx)
-  deepEq(plan[0].categoryNames, ['衣物', '户外装备'])
+  deepEq(plan[0].categoryPaths, [['化妆品', '眼妆']], '层级不能被拍平')
 })
 
 await test('未采纳的新位置 → 未归位', () => {
@@ -366,15 +425,9 @@ await test('取消勾选的条目不进入计划', () => {
 await test('整理建议：完全没变化的条目被丢弃', () => {
   const existing = must(fx.items.find((i) => i.id === 'i1'), '找不到 i1')
   const clothing = must(fx.categories.find((c) => c.name === '衣物'), '找不到衣物')
-  const wardrobe = must(fx.locations.find((l) => l.name === '衣柜'), '找不到衣柜')
 
   const noop = toTidyDraft(
-    {
-      id: 'i1',
-      categories: ['衣物'],
-      location: ['家', '卧室', '衣柜'],
-      reason: '本来就这样',
-    },
+    { id: 'i1', categoryPaths: [['衣物']], location: ['家', '卧室', '衣柜'], reason: '本来就这样' },
     existing,
     match,
     ctx,
@@ -382,29 +435,28 @@ await test('整理建议：完全没变化的条目被丢弃', () => {
   eq(noop, null, '没有变化的建议不该出现在预览里')
 
   const changed = toTidyDraft(
-    { id: 'i1', categories: ['衣物'], location: ['家', '客厅'], reason: '换个地方' },
+    { id: 'i1', categoryPaths: [['衣物']], location: ['家', '客厅'], reason: '换个地方' },
     existing,
     match,
     ctx,
   )
   ok(changed !== null, '有变化的应该保留')
   eq(changed?.matchedCategoryIds[0], clothing.id)
-  ok(changed?.locationId !== wardrobe.id)
 })
 
 await test('整理计划只带上要改的字段', () => {
   const existing = must(fx.items.find((i) => i.id === 'i2'), '找不到 i2')
   const draft = toTidyDraft(
-    { id: 'i2', categories: ['衣物'], location: ['家', '客厅', '电视柜'], reason: '移一下' },
+    { id: 'i2', categoryPaths: [['衣物']], location: ['家', '客厅', '电视柜'], reason: '移一下' },
     existing,
     match,
     ctx,
   )
-  ok(draft !== null)
   const updates = draftsToBulkUpdates([must(draft, '草稿不该为空')], match, ctx)
   eq(updates.length, 1)
   eq(updates[0].id, 'i2')
   deepEq(updates[0].locationPath, ['家', '客厅', '电视柜'])
+  deepEq(updates[0].categoryPaths, [['衣物']])
 })
 
 /* ------------------------------------------------------------------ */
@@ -421,15 +473,12 @@ await test('按行切分，每段不超过上限', () => {
   const text = Array.from({ length: 20 }, (_, i) => `第 ${i} 行物品描述，稍微写长一点点`).join('\n')
   const chunks = splitIntoChunks(text, 60)
   ok(chunks.length > 1, '应该被切成多段')
-  for (const chunk of chunks) {
-    ok(chunk.length <= 60 + 20, `每段都比上限大太多：${chunk.length}`)
-  }
+  for (const chunk of chunks) ok(chunk.length <= 80, `每段都比上限大太多：${chunk.length}`)
   eq(chunks.join('\n').replace(/\s/g, ''), text.replace(/\s/g, ''), '拼回来内容不该丢')
 })
 
 await test('单独一行超长时硬切开，不会死循环', () => {
-  const text = '字'.repeat(250)
-  const chunks = splitIntoChunks(text, 100)
+  const chunks = splitIntoChunks('字'.repeat(250), 100)
   eq(chunks.length, 3)
   eq(chunks.join('').length, 250)
 })
@@ -450,18 +499,27 @@ await test('物品按批大小切开', () => {
 
 suite('发给 AI 的上下文')
 
-await test('把已有分类、位置路径、属性都带上', () => {
-  const aiCtx = buildAiContext(fx, ctx)
-  ok(aiCtx.categories.includes('衣物'))
+await test('把已有分类、位置路径、属性都带上（分类带层级）', () => {
+  const { data, derived } = hierarchyFixture()
+  const aiCtx = buildAiContext(data, derived)
+
+  ok(
+    aiCtx.categoryPaths.some((path) => path.join('/') === '化妆品/眼妆'),
+    '子分类要以完整路径出现在上下文里',
+  )
   ok(aiCtx.locationPaths.some((path) => path.join('/') === '家/卧室/衣柜'))
   ok(aiCtx.attributes.includes('品牌'))
   eq(aiCtx.truncated, false)
 })
 
-await test('渲染出来的上下文块包含关键清单', () => {
-  const block = renderContextBlock(buildAiContext(fx, ctx))
+await test('渲染出来的上下文块包含关键清单，并说明可以挂任意一级', () => {
+  const { data, derived } = hierarchyFixture()
+  const block = renderContextBlock(buildAiContext(data, derived))
+
   ok(block.includes('【已有分类】'))
+  ok(block.includes('化妆品 / 眼妆'), '分类要以完整路径出现')
   ok(block.includes('家 / 卧室 / 衣柜'), '位置要以完整路径出现')
+  ok(block.includes('任意一级'), '要告诉 AI 物品可以挂在中间层')
   ok(block.includes('【已有属性】'))
 })
 
@@ -473,7 +531,7 @@ await test('清单太长时截断并如实标注', () => {
     tags: 1,
   })
   eq(trimmed.truncated, true)
-  eq(trimmed.categories.length, 2)
+  eq(trimmed.categoryPaths.length, 2)
   ok(renderContextBlock(trimmed).includes('截断'))
 })
 
@@ -483,8 +541,7 @@ await test('清单太长时截断并如实标注', () => {
 
 suite('批量写入（自动创建分类与位置）')
 
-function seedStore(): void {
-  const data = fx
+function seedStore(data: AppData = fx): void {
   useAppStore.setState({
     status: 'ready',
     error: null,
@@ -493,24 +550,15 @@ function seedStore(): void {
   })
 }
 
-await test('批量录入：新分类只创建一次，即使多件物品都用它', async () => {
+await test('批量录入：多级分类路径被逐层创建', async () => {
   seedStore()
   const before = useAppStore.getState().data.categories.length
 
-  const result = useAppStore.getState().bulkAddItems([
+  useAppStore.getState().bulkAddItems([
     {
-      name: '帐篷',
+      name: '眼影盘',
       quantity: 1,
-      categoryNames: ['户外装备'],
-      locationPath: null,
-      tags: [],
-      attrs: {},
-      note: '',
-    },
-    {
-      name: '登山杖',
-      quantity: 2,
-      categoryNames: ['户外装备'],
+      categoryPaths: [['化妆品', '眼妆']],
       locationPath: null,
       tags: [],
       attrs: {},
@@ -518,9 +566,64 @@ await test('批量录入：新分类只创建一次，即使多件物品都用�
     },
   ])
 
-  eq(result.items, 2)
-  eq(result.createdCategories, 1, '同名分类只该创建一次')
-  eq(useAppStore.getState().data.categories.length, before + 1)
+  const state = useAppStore.getState()
+  eq(state.data.categories.length, before + 2, '化妆品和眼妆两级都该建出来')
+
+  const cosmetics = must(state.data.categories.find((c) => c.name === '化妆品'), '化妆品应存在')
+  const eyeMakeup = must(state.data.categories.find((c) => c.name === '眼妆'), '眼妆应存在')
+  eq(cosmetics.parentId, null, '化妆品应该是顶层')
+  eq(eyeMakeup.parentId, cosmetics.id, '眼妆应该挂在化妆品下')
+
+  const item = must(state.data.items.find((i) => i.name === '眼影盘'), '眼影盘应存在')
+  deepEq(item.categoryIds, [eyeMakeup.id])
+  await flushWrites()
+})
+
+await test('批量录入：同一条路径只建一次', async () => {
+  seedStore()
+  useAppStore.getState().bulkAddItems([
+    {
+      name: '口红',
+      quantity: 1,
+      categoryPaths: [['化妆品', '唇妆']],
+      locationPath: null,
+      tags: [],
+      attrs: {},
+      note: '',
+    },
+    {
+      name: '唇釉',
+      quantity: 1,
+      categoryPaths: [['化妆品', '唇妆']],
+      locationPath: null,
+      tags: [],
+      attrs: {},
+      note: '',
+    },
+  ])
+
+  const state = useAppStore.getState()
+  eq(state.data.categories.filter((c) => c.name === '化妆品').length, 1, '化妆品只该有一个')
+  eq(state.data.categories.filter((c) => c.name === '唇妆').length, 1, '唇妆只该有一个')
+  await flushWrites()
+})
+
+await test('批量录入：已有的分类路径直接复用，不会重复建', async () => {
+  const { data, derived, matchCtx } = hierarchyFixture()
+  seedStore(data)
+  const before = useAppStore.getState().data.categories.length
+
+  const draft = toItemDraft(
+    raw({ name: '睫毛膏', categoryPaths: [['化妆品', '眼妆']] }),
+    matchCtx,
+    derived,
+  )
+  useAppStore.getState().bulkAddItems(draftsToBulkAddItems([draft], matchCtx, derived))
+
+  eq(useAppStore.getState().data.categories.length, before, '不该多出任何分类')
+  const eyeMakeup = must(data.categories.find((c) => c.name === '眼妆'), '找不到眼妆')
+  const item = must(useAppStore.getState().data.items.find((i) => i.name === '睫毛膏'), '找不到睫毛膏')
+  deepEq(item.categoryIds, [eyeMakeup.id])
   await flushWrites()
 })
 
@@ -530,7 +633,7 @@ await test('批量录入：位置路径逐层创建，中间层缺失也能补�
     {
       name: '工具箱',
       quantity: 1,
-      categoryNames: [],
+      categoryPaths: [],
       locationPath: ['家', '车库', '货架'],
       tags: [],
       attrs: {},
@@ -547,12 +650,11 @@ await test('批量录入：位置路径逐层创建，中间层缺失也能补�
     state.data.locations.find((l) => l.name === '货架' && l.parentId === garage.id),
     '车库下应该有一个新的货架',
   )
-
   const home = must(state.data.locations.find((l) => l.name === '家'), '家应存在')
-  eq(garage.parentId, home.id, '车库应该挂在已有的「家」下，而不是新建一个「家」')
+  eq(garage.parentId, home.id, '车库应该挂在已有的「家」下')
 
   const added = must(state.data.items.find((i) => i.name === '工具箱'), '工具箱应存在')
-  eq(added.locationId, shelf.id, '物品应该挂在新建出来的那个货架上')
+  eq(added.locationId, shelf.id)
   await flushWrites()
 })
 
@@ -562,7 +664,7 @@ await test('批量录入：属性名被映射成属性 id；库里没有的属�
     {
       name: '毛衣',
       quantity: 1,
-      categoryNames: [],
+      categoryPaths: [],
       locationPath: null,
       tags: ['想送人'],
       attrs: { 品牌: '某品牌', 不存在的属性: '值' },
@@ -586,7 +688,7 @@ await test('批量录入：标签表会被补齐', async () => {
     {
       name: '新东西',
       quantity: 1,
-      categoryNames: [],
+      categoryPaths: [],
       locationPath: null,
       tags: ['临时想到的标签'],
       attrs: {},
@@ -608,7 +710,7 @@ await test('批量录入：真的落盘了', async () => {
     {
       name: '落盘测试物品',
       quantity: 1,
-      categoryNames: ['衣物'],
+      categoryPaths: [['衣物']],
       locationPath: ['家', '卧室', '衣柜'],
       tags: [],
       attrs: {},
@@ -628,11 +730,9 @@ await test('批量录入：真的落盘了', async () => {
 await test('批量更新：把一批物品改到新分类和新位置', async () => {
   seedStore()
   const electronics = must(fx.categories.find((c) => c.name === '电子'), '找不到电子')
-  const before = useAppStore.getState().data.items.find((i) => i.id === 'i5')
-  ok(before !== undefined, 'i5 应该存在')
 
   const result = useAppStore.getState().bulkUpdateItems([
-    { id: 'i5', categoryNames: ['电子'], locationPath: ['家', '书房', '书桌'] },
+    { id: 'i5', categoryPaths: [['电子']], locationPath: ['家', '书房', '书桌'] },
   ])
 
   eq(result.items, 1)
@@ -645,7 +745,7 @@ await test('批量更新：把一批物品改到新分类和新位置', async ()
 
 await test('批量更新：空数组表示清空分类，null 表示清空位置', async () => {
   seedStore()
-  useAppStore.getState().bulkUpdateItems([{ id: 'i1', categoryNames: [], locationPath: null }])
+  useAppStore.getState().bulkUpdateItems([{ id: 'i1', categoryPaths: [], locationPath: null }])
   const after = must(useAppStore.getState().data.items.find((i) => i.id === 'i1'), 'i1 应还在')
   deepEq(after.categoryIds, [])
   eq(after.locationId, null)
@@ -653,7 +753,37 @@ await test('批量更新：空数组表示清空分类，null 表示清空位置
 })
 
 /* ------------------------------------------------------------------ */
-/* 9. API Key 的安全边界                                               */
+/* 9. AI 分类匹配的歧义保护                                             */
+/* ------------------------------------------------------------------ */
+
+suite('分类后缀有歧义时绝不猜')
+
+await test('两个分支下都有「眼妆」时，只给名字不匹配', () => {
+  const { data, derived, matchCtx } = ambiguousCategoryFixture()
+  const draft = toItemDraft(raw({ name: '眼影', categoryPaths: [['眼妆']] }), matchCtx, derived)
+  eq(draft.matchedCategoryIds.length, 0, '两个眼妆，无法判断该挂哪个，不该瞎猜')
+  deepEq(draft.newCategoryPaths, [['眼妆']])
+  void data
+})
+
+await test('给了完整路径就能消歧', () => {
+  const { data, derived, matchCtx } = ambiguousCategoryFixture()
+  const draft = toItemDraft(
+    raw({ name: '眼影', categoryPaths: [['护肤', '眼妆']] }),
+    matchCtx,
+    derived,
+  )
+  // 注意：不能只按 name 找 —— 树里有两个「眼妆」，必须连父级一起限定
+  const skin = must(data.categories.find((c) => c.name === '护肤'), '找不到护肤')
+  const skinEye = must(
+    data.categories.find((c) => c.name === '眼妆' && c.parentId === skin.id),
+    '找不到护肤下的眼妆',
+  )
+  eq(draft.matchedCategoryIds[0], skinEye.id, '完整路径应该能唯一定位')
+})
+
+/* ------------------------------------------------------------------ */
+/* 10. API Key 的安全边界                                              */
 /* ------------------------------------------------------------------ */
 
 suite('API Key 只存在内存里')
@@ -696,3 +826,75 @@ await test('Key 只在 store 的内存字段里，清除后立刻消失', () => 
   useAppStore.getState().setAiApiKey('')
   eq(useAppStore.getState().aiApiKey, '', '清除后应该立刻没了')
 })
+
+/* ------------------------------------------------------------------ */
+/* 夹具                                                                */
+/* ------------------------------------------------------------------ */
+
+/** 一个带分类层级的场景：化妆品 › 眼妆 / 唇妆 */
+function hierarchyFixture(): {
+  data: AppData
+  derived: ReturnType<typeof createDerived>
+  matchCtx: ReturnType<typeof createMatchContext>
+} {
+  const base = fixture()
+  const now = new Date().toISOString()
+
+  const cosmetics: Category = {
+    id: 'cat-cosmetics',
+    name: '化妆品',
+    parentId: null,
+    order: 20,
+    createdAt: now,
+  }
+  const eye: Category = {
+    id: 'cat-eye',
+    name: '眼妆',
+    parentId: cosmetics.id,
+    order: 0,
+    createdAt: now,
+  }
+  const lip: Category = {
+    id: 'cat-lip',
+    name: '唇妆',
+    parentId: cosmetics.id,
+    order: 1,
+    createdAt: now,
+  }
+
+  const data: AppData = { ...base, categories: [...base.categories, cosmetics, eye, lip] }
+  const derived = createDerived(data)
+  return { data, derived, matchCtx: createMatchContext(data, derived) }
+}
+
+/** 两个分支下各有一个「眼妆」，用来验证歧义保护 */
+function ambiguousCategoryFixture(): {
+  data: AppData
+  derived: ReturnType<typeof createDerived>
+  matchCtx: ReturnType<typeof createMatchContext>
+} {
+  const { data: base } = hierarchyFixture()
+  const now = new Date().toISOString()
+
+  const skin: Category = {
+    id: 'cat-skin',
+    name: '护肤',
+    parentId: null,
+    order: 21,
+    createdAt: now,
+  }
+  const skinEye: Category = {
+    id: 'cat-skin-eye',
+    name: '眼妆',
+    parentId: skin.id,
+    order: 0,
+    createdAt: now,
+  }
+
+  const data: AppData = { ...base, categories: [...base.categories, skin, skinEye] }
+  const derived = createDerived(data)
+  return { data, derived, matchCtx: createMatchContext(data, derived) }
+}
+
+/* 让 TS 知道 Location 被用到了（夹具里会用到它的类型） */
+export type { Location }

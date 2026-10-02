@@ -1,4 +1,4 @@
-import type { AppData, ImportReport, Item, Location } from '../types'
+import type { AppData, Category, ImportReport, Item, Location, TreeItem } from '../types'
 import { SCHEMA_VERSION } from '../types'
 import { uid } from '../lib/id'
 
@@ -9,55 +9,115 @@ function uniq(values: string[]): string[] {
 /**
  * 拆掉父子链里的环，并把指向不存在父节点的引用清空。
  * 导入的文件可能被手工改过，这里必须先保证父子关系是良构的，
- * 否则后面按「名称路径」匹配位置会陷入死循环。
+ * 否则后面按「名称路径」匹配会陷入死循环。
+ *
+ * 泛型化：位置和分类都是树，共用这一套。
  */
-function normalizeParentChain(locations: Location[]): void {
-  const byId = new Map(locations.map((l) => [l.id, l]))
-  for (const loc of locations) {
-    if (loc.parentId && !byId.has(loc.parentId)) {
-      loc.parentId = null
+function normalizeParentChain<T extends TreeItem>(nodes: T[]): void {
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+  for (const node of nodes) {
+    if (node.parentId && !byId.has(node.parentId)) {
+      node.parentId = null
       continue
     }
-    const seen = new Set<string>([loc.id])
-    let cur = loc.parentId ? byId.get(loc.parentId) : undefined
-    while (cur) {
-      if (seen.has(cur.id)) {
-        loc.parentId = null
+    const seen = new Set<string>([node.id])
+    let current = node.parentId ? byId.get(node.parentId) : undefined
+    while (current) {
+      if (seen.has(current.id)) {
+        node.parentId = null
         break
       }
-      seen.add(cur.id)
-      cur = cur.parentId ? byId.get(cur.parentId) : undefined
+      seen.add(current.id)
+      current = current.parentId ? byId.get(current.parentId) : undefined
     }
   }
 }
 
-function depthIn(byId: Map<string, Location>, loc: Location): number {
+function depthIn<T extends TreeItem>(byId: Map<string, T>, node: T): number {
   let depth = 0
-  const seen = new Set<string>([loc.id])
-  let cur = loc
-  while (cur.parentId) {
-    const parent = byId.get(cur.parentId)
+  const seen = new Set<string>([node.id])
+  let current = node
+  while (current.parentId) {
+    const parent = byId.get(current.parentId)
     if (!parent || seen.has(parent.id)) break
     seen.add(parent.id)
     depth++
-    cur = parent
+    current = parent
   }
   return depth
 }
 
-/** 「家/卧室/衣柜」这样的名称路径 —— 用于跨设备合并时对齐同一个位置 */
-function pathKey(byId: Map<string, Location>, loc: Location): string {
-  const names: string[] = [loc.name]
-  const seen = new Set<string>([loc.id])
-  let cur = loc
-  while (cur.parentId) {
-    const parent = byId.get(cur.parentId)
+/** 「化妆品/眼妆」这样的名称路径 —— 用于跨设备合并时对齐同一个节点 */
+function pathKey<T extends TreeItem>(byId: Map<string, T>, node: T): string {
+  const names: string[] = [node.name]
+  const seen = new Set<string>([node.id])
+  let current = node
+  while (current.parentId) {
+    const parent = byId.get(current.parentId)
     if (!parent || seen.has(parent.id)) break
     seen.add(parent.id)
     names.unshift(parent.name)
-    cur = parent
+    current = parent
   }
   return names.join('/')
+}
+
+/**
+ * 按「名称路径」合并一棵树（位置、分类共用）。
+ *
+ * 策略：先按 id 命中 → 再按完整名称路径命中 → 都不行就**补建**。
+ * 补建是必要的：直接丢掉引用会让东西变成未归位/未分类，
+ * 而按路径补建至少保住了用户的意图，报告里也会逐条列出来让人核对。
+ */
+function mergeTree<T extends TreeItem>(
+  current: T[],
+  incomingRaw: T[],
+  make: (source: T, id: string, parentId: string | null) => T,
+  label: string,
+  warnings: string[],
+): { merged: T[]; idMap: Map<string, string>; added: number; matched: number; created: number } {
+  const incoming = incomingRaw.map((node) => ({ ...node }))
+  normalizeParentChain(incoming)
+  const incomingById = new Map(incoming.map((node) => [node.id, node]))
+  incoming.sort((a, b) => depthIn(incomingById, a) - depthIn(incomingById, b))
+
+  const byId = new Map(current.map((node) => [node.id, node]))
+  const idByPath = new Map<string, string>()
+  for (const node of current) idByPath.set(pathKey(byId, node), node.id)
+
+  const merged: T[] = current.map((node) => ({ ...node }))
+  const idMap = new Map<string, string>()
+  let added = 0
+  let matched = 0
+  let created = 0
+
+  for (const node of incoming) {
+    const existing = byId.get(node.id)
+    if (existing) {
+      idMap.set(node.id, existing.id)
+      matched++
+      continue
+    }
+
+    const key = pathKey(incomingById, node)
+    const byPath = idByPath.get(key)
+    if (byPath) {
+      idMap.set(node.id, byPath)
+      continue
+    }
+
+    const newParentId = node.parentId ? (idMap.get(node.parentId) ?? null) : null
+    const built = make(node, uid(), newParentId)
+    merged.push(built)
+    byId.set(built.id, built)
+    idByPath.set(key, built.id)
+    idMap.set(node.id, built.id)
+    added++
+    created++
+    warnings.push(`自动补建${label}：${key.split('/').join(' / ')}`)
+  }
+
+  return { merged, idMap, added, matched, created }
 }
 
 /** 覆盖：当前数据整体替换为导入数据 */
@@ -85,75 +145,42 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
   const now = new Date().toISOString()
 
   /* ---------------- 位置 ---------------- */
-  const incomingLocations = incoming.locations.map((l) => ({ ...l }))
-  normalizeParentChain(incomingLocations)
-  const incomingLocById = new Map(incomingLocations.map((l) => [l.id, l]))
-  incomingLocations.sort((a, b) => depthIn(incomingLocById, a) - depthIn(incomingLocById, b))
-
-  const locById = new Map(current.locations.map((l) => [l.id, l]))
-  const locIdByPath = new Map<string, string>()
-  for (const loc of current.locations) locIdByPath.set(pathKey(locById, loc), loc.id)
-
-  const locations: Location[] = current.locations.map((l) => ({ ...l }))
-  const locIdMap = new Map<string, string>()
-  let locAdded = 0
-  let locMatched = 0
-  let locCreated = 0
-
-  for (const loc of incomingLocations) {
-    const existing = locById.get(loc.id)
-    if (existing) {
-      locIdMap.set(loc.id, existing.id)
-      locMatched++
-      continue
-    }
-
-    const key = pathKey(incomingLocById, loc)
-    const byPath = locIdByPath.get(key)
-    if (byPath) {
-      locIdMap.set(loc.id, byPath)
-      continue
-    }
-
-    // 本地确实没有 → 补建，保持导入方的层级关系
-    const newParentId = loc.parentId ? (locIdMap.get(loc.parentId) ?? null) : null
-    const created: Location = { ...loc, id: uid(), parentId: newParentId }
-    locations.push(created)
-    locById.set(created.id, created)
-    locIdByPath.set(key, created.id)
-    locIdMap.set(loc.id, created.id)
-    locAdded++
-    locCreated++
-    warnings.push(`自动补建位置：${key.split('/').join(' / ')}`)
-  }
+  const locationMerge = mergeTree<Location>(
+    current.locations,
+    incoming.locations,
+    (source, id, parentId): Location => ({
+      id,
+      name: source.name,
+      parentId,
+      note: source.note,
+      order: source.order,
+      createdAt: source.createdAt,
+    }),
+    '位置',
+    warnings,
+  )
 
   /* ---------------- 分类 ---------------- */
-  const catById = new Map(current.categories.map((c) => [c.id, c]))
-  const catIdByName = new Map(current.categories.map((c) => [c.name, c.id]))
-  const categories = current.categories.map((c) => ({ ...c }))
-  const catIdMap = new Map<string, string>()
-  let catAdded = 0
-  let catMatched = 0
+  const categoryMerge = mergeTree<Category>(
+    current.categories,
+    incoming.categories,
+    (source, id, parentId): Category => ({
+      id,
+      name: source.name,
+      parentId,
+      order: source.order,
+      createdAt: source.createdAt,
+    }),
+    '分类',
+    warnings,
+  )
 
-  for (const cat of incoming.categories) {
-    if (catById.has(cat.id)) {
-      catIdMap.set(cat.id, cat.id)
-      catMatched++
-      continue
-    }
-    const byName = catIdByName.get(cat.name)
-    if (byName) {
-      catIdMap.set(cat.id, byName)
-      continue
-    }
-    const created = { ...cat, id: uid(), order: categories.length }
-    categories.push(created)
-    catById.set(created.id, created)
-    catIdByName.set(created.name, created.id)
-    catIdMap.set(cat.id, created.id)
-    catAdded++
-    warnings.push(`自动补建分类：${cat.name}`)
-  }
+  const locations = locationMerge.merged
+  const categories = categoryMerge.merged
+  const locIdMap = locationMerge.idMap
+  const catIdMap = categoryMerge.idMap
+  const locById = new Map(locations.map((l) => [l.id, l]))
+  const catById = new Map(categories.map((c) => [c.id, c]))
 
   /* ---------------- 属性 ---------------- */
   const attrById = new Map(current.attributeDefs.map((a) => [a.id, a]))
@@ -269,8 +296,12 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
   const report: ImportReport = {
     strategy: 'merge',
     items: { added, updated, unchanged },
-    categories: { added: catAdded, updated: catMatched },
-    locations: { added: locAdded, updated: locMatched, created: locCreated },
+    categories: { added: categoryMerge.added, updated: categoryMerge.matched },
+    locations: {
+      added: locationMerge.added,
+      updated: locationMerge.matched,
+      created: locationMerge.created,
+    },
     attributeDefs: { added: attrAdded, updated: attrMatched },
     tags: { added: tagAdded },
     warnings,

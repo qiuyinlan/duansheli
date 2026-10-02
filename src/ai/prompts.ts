@@ -14,8 +14,9 @@ import type { ChatMessage } from './deepseek'
 /* ------------------------------------------------------------------ */
 
 export interface AiContext {
-  categories: string[]
-  /** 每条都是一个完整名称路径，如 ['家','卧室','衣柜'] */
+  /** 每条是一条从顶层到末级的分类名称路径，如 ['化妆品','眼妆'] */
+  categoryPaths: string[][]
+  /** 每条都是一个完整位置名称路径，如 ['家','卧室','衣柜'] */
   locationPaths: string[][]
   attributes: string[]
   tags: string[]
@@ -42,12 +43,11 @@ export function buildAiContext(
   derived: DerivedContext,
   limits: ContextLimits = DEFAULT_LIMITS,
 ): AiContext {
-  const categoryNames = [...data.categories]
-    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'zh-CN'))
-    .map((c) => c.name)
-
-  // 位置树按显示顺序输出完整路径，不截断层级 —— 层级本身就是重要信息
-  const allPaths = derived.flat.map((node) => derived.index.pathNames(node.node.id))
+  // 分类和位置都是树，都按**显示顺序**输出完整路径 —— 层级本身就是重要信息
+  const categoryPaths = derived.categoryFlat.map((node) =>
+    derived.categoryIndex.pathNames(node.node.id),
+  )
+  const locationPaths = derived.flat.map((node) => derived.index.pathNames(node.node.id))
 
   const attributeNames = [...data.attributeDefs]
     .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'zh-CN'))
@@ -56,14 +56,14 @@ export function buildAiContext(
   const tagNames = data.tags.map((t) => t.name)
 
   const truncated =
-    categoryNames.length > limits.categories ||
-    allPaths.length > limits.locations ||
+    categoryPaths.length > limits.categories ||
+    locationPaths.length > limits.locations ||
     attributeNames.length > limits.attributes ||
     tagNames.length > limits.tags
 
   return {
-    categories: categoryNames.slice(0, limits.categories),
-    locationPaths: allPaths.slice(0, limits.locations),
+    categoryPaths: categoryPaths.slice(0, limits.categories),
+    locationPaths: locationPaths.slice(0, limits.locations),
     attributes: attributeNames.slice(0, limits.attributes),
     tags: tagNames.slice(0, limits.tags),
     truncated,
@@ -75,13 +75,18 @@ function listOrEmpty(values: string[], emptyHint: string): string {
 }
 
 export function renderContextBlock(ctx: AiContext): string {
+  const categories = ctx.categoryPaths.map((path) => path.join(' / ')).join('\n')
   const locations = ctx.locationPaths.map((path) => path.join(' / ')).join('\n')
 
   return [
-    '【已有分类】（categories 优先从这里挑，不要造同义词）',
-    listOrEmpty(ctx.categories, '（还没有分类，你可以自由创建，但名字要短而通用）'),
+    '【已有分类】（categories 优先从这里挑，用「化妆品 / 眼妆」这样的完整路径，不要造同义词）',
+    '注意：分类是多级的，物品可以挂在任意一级，所以单独一个「化妆品」也是合法的。',
+    ctx.categoryPaths.length > 0
+      ? categories
+      : '（还没有分类，你可以自由创建，但每一级的名字都要短而通用）',
     '',
     '【已有位置】（location 必须从下面这些路径里挑，或者输出 null）',
+    '位置同样可以挂在任意一级，路径从顶层写起。',
     ctx.locationPaths.length > 0 ? locations : '（还没有位置，请一律输出 null）',
     '',
     '【已有属性】（attributes 的 key 只能使用下面这些名字）',
@@ -109,7 +114,7 @@ const EXTRACTION_SYSTEM = `你是「断舍离」这款个人物品整理工具�
     {
       "name": "灰色羊毛衫",
       "quantity": 1,
-      "categories": ["衣物"],
+      "categories": [["衣物"]],
       "location": ["家", "卧室", "衣柜"],
       "tags": ["舍不得扔"],
       "attributes": { "品牌": "某品牌" },
@@ -122,10 +127,15 @@ const EXTRACTION_SYSTEM = `你是「断舍离」这款个人物品整理工具�
 1. name 要具体。原文只写「毛衣」时，结合上下文补全为「灰色羊毛衫」这类可辨认的名字。
    但不要编造原文没有依据的信息（没有依据就不要写颜色、品牌）。
 2. quantity：原文说「三双袜子」就是 3；没提到数量就填 1。
-3. categories：优先从【已有分类】里挑。确实没有合适的，才写一个新分类名。
-   新分类名要短、要通用（「户外装备」可以，「乱七八糟的东西」不行）。
+3. categories 是一个**二维数组** —— 每一项是一条分类路径，从顶层写到末级。
+   例如 [["化妆品","眼妆"]] 表示这件东西归到「化妆品」下面的「眼妆」。
+   优先复用【已有分类】里列出的路径，不要造同义词。
+   确实没有合适的，才写一条新路径；每一级的名字都要短、要通用
+   （「户外装备」可以，「乱七八糟的东西」不行）。
+   分类是多级的，物品可以挂在任意一级，所以 [["化妆品"]] 也是合法的。
    一件物品允许有多个分类，但大多数情况一个就够。
-4. location：必须从【已有位置】里挑，输出从顶层到末级的名称数组。
+4. location 必须从【已有位置】里挑，输出从顶层到末级的名称数组。
+   位置同样可以挂在任意一级。
    原文没有提到位置就填 null —— 不要猜、不要编。
 5. tags：记录「情境」而不是「是什么」，例如 想送人、待维修、舍不得扔。没有就填 []。
 6. attributes：key 只能使用【已有属性】里的名字。原文没提到相关信息就不要写这一项。
@@ -170,7 +180,8 @@ export interface TidyInputItem {
   id: string
   name: string
   quantity: number
-  categoryNames: string[]
+  /** 当前分类的完整名称路径 */
+  categoryPaths: string[][]
   /** 完整位置路径字符串，未归位时为 null */
   locationPath: string | null
   tags: string[]
@@ -184,7 +195,7 @@ const TIDY_SYSTEM = `你是「断舍离」的物品整理助手。
   "assignments": [
     {
       "id": "原样返回物品的 id，一个字都不能改",
-      "categories": ["衣物"],
+      "categories": [["衣物"]],
       "location": ["家", "卧室", "衣柜"],
       "reason": "不超过 15 个字的中文理由"
     }
@@ -193,7 +204,9 @@ const TIDY_SYSTEM = `你是「断舍离」的物品整理助手。
 
 规则：
 1. id 必须原样返回，不能修改、不能遗漏、不能编造。
-2. categories 只能从【已有分类】里挑。确实都不合适的，才写一个新分类名。
+2. categories 是一个**二维数组**，每一项是一条分类路径（从顶层到末级）。
+   只能从【已有分类】里挑。确实都不合适的，才写一条新路径。
+   分类是多级的，物品可以挂在任意一级。
 3. location 只能从【已有位置】里挑，输出名称路径。拿不准就填 null。
 4. **只对明显可以改进的物品给出建议。** 已经很合理的直接跳过，
    不要为了显得有用而硬改。宁可少给建议，也不要给错的建议。
@@ -209,7 +222,11 @@ export function buildTidyMessages(
       `id: ${item.id}`,
       `名称: ${item.name}`,
       item.quantity > 1 ? `数量: ${item.quantity}` : '',
-      `当前分类: ${item.categoryNames.length > 0 ? item.categoryNames.join('、') : '（未分类）'}`,
+      `当前分类: ${
+        item.categoryPaths.length > 0
+          ? item.categoryPaths.map((path) => path.join(' / ')).join('、')
+          : '（未分类）'
+      }`,
       `当前位置: ${item.locationPath ?? '（未归位）'}`,
       item.tags.length > 0 ? `标签: ${item.tags.join('、')}` : '',
     ]

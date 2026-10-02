@@ -9,10 +9,11 @@ import type {
   Location,
   SortBy,
   SortDir,
+  TreeItem,
 } from '../types'
 import { UNASSIGNED_ID, UNCATEGORIZED_ID, UNTAGGED_ID } from '../types'
-import type { LocationIndex, TreeNode } from '../lib/tree'
-import { buildLocationTree, createLocationIndex, flattenTree } from '../lib/tree'
+import type { TreeIndex, TreeNode } from '../lib/tree'
+import { buildTree, createTreeIndex, flattenTree } from '../lib/tree'
 import { daysSince } from '../lib/format'
 
 /* ------------------------------------------------------------------ */
@@ -20,50 +21,65 @@ import { daysSince } from '../lib/format'
 /* ------------------------------------------------------------------ */
 
 export interface DerivedContext {
-  index: LocationIndex
+  /* 位置树 */
+  index: TreeIndex<Location>
   tree: TreeNode<Location>[]
   flat: TreeNode<Location>[]
-  /** 位置 id → 在树中的显示顺序，用于排序 */
   locationOrder: Map<string, number>
-  categoryById: Map<string, Category>
+  locationById: Map<string, Location>
+
+  /* 分类树 */
+  categoryIndex: TreeIndex<Category>
+  categoryTree: TreeNode<Category>[]
+  categoryFlat: TreeNode<Category>[]
+  /** 分类 id → 树中的显示顺序 */
   categoryOrder: Map<string, number>
+  categoryById: Map<string, Category>
+
   attrDefById: Map<string, AttributeDef>
 }
 
 export function createDerived(data: AppData): DerivedContext {
-  const index = createLocationIndex(data.locations)
-  const tree = buildLocationTree(data.locations)
+  // ---- 位置 ----
+  const index = createTreeIndex(data.locations)
+  const tree = buildTree(data.locations)
   const flat = flattenTree(tree)
-
   const locationOrder = new Map<string, number>()
-  flat.forEach((n, i) => locationOrder.set(n.node.id, i))
+  flat.forEach((node, i) => locationOrder.set(node.node.id, i))
 
-  const sortedCategories = [...data.categories].sort(categoryCmp)
-  const categoryById = new Map(data.categories.map((c) => [c.id, c]))
+  // ---- 分类 ----
+  const categoryIndex = createTreeIndex(data.categories)
+  const categoryTree = buildTree(data.categories)
+  const categoryFlat = flattenTree(categoryTree)
   const categoryOrder = new Map<string, number>()
-  sortedCategories.forEach((c, i) => categoryOrder.set(c.id, i))
+  categoryFlat.forEach((node, i) => categoryOrder.set(node.node.id, i))
+  const categoryById = new Map(data.categories.map((c) => [c.id, c]))
 
   const attrDefById = new Map(data.attributeDefs.map((a) => [a.id, a]))
 
-  return { index, tree, flat, locationOrder, categoryById, categoryOrder, attrDefById }
-}
-
-function categoryCmp(a: Category, b: Category): number {
-  if (a.order !== b.order) return a.order - b.order
-  return a.name.localeCompare(b.name, 'zh-CN')
-}
-
-/** 找出某个位置所属的顶层节点 id（自己就是顶层时返回自己） */
-export function rootLocationId(ctx: DerivedContext, id: string): string | null {
-  let cur = ctx.index.byId.get(id)
-  const seen = new Set<string>()
-  while (cur && cur.parentId && !seen.has(cur.id)) {
-    seen.add(cur.id)
-    const parent: Location | undefined = ctx.index.byId.get(cur.parentId)
-    if (!parent) break
-    cur = parent
+  return {
+    index,
+    tree,
+    flat,
+    locationOrder,
+    locationById: index.byId,
+    categoryIndex,
+    categoryTree,
+    categoryFlat,
+    categoryOrder,
+    categoryById,
+    attrDefById,
   }
-  return cur?.id ?? null
+}
+
+/** 位置路径，未归位时返回「未归位」 */
+export function locationPath(ctx: DerivedContext, id: string | null, sep = ' / '): string {
+  return ctx.index.pathString(id, sep, '未归位')
+}
+
+/** 分类路径，未分类时返回「未分类」 */
+export function categoryPath(ctx: DerivedContext, id: string | null, sep = ' / '): string {
+  return ctx.categoryIndex.pathString(id, sep, '未分类')
 }
 
 /* ------------------------------------------------------------------ */
@@ -77,9 +93,12 @@ export interface Stats {
   idleCount: number
   discardedCount: number
   unassignedCount: number
-  categorizedCount: number
+  uncategorizedCount: number
   categoryCount: number
+  /** 顶层分类数量 —— 概览里显示「几个分类」时用它更直观 */
+  topCategoryCount: number
   locationCount: number
+  topLocationCount: number
   tagCount: number
   attributeDefCount: number
 }
@@ -89,7 +108,7 @@ export function computeStats(data: AppData): Stats {
   let idleCount = 0
   let discardedCount = 0
   let unassignedCount = 0
-  let categorizedCount = 0
+  let uncategorizedCount = 0
 
   for (const item of data.items) {
     if (item.status === 'discarded') {
@@ -100,7 +119,7 @@ export function computeStats(data: AppData): Stats {
     else activeCount++
 
     if (!item.locationId) unassignedCount++
-    if (item.categoryIds.length > 0) categorizedCount++
+    if (item.categoryIds.length === 0) uncategorizedCount++
   }
 
   return {
@@ -109,9 +128,11 @@ export function computeStats(data: AppData): Stats {
     idleCount,
     discardedCount,
     unassignedCount,
-    categorizedCount,
+    uncategorizedCount,
     categoryCount: data.categories.length,
+    topCategoryCount: data.categories.filter((c) => c.parentId === null).length,
     locationCount: data.locations.length,
+    topLocationCount: data.locations.filter((l) => l.parentId === null).length,
     tagCount: data.tags.length,
     attributeDefCount: data.attributeDefs.length,
   }
@@ -134,6 +155,15 @@ export interface BarDatum {
   target?: { kind: 'category' | 'location' | 'tag' | 'status'; id: string }
 }
 
+/**
+ * 按**顶层分类**统计。
+ *
+ * 为什么按顶层：分类是树之后，把所有层级都铺开会得到几十条，图就没法看了。
+ * 和「按位置」那张图保持一致 —— 那张也是只显示第一层。
+ *
+ * 一件物品如果同时属于同一个顶层下的两个子类（眼影 + 唇膏），
+ * 这一栏只算它一次，否则合计会虚高。
+ */
 export function countByCategory(items: Item[], ctx: DerivedContext): BarDatum[] {
   const counts = new Map<string, number>()
   let uncategorized = 0
@@ -143,21 +173,35 @@ export function countByCategory(items: Item[], ctx: DerivedContext): BarDatum[] 
       uncategorized++
       continue
     }
-    for (const id of new Set(item.categoryIds)) {
-      counts.set(id, (counts.get(id) ?? 0) + 1)
+
+    const roots = new Set<string>()
+    for (const id of item.categoryIds) {
+      const root = ctx.categoryIndex.rootId(id)
+      if (root) roots.add(root)
     }
+    for (const root of roots) counts.set(root, (counts.get(root) ?? 0) + 1)
   }
 
   const out: BarDatum[] = []
   for (const [id, value] of counts) {
-    const cat = ctx.categoryById.get(id)
-    if (!cat) continue
-    out.push({ key: id, label: cat.name, value, target: { kind: 'category', id } })
+    const category = ctx.categoryById.get(id)
+    if (!category) continue
+    out.push({
+      key: id,
+      label: category.name,
+      value,
+      target: { kind: 'category', id },
+    })
   }
-  out.sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'zh-CN'))
+  // 按分类树顺序排，跟分类管理页保持一致，便于对照
+  out.sort(
+    (a, b) =>
+      (ctx.categoryOrder.get(a.key) ?? 0) - (ctx.categoryOrder.get(b.key) ?? 0) ||
+      b.value - a.value,
+  )
 
   if (uncategorized > 0) {
-    out.push({ key: '__uncategorized__', label: '未分类', value: uncategorized })
+    out.push({ key: UNCATEGORIZED_ID, label: '未分类', value: uncategorized })
   }
   return out
 }
@@ -171,7 +215,7 @@ export function countByTopLocation(items: Item[], ctx: DerivedContext): BarDatum
       unassigned++
       continue
     }
-    const rootId = rootLocationId(ctx, item.locationId)
+    const rootId = ctx.index.rootId(item.locationId)
     if (!rootId) {
       unassigned++
       continue
@@ -181,11 +225,10 @@ export function countByTopLocation(items: Item[], ctx: DerivedContext): BarDatum
 
   const out: BarDatum[] = []
   for (const [id, value] of counts) {
-    const loc = ctx.index.byId.get(id)
-    if (!loc) continue
-    out.push({ key: id, label: loc.name, value, target: { kind: 'location', id } })
+    const location = ctx.locationById.get(id)
+    if (!location) continue
+    out.push({ key: id, label: location.name, value, target: { kind: 'location', id } })
   }
-  // 按位置树顺序排，跟位置页保持一致，便于对照
   out.sort(
     (a, b) =>
       (ctx.locationOrder.get(a.key) ?? 0) - (ctx.locationOrder.get(b.key) ?? 0) ||
@@ -211,7 +254,14 @@ export function countByTag(items: Item[], _ctx: DerivedContext): BarDatum[] {
   }
 
   const out: BarDatum[] = [...counts]
-    .map(([tag, value]): BarDatum => ({ key: tag, label: tag, value, target: { kind: 'tag', id: tag } }))
+    .map(
+      ([tag, value]): BarDatum => ({
+        key: tag,
+        label: tag,
+        value,
+        target: { kind: 'tag', id: tag },
+      }),
+    )
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'zh-CN'))
 
   if (untagged > 0) out.push({ key: '__untagged__', label: '未加标签', value: untagged })
@@ -241,7 +291,15 @@ export function countByStatus(items: Item[]): BarDatum[] {
 /* 筛选                                                                */
 /* ------------------------------------------------------------------ */
 
-export type AttrOp = 'contains' | 'eq' | 'gt' | 'lt' | 'isTrue' | 'isFalse' | 'hasValue' | 'noValue'
+export type AttrOp =
+  | 'contains'
+  | 'eq'
+  | 'gt'
+  | 'lt'
+  | 'isTrue'
+  | 'isFalse'
+  | 'hasValue'
+  | 'noValue'
 
 export interface AttrFilter {
   defId: string
@@ -251,13 +309,14 @@ export interface AttrFilter {
 
 export interface ItemFilter {
   search: string
+  /** 可以是分类 id，也可以是 UNCATEGORIZED_ID */
   categoryIds: string[]
   /** 可以是位置 id，也可以是 UNASSIGNED_ID */
   locationIds: string[]
   statuses: ItemStatus[]
   tags: string[]
   attrFilters: AttrFilter[]
-  /** 位置筛选是否包含子孙节点 */
+  /** 位置 / 分类筛选是否包含子孙节点 */
   includeDescendants: boolean
 }
 
@@ -271,14 +330,25 @@ export const EMPTY_FILTER: ItemFilter = {
   includeDescendants: true,
 }
 
-/** 把物品的可搜索文本拼成一个串（名称 + 备注 + 标签 + 属性值） */
-function searchHaystack(item: Item): string {
+/**
+ * 把物品的可搜索文本拼成一个串。
+ * 除了名称、备注、标签、属性值，**还包括分类名和位置名** ——
+ * 这样搜「化妆品」能把该分类下的东西都找出来，是很实用的一条。
+ */
+function searchHaystack(item: Item, ctx: DerivedContext): string {
   const parts: string[] = [item.name, item.note, ...item.tags]
-  for (const v of Object.values(item.attrs)) {
-    if (v === null || v === undefined) continue
-    if (typeof v === 'boolean') parts.push(v ? '是' : '否')
-    else parts.push(String(v))
+
+  for (const id of item.categoryIds) {
+    parts.push(ctx.categoryIndex.pathString(id, ' '))
   }
+  if (item.locationId) {
+    parts.push(ctx.index.pathString(item.locationId, ' '))
+  }
+  for (const value of Object.values(item.attrs)) {
+    if (value === null || value === undefined) continue
+    parts.push(typeof value === 'boolean' ? (value ? '是' : '否') : String(value))
+  }
+
   return parts.join('\u0000').toLowerCase()
 }
 
@@ -312,39 +382,54 @@ function matchAttrValue(value: AttrValue | undefined, filter: AttrFilter): boole
   }
 }
 
+/** 取出一组 id 在树上的作用范围（含/不含子孙） */
+function scopeOf<T extends { id: string; name: string; parentId: string | null; order: number }>(
+  index: TreeIndex<T>,
+  id: string,
+  includeDescendants: boolean,
+): Set<string> {
+  return includeDescendants ? index.descendantIds(id) : new Set([id])
+}
+
 export function matchesFilter(item: Item, filter: ItemFilter, ctx: DerivedContext): boolean {
   const search = filter.search.trim().toLowerCase()
-  if (search !== '' && !searchHaystack(item).includes(search)) return false
+  if (search !== '' && !searchHaystack(item, ctx).includes(search)) return false
 
   if (filter.statuses.length > 0 && !filter.statuses.includes(item.status)) return false
 
   if (filter.categoryIds.length > 0) {
     const wantsUncategorized = filter.categoryIds.includes(UNCATEGORIZED_ID)
-    const hit =
-      item.categoryIds.some((id) => filter.categoryIds.includes(id)) ||
-      (wantsUncategorized && item.categoryIds.length === 0)
+    let hit = false
+
+    for (const selected of filter.categoryIds) {
+      if (selected === UNCATEGORIZED_ID) continue
+      const scope = scopeOf(ctx.categoryIndex, selected, filter.includeDescendants)
+      if (item.categoryIds.some((id) => scope.has(id))) {
+        hit = true
+        break
+      }
+    }
+
+    if (!hit && wantsUncategorized && item.categoryIds.length === 0) hit = true
     if (!hit) return false
   }
 
   if (filter.locationIds.length > 0) {
-    const locId = item.locationId
+    const wantsUnassigned = filter.locationIds.includes(UNASSIGNED_ID)
     let hit = false
 
-    if (!locId) {
-      hit = filter.locationIds.includes(UNASSIGNED_ID)
-    } else {
+    if (item.locationId) {
       for (const selected of filter.locationIds) {
         if (selected === UNASSIGNED_ID) continue
-        if (selected === locId) {
-          hit = true
-          break
-        }
-        if (filter.includeDescendants && ctx.index.descendantIds(selected).has(locId)) {
+        if (scopeOf(ctx.index, selected, filter.includeDescendants).has(item.locationId)) {
           hit = true
           break
         }
       }
+    } else if (wantsUnassigned) {
+      hit = true
     }
+
     if (!hit) return false
   }
 
@@ -356,10 +441,10 @@ export function matchesFilter(item: Item, filter: ItemFilter, ctx: DerivedContex
     if (!hit) return false
   }
 
-  for (const af of filter.attrFilters) {
+  for (const attrFilter of filter.attrFilters) {
     // 属性定义已被删除的筛选条件自动失效，不阻塞结果
-    if (!ctx.attrDefById.has(af.defId)) continue
-    if (!matchAttrValue(item.attrs[af.defId], af)) return false
+    if (!ctx.attrDefById.has(attrFilter.defId)) continue
+    if (!matchAttrValue(item.attrs[attrFilter.defId], attrFilter)) return false
   }
 
   return true
@@ -431,16 +516,12 @@ export function sortByIdleDuration(items: Item[]): Item[] {
 export interface ItemGroup {
   key: string
   label: string
-  /** 标题下的次要说明 */
+  /** 标题下的次要说明（完整路径） */
   sublabel?: string
   items: Item[]
 }
 
-export function groupItems(
-  items: Item[],
-  groupBy: GroupBy,
-  ctx: DerivedContext,
-): ItemGroup[] {
+export function groupItems(items: Item[], groupBy: GroupBy, ctx: DerivedContext): ItemGroup[] {
   if (groupBy === 'none') {
     return [{ key: '__all__', label: '全部', items }]
   }
@@ -448,28 +529,31 @@ export function groupItems(
   if (groupBy === 'status') {
     const buckets = new Map<ItemStatus, Item[]>()
     for (const item of items) {
-      const arr = buckets.get(item.status)
-      if (arr) arr.push(item)
+      const bucket = buckets.get(item.status)
+      if (bucket) bucket.push(item)
       else buckets.set(item.status, [item])
     }
     return STATUS_ORDER.filter((s) => buckets.has(s)).map((s) => ({
       key: s,
       label: STATUS_LABEL[s],
-      items: buckets.get(s)!,
+      items: buckets.get(s) as Item[],
     }))
   }
 
   if (groupBy === 'category') {
+    // 按「物品实际挂的那个分类节点」分组（可以是任意层级），
+    // 标题显示节点名，次要说明显示完整路径，方便区分同名的子分类。
     const buckets = new Map<string, Item[]>()
     const uncategorized: Item[] = []
+
     for (const item of items) {
       if (item.categoryIds.length === 0) {
         uncategorized.push(item)
         continue
       }
       for (const id of new Set(item.categoryIds)) {
-        const arr = buckets.get(id)
-        if (arr) arr.push(item)
+        const bucket = buckets.get(id)
+        if (bucket) bucket.push(item)
         else buckets.set(id, [item])
       }
     }
@@ -478,6 +562,7 @@ export function groupItems(
       .map(([id, groupItemsList]): ItemGroup => ({
         key: id,
         label: ctx.categoryById.get(id)?.name ?? '（已删除的分类）',
+        sublabel: ctx.categoryIndex.pathString(id, ' / '),
         items: groupItemsList,
       }))
       .sort(
@@ -487,7 +572,7 @@ export function groupItems(
       )
 
     if (uncategorized.length > 0) {
-      groups.push({ key: '__uncategorized__', label: '未分类', items: uncategorized })
+      groups.push({ key: UNCATEGORIZED_ID, label: '未分类', items: uncategorized })
     }
     return groups
   }
@@ -495,21 +580,22 @@ export function groupItems(
   if (groupBy === 'location') {
     const buckets = new Map<string, Item[]>()
     const unassigned: Item[] = []
+
     for (const item of items) {
       if (!item.locationId || !ctx.index.has(item.locationId)) {
         unassigned.push(item)
         continue
       }
-      const arr = buckets.get(item.locationId)
-      if (arr) arr.push(item)
+      const bucket = buckets.get(item.locationId)
+      if (bucket) bucket.push(item)
       else buckets.set(item.locationId, [item])
     }
 
     const groups: ItemGroup[] = [...buckets]
       .map(([id, groupItemsList]): ItemGroup => ({
         key: id,
-        label: ctx.index.byId.get(id)?.name ?? '（已删除的位置）',
-        sublabel: ctx.index.pathString(id),
+        label: ctx.locationById.get(id)?.name ?? '（已删除的位置）',
+        sublabel: ctx.index.pathString(id, ' / '),
         items: groupItemsList,
       }))
       .sort(
@@ -525,14 +611,15 @@ export function groupItems(
   // groupBy === 'tag'：一件物品有多个标签时会出现在多个分组里（与分类同理）
   const buckets = new Map<string, Item[]>()
   const untagged: Item[] = []
+
   for (const item of items) {
     if (item.tags.length === 0) {
       untagged.push(item)
       continue
     }
     for (const tag of new Set(item.tags)) {
-      const arr = buckets.get(tag)
-      if (arr) arr.push(item)
+      const bucket = buckets.get(tag)
+      if (bucket) bucket.push(item)
       else buckets.set(tag, [item])
     }
   }
@@ -542,7 +629,7 @@ export function groupItems(
     .sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label, 'zh-CN'))
 
   if (untagged.length > 0) {
-    groups.push({ key: '__untagged__', label: '未加标签', items: untagged })
+    groups.push({ key: UNTAGGED_ID, label: '未加标签', items: untagged })
   }
   return groups
 }
@@ -559,7 +646,7 @@ export function groupAndSort(
 }
 
 /* ------------------------------------------------------------------ */
-/* 位置视角                                                            */
+/* 位置 / 分类视角                                                     */
 /* ------------------------------------------------------------------ */
 
 /** 某个位置下的物品（可选是否含子孙位置） */
@@ -572,25 +659,100 @@ export function itemsInLocation(
   if (locationId === null) {
     return items.filter((i) => !i.locationId || !ctx.index.has(i.locationId))
   }
-  const scope = includeDescendants ? ctx.index.descendantIds(locationId) : new Set([locationId])
-  return items.filter((i) => i.locationId !== null && scope.has(i.locationId))
+  const scope = ctx.index.descendantIds(locationId)
+  return items.filter(
+    (i) => i.locationId !== null && (includeDescendants ? scope.has(i.locationId) : i.locationId === locationId),
+  )
 }
 
-/** 每个位置节点下的物品数量，用于在位置树上显示徽标 */
+/** 某个分类下的物品（可选是否含子分类） */
+export function itemsInCategory(
+  items: Item[],
+  categoryId: string,
+  includeDescendants: boolean,
+  ctx: DerivedContext,
+): Item[] {
+  const scope = scopeOf(ctx.categoryIndex, categoryId, includeDescendants)
+  return items.filter((item) => item.categoryIds.some((id) => scope.has(id)))
+}
+
+/**
+ * 每个位置节点下的物品数量（含子孙），用于在位置树上显示徽标。
+ * 另外把「未归位」的数量挂在 UNASSIGNED_ID 这个键上，
+ * 这样树组件不需要再单独传一个参数。
+ */
 export function countByLocationIncludingDescendants(
   items: Item[],
   ctx: DerivedContext,
 ): Map<string, number> {
-  const direct = new Map<string, number>()
+  const owners: string[] = []
+  let unassigned = 0
+
   for (const item of items) {
-    if (!item.locationId || !ctx.index.has(item.locationId)) continue
-    direct.set(item.locationId, (direct.get(item.locationId) ?? 0) + 1)
+    if (!item.locationId || !ctx.index.has(item.locationId)) {
+      unassigned++
+      continue
+    }
+    owners.push(item.locationId)
   }
 
-  // 自底向上累加：先把直接数量放到自己身上，再沿树往上加
-  const total = new Map<string, number>(direct)
-  // 按深度从深到浅处理，保证父节点累加时子节点已经算完
-  const ordered = [...ctx.flat].sort((a, b) => b.depth - a.depth)
+  const map = accumulateUpward(owners, ctx.flat, ctx.index)
+  if (unassigned > 0) map.set(UNASSIGNED_ID, unassigned)
+  return map
+}
+
+/**
+ * 每个分类节点下的物品数量（含子分类），用于在分类树上显示徽标。
+ * 「未分类」的数量挂在 UNCATEGORIZED_ID 上。
+ */
+export function countByCategoryIncludingDescendants(
+  items: Item[],
+  ctx: DerivedContext,
+): Map<string, number> {
+  const owners: string[] = []
+  let uncategorized = 0
+
+  for (const item of items) {
+    const valid = item.categoryIds.filter((id) => ctx.categoryIndex.has(id))
+    if (valid.length === 0) {
+      uncategorized++
+      continue
+    }
+    owners.push(...valid)
+  }
+
+  const map = accumulateUpward(owners, ctx.categoryFlat, ctx.categoryIndex)
+  if (uncategorized > 0) map.set(UNCATEGORIZED_ID, uncategorized)
+  return map
+}
+
+/**
+ * 自底向上累加数量。
+ * 先把直接数量放到各自节点上，再按深度从深到浅往父节点加 ——
+ * 这样每个节点拿到的是「自己 + 所有子孙」的合计。
+ *
+ * 注意：同一件物品同时挂在同一棵子树的两个节点上时（眼影 + 唇膏），
+ * 父节点只会被加一次，不会虚高。
+ */
+function accumulateUpward<T extends TreeItem>(
+  ownerIds: string[],
+  flat: TreeNode<T>[],
+  index: TreeIndex<T>,
+): Map<string, number> {
+  const total = new Map<string, number>()
+  const perNode = new Map<string, Set<string>>()
+
+  // 同一个节点收到同一件物品只有一次
+  ownerIds.forEach((id, index0) => {
+    if (!index.has(id)) return
+    const bucket = perNode.get(id)
+    if (bucket) bucket.add(String(index0))
+    else perNode.set(id, new Set([String(index0)]))
+  })
+
+  for (const [id, bucket] of perNode) total.set(id, bucket.size)
+
+  const ordered = [...flat].sort((a, b) => b.depth - a.depth)
   for (const node of ordered) {
     const self = total.get(node.node.id) ?? 0
     if (node.node.parentId) {

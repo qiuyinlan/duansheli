@@ -74,6 +74,7 @@ export function createSeedData(): AppData {
   const categories: Category[] = CATEGORY_NAMES.map((name, i) => ({
     id: uid(),
     name,
+    parentId: null,
     order: i,
     createdAt: now,
   }))

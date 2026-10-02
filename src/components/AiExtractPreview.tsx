@@ -15,7 +15,7 @@ interface Props {
  */
 export function AiExtractPreview({ drafts, onChange }: Props) {
   const derived = useAppStore((s) => s.derived)
-  const hasNewCategories = drafts.some((d) => d.newCategoryNames.length > 0)
+  const hasNewCategories = drafts.some((d) => d.newCategoryPaths.length > 0)
   const hasNewLocations = drafts.some((d) => d.newLocationPath !== null)
 
   const update = (key: string, patch: Partial<ItemDraft>) => {
@@ -44,7 +44,7 @@ export function AiExtractPreview({ drafts, onChange }: Props) {
             <Button
               size="sm"
               onClick={() =>
-                mapAll((d) => (d.newCategoryNames.length > 0 ? { adoptNewCategories: true } : {}))
+                mapAll((d) => (d.newCategoryPaths.length > 0 ? { adoptNewCategories: true } : {}))
               }
             >
               采纳全部新分类
@@ -123,12 +123,12 @@ export function AiExtractPreview({ drafts, onChange }: Props) {
                 <span className="chip-list">
                   {draft.matchedCategoryIds.map((id) => (
                     <span key={id} className="chip is-active">
-                      {derived.categoryById.get(id)?.name ?? '（已删除）'}
+                      {derived.categoryIndex.pathString(id, ' / ')}
                     </span>
                   ))}
-                  {draft.newCategoryNames.map((name) => (
+                  {draft.newCategoryPaths.map((path) => (
                     <button
-                      key={name}
+                      key={path.join('/')}
                       type="button"
                       className={`chip${draft.adoptNewCategories ? ' is-active' : ' chip--dashed'}`}
                       onClick={() =>
@@ -137,11 +137,11 @@ export function AiExtractPreview({ drafts, onChange }: Props) {
                       title="这是 AI 建议的新分类。点击切换：是否创建"
                     >
                       {draft.adoptNewCategories ? '' : '+ '}
-                      {name}
+                      {path.join(' / ')}
                     </button>
                   ))}
                   {draft.matchedCategoryIds.length === 0 &&
-                  draft.newCategoryNames.length === 0 ? (
+                  draft.newCategoryPaths.length === 0 ? (
                     <span className="dim small">未分类</span>
                   ) : null}
                 </span>

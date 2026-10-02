@@ -15,7 +15,7 @@ import type {
 import { DEFAULT_UI_PREFS, SCHEMA_VERSION } from '../types'
 import { mergeAppData } from '../data/importData'
 import { uid } from '../lib/id'
-import { canReparent } from '../lib/tree'
+import { canReparent, type TreeItem } from '../lib/tree'
 import { getRepository } from '../storage/repository'
 import { createEmptyData, createSeedData } from '../storage/seed'
 import { createSnapshot, getSnapshot } from '../storage/snapshots'
@@ -96,21 +96,63 @@ function ensureTags(existing: AppData['tags'], used: string[], now: string): App
 function normalizeShape(data: AppData): AppData {
   return {
     schemaVersion: data.schemaVersion ?? SCHEMA_VERSION,
+    // parentId 统一成 null 或字符串。老数据里可能是 undefined，
+    // 而 undefined 在 JSON.stringify 时会整个键消失，导出文件就不干净了。
     items: Array.isArray(data.items) ? data.items : [],
-    categories: Array.isArray(data.categories) ? data.categories : [],
-    locations: Array.isArray(data.locations) ? data.locations : [],
+    categories: (Array.isArray(data.categories) ? data.categories : []).map((c) => ({
+      ...c,
+      parentId: c.parentId ?? null,
+    })),
+    locations: (Array.isArray(data.locations) ? data.locations : []).map((l) => ({
+      ...l,
+      parentId: l.parentId ?? null,
+    })),
     attributeDefs: Array.isArray(data.attributeDefs) ? data.attributeDefs : [],
     tags: Array.isArray(data.tags) ? data.tags : [],
     updatedAt: data.updatedAt ?? new Date().toISOString(),
   }
 }
 
-function orderAmongSiblings(locations: Location[], parentId: string | null): number {
+function orderAmongSiblings(
+  nodes: Array<{ parentId: string | null; order: number }>,
+  parentId: string | null,
+): number {
   let max = -1
-  for (const loc of locations) {
-    if ((loc.parentId ?? null) === parentId) max = Math.max(max, loc.order)
+  for (const node of nodes) {
+    if ((node.parentId ?? null) === parentId) max = Math.max(max, node.order)
   }
   return max + 1
+}
+
+/**
+ * 把一条「名称路径」解析成节点 id，缺哪一层就建哪一层。
+ *
+ * 位置和分类现在都是不限层级的树，解析逻辑一模一样，
+ * 所以做成泛型共用 —— 免得两处各写一遍，其中一份悄悄长出 bug。
+ */
+function resolvePathIn<T extends TreeItem>(
+  nodes: T[],
+  path: string[],
+  now: string,
+  make: (name: string, parentId: string | null, order: number, createdAt: string) => T,
+): { id: string | null; created: number } {
+  let parentId: string | null = null
+  let created = 0
+
+  for (const raw of path) {
+    const name = raw.trim()
+    if (name === '') continue
+
+    let found = nodes.find((n) => (n.parentId ?? null) === parentId && n.name === name)
+    if (!found) {
+      found = make(name, parentId, orderAmongSiblings(nodes, parentId), now)
+      nodes.push(found)
+      created++
+    }
+    parentId = found.id
+  }
+
+  return { id: parentId, created }
 }
 
 /* ------------------------------------------------------------------ */
@@ -139,7 +181,8 @@ export interface ItemInput {
 export interface BulkAddItem {
   name: string
   quantity: number
-  categoryNames: string[]
+  /** 每条是一条从顶层到末级的分类名称路径，例如 [['化妆品','眼妆']] */
+  categoryPaths: string[][]
   /** 从顶层到末级的名称路径；null = 未归位 */
   locationPath: string[] | null
   tags: string[]
@@ -150,7 +193,7 @@ export interface BulkAddItem {
 
 export interface BulkUpdateItem {
   id: string
-  categoryNames: string[]
+  categoryPaths: string[][]
   locationPath: string[] | null
 }
 
@@ -158,6 +201,14 @@ export interface BulkWriteResult {
   items: number
   createdCategories: number
   createdLocations: number
+}
+
+export interface DeleteCategoryResult {
+  ok: boolean
+  reason?: string
+  childCount: number
+  /** 直接挂在这个分类上的物品数（不含子分类里的） */
+  itemCount: number
 }
 
 /**
@@ -170,71 +221,83 @@ function createNameResolvers(data: AppData, now: string) {
   const categories: Category[] = data.categories.map((c) => ({ ...c }))
   const locations: Location[] = data.locations.map((l) => ({ ...l }))
 
-  const categoryIdCache = new Map<string, string>()
+  const categoryIdCache = new Map<string, string | null>()
   const locationIdCache = new Map<string, string | null>()
   let createdCategories = 0
   let createdLocations = 0
 
-  const resolveCategory = (raw: string): string | null => {
-    const name = raw.trim()
-    if (name === '') return null
-    const cached = categoryIdCache.get(name)
+  /**
+   * 按名称路径解析分类，缺哪一层建哪一层。
+   *
+   * 注意：调用方（AI 匹配层）已经先拿现有分类树比对过了，
+   * 所以这里收到的要么是一条**已存在的完整路径**（原样命中，不会重复建），
+   * 要么是一条**确定要新建的路径**。不会出现「本该复用却建了个新的」。
+   */
+  const resolveCategoryPath = (path: string[]): string | null => {
+    const cleaned = path.map((part) => part.trim()).filter((part) => part !== '')
+    if (cleaned.length === 0) return null
+
+    const key = cleaned.join('/')
+    const cached = categoryIdCache.get(key)
     if (cached !== undefined) return cached
 
-    let found = categories.find((c) => c.name === name)
-    if (!found) {
-      found = { id: uid(), name, order: categories.length, createdAt: now }
-      categories.push(found)
-      createdCategories++
-    }
-    categoryIdCache.set(name, found.id)
-    return found.id
+    const { id, created } = resolvePathIn(
+      categories,
+      cleaned,
+      now,
+      (name, parentId, order, createdAt): Category => ({
+        id: uid(),
+        name,
+        parentId,
+        order,
+        createdAt,
+      }),
+    )
+    createdCategories += created
+    categoryIdCache.set(key, id)
+    return id
   }
 
-  const resolveCategories = (names: string[]): string[] => {
+  const resolveCategoryPaths = (paths: string[][]): string[] => {
     const ids: string[] = []
-    for (const name of names) {
-      const id = resolveCategory(name)
+    for (const path of paths) {
+      const id = resolveCategoryPath(path)
       if (id && !ids.includes(id)) ids.push(id)
     }
     return ids
   }
 
-  /** 逐层往下走，缺哪层建哪层 */
+  /** 位置同理 */
   const resolveLocation = (path: string[] | null): string | null => {
     if (!path || path.length === 0) return null
+
     const key = path.join('/')
     const cached = locationIdCache.get(key)
     if (cached !== undefined) return cached
 
-    let parentId: string | null = null
-    for (const raw of path) {
-      const name = raw.trim()
-      if (name === '') continue
-      let found = locations.find((l) => (l.parentId ?? null) === parentId && l.name === name)
-      if (!found) {
-        found = {
-          id: uid(),
-          name,
-          parentId,
-          note: '',
-          order: orderAmongSiblings(locations, parentId),
-          createdAt: now,
-        }
-        locations.push(found)
-        createdLocations++
-      }
-      parentId = found.id
-    }
-    locationIdCache.set(key, parentId)
-    return parentId
+    const { id, created } = resolvePathIn(
+      locations,
+      path,
+      now,
+      (name, parentId, order, createdAt): Location => ({
+        id: uid(),
+        name,
+        parentId,
+        note: '',
+        order,
+        createdAt,
+      }),
+    )
+    createdLocations += created
+    locationIdCache.set(key, id)
+    return id
   }
 
   return {
     categories,
     locations,
-    resolveCategory,
-    resolveCategories,
+    resolveCategoryPath,
+    resolveCategoryPaths,
     resolveLocation,
     stats: (): { createdCategories: number; createdLocations: number } => ({
       createdCategories,
@@ -317,9 +380,15 @@ export interface AppState {
   deleteLocation: (id: string, reassignTo?: string | null) => DeleteLocationResult
 
   /* 分类 */
-  addCategory: (name: string) => Category | null
+  addCategory: (name: string, parentId?: string | null) => Category | null
   renameCategory: (id: string, name: string) => void
-  deleteCategory: (id: string) => number
+  moveCategory: (id: string, newParentId: string | null) => { ok: boolean; reason?: string }
+  /**
+   * 删除分类。
+   * 有子分类或挂着物品时，不传 reassignTo 会拒绝（返回原因）；
+   * 传了就先把直接子分类和直接挂的物品挪过去，再删除。
+   */
+  deleteCategory: (id: string, reassignTo?: string | null) => DeleteCategoryResult
 
   /* 属性库 */
   addAttributeDef: (input: AttributeDefInput) => AttributeDef | null
@@ -436,7 +505,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         const name = entry.name.trim()
         if (name === '') continue
 
-        const categoryIds = resolvers.resolveCategories(entry.categoryNames)
+        const categoryIds = resolvers.resolveCategoryPaths(entry.categoryPaths)
         const locationId = resolvers.resolveLocation(entry.locationPath)
 
         const attrs: Record<string, AttrValue> = {}
@@ -494,7 +563,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         const update = byId.get(item.id)
         if (!update) return item
 
-        const categoryIds = resolvers.resolveCategories(update.categoryNames)
+        const categoryIds = resolvers.resolveCategoryPaths(update.categoryPaths)
         const locationId = resolvers.resolveLocation(update.locationPath)
         changed++
         return { ...item, categoryIds, locationId, updatedAt: now }
@@ -758,37 +827,39 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (!node) return { ok: false, reason: '位置不存在', childCount: 0, itemCount: 0 }
 
       const childCount = data.locations.filter((l) => l.parentId === id).length
-      const scope = ctx.index.descendantIds(id)
-      const affectedItems = data.items.filter(
-        (i) => i.locationId !== null && scope.has(i.locationId),
-      )
+      // 只统计**直接放在这个位置上**的物品。
+      // 子位置里的东西不动 —— 删掉「衣柜」不该把「第二层抽屉」里的东西也倒出来。
+      const directItems = data.items.filter((item) => item.locationId === id)
 
       // 有内容又没指定去处 → 拒绝删除，把情况报给界面去提示
-      if ((childCount > 0 || affectedItems.length > 0) && reassignTo === undefined) {
+      if ((childCount > 0 || directItems.length > 0) && reassignTo === undefined) {
         return {
           ok: false,
           reason:
-            childCount > 0 && affectedItems.length > 0
-              ? `该位置下有 ${childCount} 个子位置和 ${affectedItems.length} 件物品`
+            childCount > 0 && directItems.length > 0
+              ? `该位置下有 ${childCount} 个子位置和 ${directItems.length} 件物品`
               : childCount > 0
                 ? `该位置下有 ${childCount} 个子位置`
-                : `该位置下有 ${affectedItems.length} 件物品`,
+                : `该位置下有 ${directItems.length} 件物品`,
           childCount,
-          itemCount: affectedItems.length,
+          itemCount: directItems.length,
         }
       }
 
-      // 指定了去处 → 把物品和直接子节点都挪过去，再删除
+      // 指定了去处 → 把直接物品和直接子节点都挪过去，再删除
       if (reassignTo !== undefined) {
         if (reassignTo !== null && !ctx.index.has(reassignTo)) {
-          return { ok: false, reason: '目标位置不存在', childCount, itemCount: 0 }
+          return { ok: false, reason: '目标位置不存在', childCount, itemCount: directItems.length }
         }
-        if (reassignTo !== null && (reassignTo === id || scope.has(reassignTo))) {
+        if (
+          reassignTo !== null &&
+          (reassignTo === id || ctx.index.descendantIds(id).has(reassignTo))
+        ) {
           return {
             ok: false,
             reason: '不能把内容移动到正在删除的这个位置下面',
             childCount,
-            itemCount: 0,
+            itemCount: directItems.length,
           }
         }
       }
@@ -798,9 +869,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         reassignTo === undefined
           ? data.items
           : data.items.map((item) =>
-              item.locationId !== null && scope.has(item.locationId)
-                ? { ...item, locationId: reassignTo, updatedAt: now }
-                : item,
+              item.locationId === id ? { ...item, locationId: reassignTo, updatedAt: now } : item,
             )
 
       const locations =
@@ -810,27 +879,40 @@ export const useAppStore = create<AppState>()((set, get) => {
               .filter((l) => l.id !== id)
               .map((l) =>
                 l.parentId === id
-                  ? { ...l, parentId: reassignTo, order: orderAmongSiblings(data.locations, reassignTo) }
+                  ? {
+                      ...l,
+                      parentId: reassignTo,
+                      order: orderAmongSiblings(data.locations, reassignTo),
+                    }
                   : l,
               )
 
       // 删除位置会连带影响物品归属，属于结构性破坏操作 → 落一份 destructive 快照
       commit({ ...data, locations, items }, 'destructive')
-      return { ok: true, childCount, itemCount: affectedItems.length }
+      return { ok: true, childCount, itemCount: directItems.length }
     },
 
     /* ---------------- 分类 ---------------- */
 
-    addCategory: (name) => {
+    addCategory: (name, parentId = null) => {
       const trimmed = name.trim()
       if (trimmed === '') return null
+
       const data = get().data
-      if (data.categories.some((c) => c.name === trimmed)) return null
+      if (parentId !== null && !get().derived.categoryIndex.has(parentId)) return null
+
+      // 重名只在**同一个父级下**算冲突 ——
+      // 「化妆品 › 眼妆」和「护肤 › 眼妆」是两个不同的分类，应该允许
+      const duplicate = data.categories.some(
+        (c) => (c.parentId ?? null) === parentId && c.name === trimmed,
+      )
+      if (duplicate) return null
 
       const category: Category = {
         id: uid(),
         name: trimmed,
-        order: data.categories.length,
+        parentId,
+        order: orderAmongSiblings(data.categories, parentId),
         createdAt: new Date().toISOString(),
       }
       commit({ ...data, categories: [...data.categories, category] })
@@ -840,31 +922,110 @@ export const useAppStore = create<AppState>()((set, get) => {
     renameCategory: (id, name) => {
       const trimmed = name.trim()
       if (trimmed === '') return
+
       const data = get().data
-      if (data.categories.some((c) => c.name === trimmed && c.id !== id)) return
+      const target = data.categories.find((c) => c.id === id)
+      if (!target) return
+
+      const duplicate = data.categories.some(
+        (c) =>
+          c.id !== id && (c.parentId ?? null) === (target.parentId ?? null) && c.name === trimmed,
+      )
+      if (duplicate) return
+
       commit({
         ...data,
         categories: data.categories.map((c) => (c.id === id ? { ...c, name: trimmed } : c)),
       })
     },
 
-    deleteCategory: (id) => {
+    moveCategory: (id, newParentId) => {
+      const check = canReparent(get().derived.categoryIndex, id, newParentId)
+      if (!check.ok) return check
+
       const data = get().data
-      const affected = data.items.filter((i) => i.categoryIds.includes(id)).length
-      const now = new Date().toISOString()
-      commit(
-        {
-          ...data,
-          categories: data.categories.filter((c) => c.id !== id),
-          items: data.items.map((item) =>
-            item.categoryIds.includes(id)
-              ? { ...item, categoryIds: item.categoryIds.filter((c) => c !== id), updatedAt: now }
-              : item,
-          ),
-        },
-        'destructive',
+      const categories = data.categories.map((c) =>
+        c.id === id
+          ? {
+              ...c,
+              parentId: newParentId,
+              order: orderAmongSiblings(data.categories, newParentId),
+            }
+          : c,
       )
-      return affected
+      commit({ ...data, categories })
+      return { ok: true }
+    },
+
+    deleteCategory: (id, reassignTo) => {
+      const data = get().data
+      const ctx = get().derived
+
+      const node = ctx.categoryById.get(id)
+      if (!node) return { ok: false, reason: '分类不存在', childCount: 0, itemCount: 0 }
+
+      const childCount = data.categories.filter((c) => c.parentId === id).length
+      // 只统计**直接挂在这个分类上**的物品。
+      // 子分类里的东西不动 —— 删掉「化妆品」不该把「眼影盘」也弄丢归属。
+      const directItems = data.items.filter((item) => item.categoryIds.includes(id))
+
+      if ((childCount > 0 || directItems.length > 0) && reassignTo === undefined) {
+        return {
+          ok: false,
+          reason:
+            childCount > 0 && directItems.length > 0
+              ? `该分类下有 ${childCount} 个子分类和 ${directItems.length} 件物品`
+              : childCount > 0
+                ? `该分类下有 ${childCount} 个子分类`
+                : `该分类下有 ${directItems.length} 件物品`,
+          childCount,
+          itemCount: directItems.length,
+        }
+      }
+
+      if (reassignTo !== undefined && reassignTo !== null) {
+        if (!ctx.categoryById.has(reassignTo)) {
+          return { ok: false, reason: '目标分类不存在', childCount, itemCount: directItems.length }
+        }
+        if (reassignTo === id || ctx.categoryIndex.descendantIds(id).has(reassignTo)) {
+          return {
+            ok: false,
+            reason: '不能把内容移动到正在删除的这个分类下面',
+            childCount,
+            itemCount: directItems.length,
+          }
+        }
+      }
+
+      const now = new Date().toISOString()
+
+      const items =
+        reassignTo === undefined
+          ? data.items
+          : data.items.map((item) => {
+              if (!item.categoryIds.includes(id)) return item
+              const next = item.categoryIds.filter((c) => c !== id)
+              if (reassignTo !== null && !next.includes(reassignTo)) next.push(reassignTo)
+              return { ...item, categoryIds: next, updatedAt: now }
+            })
+
+      const categories =
+        reassignTo === undefined
+          ? data.categories.filter((c) => c.id !== id)
+          : data.categories
+              .filter((c) => c.id !== id)
+              .map((c) =>
+                c.parentId === id
+                  ? {
+                      ...c,
+                      parentId: reassignTo,
+                      order: orderAmongSiblings(data.categories, reassignTo),
+                    }
+                  : c,
+              )
+
+      commit({ ...data, categories, items }, 'destructive')
+      return { ok: true, childCount, itemCount: directItems.length }
     },
 
     /* ---------------- 属性库 ---------------- */

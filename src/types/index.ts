@@ -6,8 +6,15 @@
 /** 应用标识，写入导出文件用于校验；IndexedDB 数据库名也是它 */
 export const APP_ID = 'duansheli'
 
-/** 数据结构版本。将来结构有破坏性变更时 +1，并在导入时做迁移 */
-export const SCHEMA_VERSION = 1
+/**
+ * 数据结构版本。
+ *
+ * v1 → v2：分类从扁平变成不限层级的树（Category 增加 parentId）。
+ * 升版本号是为了保护老程序：它拿到 v2 的备份会**明确拒绝**并提示升级，
+ * 而不是静默把分类层级丢掉。反过来 v1 的老备份能正常导入 v2 程序，
+ * 那些分类会自动变成全是顶层。
+ */
+export const SCHEMA_VERSION = 2
 
 /* ------------------------------------------------------------------ */
 /* 物品                                                                */
@@ -49,17 +56,30 @@ export interface Item {
 }
 
 /* ------------------------------------------------------------------ */
+/* 树                                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 任何能构成树的东西。
+ *
+ * 位置和分类都是「不限层级的树」，结构完全一样，
+ * 所以抽成这个共用形状 —— 树工具、路径匹配、合并算法都按它写成泛型，
+ * 免得两边各写一遍，然后其中一份悄悄长出 bug。
+ */
+export interface TreeItem {
+  id: string
+  name: string
+  parentId: string | null
+  /** 同级手动排序 */
+  order: number
+}
+
+/* ------------------------------------------------------------------ */
 /* 位置（不限层数的树）                                                 */
 /* ------------------------------------------------------------------ */
 
-export interface Location {
-  id: string
-  name: string
-  /** null = 顶层节点（如「家」） */
-  parentId: string | null
+export interface Location extends TreeItem {
   note: string
-  /** 同级手动排序 */
-  order: number
   createdAt: string
 }
 
@@ -74,11 +94,14 @@ export const UNTAGGED_ID = '__untagged__'
 /* 分类与标签                                                          */
 /* ------------------------------------------------------------------ */
 
-/** 受控词表：你亲手维护的固定清单，回答「这是什么」 */
-export interface Category {
-  id: string
-  name: string
-  order: number
+/**
+ * 受控词表：你亲手维护的固定清单，回答「这是什么」。
+ *
+ * 和位置一样是不限层级的树 —— 可以做「化妆品 › 眼妆 › 眼影盘」这种结构。
+ * 物品可以挂在**任意层级**上：想细就细，想粗就粗。
+ */
+export interface Category extends TreeItem {
+  /** null = 顶层分类。加这个字段是纯新增，老数据自动变成全是顶层。 */
   createdAt: string
 }
 

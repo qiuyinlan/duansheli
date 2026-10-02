@@ -145,6 +145,34 @@ function uniq(values: string[]): string[] {
   return [...new Set(values)]
 }
 
+/**
+ * 分类字段的解析。
+ *
+ * 分类现在是树，所以理想输出是「路径的数组」：`[["化妆品","眼妆"]]`。
+ * 但模型有时会只给一组平铺的名字：`["衣物"]`，或者写成 `["化妆品/眼妆"]`。
+ * 三种写法都要能认，所以统一成 `string[][]`。
+ */
+function asPathListOfLists(value: unknown): string[][] {
+  if (value === null || value === undefined) return []
+
+  if (!Array.isArray(value)) {
+    const single = asPathList(value)
+    return single.length > 0 ? [single] : []
+  }
+
+  const out: string[][] = []
+  const seen = new Set<string>()
+  for (const entry of value) {
+    const path = asPathList(entry)
+    if (path.length === 0) continue
+    const key = path.join('/')
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(path)
+  }
+  return out
+}
+
 /* ------------------------------------------------------------------ */
 /* 批量录入的结果                                                      */
 /* ------------------------------------------------------------------ */
@@ -152,9 +180,9 @@ function uniq(values: string[]): string[] {
 export interface RawExtractedItem {
   name: string
   quantity: number
-  /** 分类名，优先复用已有分类；没有合适的才会是新建议 */
-  categories: string[]
-  /** 从顶层到末级的名称路径；没有提到位置就是 null */
+  /** 每条是一条从顶层到末级的分类名称路径；AI 只给一个名字时就是单元素路径 */
+  categoryPaths: string[][]
+  /** 从顶层到末级的位置名称路径；没有提到位置就是 null */
   location: string[] | null
   tags: string[]
   /** 属性名 → 值，只可能命中已有属性名 */
@@ -179,7 +207,7 @@ function normalizeExtractedItem(raw: unknown): RawExtractedItem | null {
   return {
     name,
     quantity: asQuantity(raw.quantity ?? raw.数量 ?? raw.count),
-    categories: uniq(asStringList(raw.categories ?? raw.分类 ?? raw.category)),
+    categoryPaths: asPathListOfLists(raw.categories ?? raw.分类 ?? raw.category),
     location: location.length > 0 ? location : null,
     tags: uniq(asStringList(raw.tags ?? raw.标签 ?? raw.tag)),
     attributes: asAttributeMap(raw.attributes ?? raw.属性 ?? raw.attrs),
@@ -226,7 +254,7 @@ export function parseExtraction(payload: unknown): ParsedExtraction {
 
 export interface RawAssignment {
   id: string
-  categories: string[]
+  categoryPaths: string[][]
   location: string[] | null
   reason: string
 }
@@ -254,7 +282,7 @@ export function parseAssignments(payload: unknown): RawAssignment[] {
     const location = asPathList(raw.location ?? raw.位置)
     out.push({
       id,
-      categories: uniq(asStringList(raw.categories ?? raw.分类 ?? raw.category)),
+      categoryPaths: asPathListOfLists(raw.categories ?? raw.分类 ?? raw.category),
       location: location.length > 0 ? location : null,
       reason: asString(raw.reason ?? raw.理由),
     })
