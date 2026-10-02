@@ -19,7 +19,16 @@ interface NameDialogState {
   parentId: string | null
   targetId?: string
   initial: string
-  title: string
+  /*
+   * 注意这里**不存译好的标题**。
+   *
+   * 存字符串的写法是：打开对话框时算出 `title: t('locations.renameTitle')`，
+   * 然后在 Modal 上渲染它。平时看不出问题 —— 因为对话框的全屏遮罩正好盖住了
+   * 右上角的语言开关，「开着对话框切语言」这条路径走不到。
+   * 但这只是**碰巧**成立：哪天遮罩不盖顶栏了、或者加个快捷键切语言，它就露出来，
+   * 而且是最难查的那种症状 —— 别处都变了，就这一处没变。
+   * 所以标题改成在渲染时由 mode / parentId 现推。
+   */
 }
 
 export function Locations() {
@@ -79,29 +88,28 @@ export function Locations() {
     : t('status.unassigned')
   const directCount = data.items.filter((i) => i.locationId === activeId).length
 
+  /** 对话框标题现推，不存进 state —— 存了就会把当时那门语言冻住（见 NameDialogState 的注释） */
+  const nameDialogTitle =
+    nameDialog === null
+      ? ''
+      : nameDialog.mode === 'rename'
+        ? t('locations.renameTitle')
+        : nameDialog.parentId
+          ? t('locations.addChildTitle', {
+              name: derived.index.byId.get(nameDialog.parentId)?.name ?? '',
+            })
+          : t('locations.addTopTitle')
+
   const openAddDialog = (parentId: string | null) => {
     setNameDraft('')
-    setNameDialog({
-      mode: 'add',
-      parentId,
-      initial: '',
-      title: parentId
-        ? t('locations.addChildTitle', { name: derived.index.byId.get(parentId)?.name ?? '' })
-        : t('locations.addTopTitle'),
-    })
+    setNameDialog({ mode: 'add', parentId, initial: '' })
   }
 
   const openRenameDialog = (id: string) => {
     const loc = derived.index.byId.get(id)
     if (!loc) return
     setNameDraft(loc.name)
-    setNameDialog({
-      mode: 'rename',
-      parentId: loc.parentId,
-      targetId: id,
-      initial: loc.name,
-      title: t('locations.renameTitle'),
-    })
+    setNameDialog({ mode: 'rename', parentId: loc.parentId, targetId: id, initial: loc.name })
   }
 
   const submitNameDialog = () => {
@@ -314,7 +322,7 @@ export function Locations() {
       {/* ---------------- 新建 / 重命名 ---------------- */}
       <Modal
         open={nameDialog !== null}
-        title={nameDialog?.title ?? ''}
+        title={nameDialogTitle}
         onClose={() => setNameDialog(null)}
         maxWidth={400}
         footer={

@@ -17,7 +17,12 @@ interface NameDialogState {
   mode: 'add' | 'rename'
   parentId: string | null
   targetId?: string
-  title: string
+  /*
+   * 注意这里**不存译好的标题**，标题在渲染时由 mode / parentId 现推。
+   * 存字符串平时看不出问题（对话框的全屏遮罩正好盖住了右上角的语言开关），
+   * 但那只是碰巧成立 —— 一旦遮罩不盖顶栏了，就会变成
+   * 「别处都变了、就这一处没变」这种最难查的症状。理由同 Locations.tsx。
+   */
 }
 
 /**
@@ -89,29 +94,28 @@ export function Categories() {
     ? live.filter((item) => item.categoryIds.includes(activeId)).length
     : scopedItems.length
 
+  /** 对话框标题现推，不存进 state —— 存了就会把当时那门语言冻住（见 NameDialogState 的注释） */
+  const nameDialogTitle =
+    nameDialog === null
+      ? ''
+      : nameDialog.mode === 'rename'
+        ? t('categories.renameTitle')
+        : nameDialog.parentId
+          ? t('categories.addChildTitle', {
+              name: derived.categoryById.get(nameDialog.parentId)?.name ?? '',
+            })
+          : t('categories.addTopTitle')
+
   const openAddDialog = (parentId: string | null) => {
     setNameDraft('')
-    setNameDialog({
-      mode: 'add',
-      parentId,
-      title: parentId
-        ? t('categories.addChildTitle', {
-            name: derived.categoryById.get(parentId)?.name ?? '',
-          })
-        : t('categories.addTopTitle'),
-    })
+    setNameDialog({ mode: 'add', parentId })
   }
 
   const openRenameDialog = (id: string) => {
     const category = derived.categoryById.get(id)
     if (!category) return
     setNameDraft(category.name)
-    setNameDialog({
-      mode: 'rename',
-      parentId: category.parentId,
-      targetId: id,
-      title: t('categories.renameTitle'),
-    })
+    setNameDialog({ mode: 'rename', parentId: category.parentId, targetId: id })
   }
 
   const submitNameDialog = () => {
@@ -324,7 +328,7 @@ export function Categories() {
       {/* ---------------- 新建 / 重命名 ---------------- */}
       <Modal
         open={nameDialog !== null}
-        title={nameDialog?.title ?? ''}
+        title={nameDialogTitle}
         onClose={() => setNameDialog(null)}
         maxWidth={400}
         footer={
