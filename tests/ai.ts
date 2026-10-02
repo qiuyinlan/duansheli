@@ -19,7 +19,14 @@ import {
 } from '../src/ai/convert'
 import { AiError } from '../src/ai/deepseek'
 import { extractJson, parseAssignments, parseExtraction } from '../src/ai/parse'
-import { buildAiContext, chunkItems, renderContextBlock, splitIntoChunks } from '../src/ai/prompts'
+import {
+  buildAiContext,
+  buildExtractionMessages,
+  buildTidyMessages,
+  chunkItems,
+  renderContextBlock,
+  splitIntoChunks,
+} from '../src/ai/prompts'
 import { buildExportFile } from '../src/data/exportJson'
 import { getRepository } from '../src/storage/repository'
 import { createDerived } from '../src/store/selectors'
@@ -780,6 +787,51 @@ await test('给了完整路径就能消歧', () => {
     '找不到护肤下的眼妆',
   )
   eq(draft.matchedCategoryIds[0], skinEye.id, '完整路径应该能唯一定位')
+})
+
+/* ------------------------------------------------------------------ */
+/* 9. Prompt 的关键约束（防回归）                                       */
+/* ------------------------------------------------------------------ */
+
+suite('Prompt 的关键约束')
+
+/**
+ * 这组测试守的是一个真实踩过的坑：
+ * 最初的指令只写「优先复用已有分类」，结果用户输入「化妆品：口红、眼影」时，
+ * 因为分类清单里没有「化妆品」，AI 就近把口红塞进了「日用品」。
+ * 指令必须明确：原文自己写的归类名优先级最高，宁可新建也不要硬塞。
+ */
+await test('抽取指令：原文写了归类名就必须用它，哪怕要新建分类', () => {
+  const messages = buildExtractionMessages(buildAiContext(fx, ctx), '化妆品：口红、眼影')
+  const system = must(messages[0], '应该有 system 消息').content
+
+  ok(system.includes('原文自己给出了归类名'), '要有「认原文归类名」这条规则')
+  ok(system.includes('即使它不在【已有分类】里'), '要明确说清单之外也可以用')
+  ok(system.includes('绝对不要为了避开新建分类'), '要禁止为了省事而硬塞')
+  ok(system.includes('把「口红」归到「日用品」是错的'), '要给出具体的反例')
+  ok(system.includes('不是「必须从中二选一的选项」'), '要说清清单只是候选')
+})
+
+await test('上下文块里再强调一遍这条约束', () => {
+  const block = renderContextBlock(buildAiContext(fx, ctx))
+  ok(block.includes('必须用它'), '上下文里也要提醒')
+  ok(
+    block.includes('宁可新建一个分类，也不要把东西塞进不相干的已有分类'),
+    '光靠 system 一处不够，上下文里再钉一次',
+  )
+})
+
+await test('整理指令：允许纠正错的分类，该新建就新建', () => {
+  const messages = buildTidyMessages(buildAiContext(fx, ctx), [])
+  const system = must(messages[0], '应该有 system 消息').content
+  ok(system.includes('该新建就新建'), '整理模式也要能纠正错分类')
+  ok(system.includes('明显不合适'), '要说明什么情况下该改')
+})
+
+await test('抽取指令要求 json 模式（DeepSeek 的硬性要求）', () => {
+  const messages = buildExtractionMessages(buildAiContext(fx, ctx), '一件东西')
+  const all = messages.map((m) => m.content).join('\n')
+  ok(all.includes('json'), 'DeepSeek 的 JSON 模式要求 prompt 里必须出现 json 字样')
 })
 
 /* ------------------------------------------------------------------ */

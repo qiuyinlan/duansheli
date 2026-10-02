@@ -49,7 +49,7 @@ npm run dev     # 启动开发服务器，打开提示的地址即可
 ```bash
 npm run build      # 类型检查 + 打包到 dist/
 npm run preview    # 本地预览打包结果
-npm test           # 运行测试（143 项）
+npm test           # 运行测试（147 项）
 npm run typecheck  # 只做类型检查
 npm run icons      # 重新生成 PWA 图标
 ```
@@ -331,7 +331,7 @@ UI 组件全部手写 —— 因为「极简无彩色」的风格自己写反而
 │  ├─ components/                外壳、位置树、物品行、选择器、AI 预览、UI 基础件
 │  ├─ pages/                     10 个页面
 │  └─ styles/                    global / layout / components / pages
-└─ tests/                        143 项测试
+└─ tests/                        147 项测试
 ```
 
 ### 测试

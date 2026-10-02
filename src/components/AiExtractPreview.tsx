@@ -1,5 +1,7 @@
+import { useMemo } from 'react'
 import type { ItemDraft } from '../ai/convert'
 import { useAppStore } from '../store/useAppStore'
+import { IconAlert } from './ui/icons'
 import { Button } from './ui/primitives'
 
 interface Props {
@@ -17,6 +19,18 @@ export function AiExtractPreview({ drafts, onChange }: Props) {
   const derived = useAppStore((s) => s.derived)
   const hasNewCategories = drafts.some((d) => d.newCategoryPaths.length > 0)
   const hasNewLocations = drafts.some((d) => d.newLocationPath !== null)
+
+  /** 本次 AI 一共建议了哪些新分类（去重后按出现顺序） */
+  const suggestedCategories = useMemo(() => {
+    const out: string[] = []
+    for (const draft of drafts) {
+      for (const path of draft.newCategoryPaths) {
+        const label = path.join(' / ')
+        if (!out.includes(label)) out.push(label)
+      }
+    }
+    return out
+  }, [drafts])
 
   const update = (key: string, patch: Partial<ItemDraft>) => {
     onChange(drafts.map((draft) => (draft.key === key ? { ...draft, ...patch } : draft)))
@@ -60,6 +74,38 @@ export function AiExtractPreview({ drafts, onChange }: Props) {
           ) : null}
         </div>
       </div>
+
+      {/*
+        把「建议新建的分类」单独拎出来说一遍。
+        之前只靠在每一行的标签上显示虚线 chip，很容易被忽略 ——
+        结果就是用户直接点了确认，东西落到「未分类」里，
+        或者被 AI 硬塞进了某个不相干的已有分类而没人发现。
+      */}
+      {suggestedCategories.length > 0 ? (
+        <div className="notice notice--alert">
+          <span className="notice__icon">
+            <IconAlert />
+          </span>
+          <span className="notice__body">
+            AI 建议新建 <strong>{suggestedCategories.length}</strong> 个分类：
+            {suggestedCategories.join('、')}
+            <br />
+            默认<strong>没有勾选</strong> —— 你点了才会创建。
+            不想建的话，用到它们的物品会落到「未分类」里，之后可以自己再归。
+          </span>
+          <span className="notice__action">
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() =>
+                mapAll((d) => (d.newCategoryPaths.length > 0 ? { adoptNewCategories: true } : {}))
+              }
+            >
+              全部采纳
+            </Button>
+          </span>
+        </div>
+      ) : null}
 
       <div className="list">
         {drafts.map((draft) => (
