@@ -1,0 +1,759 @@
+{
+  "format": "duansheli",
+  "schemaVersion": 1,
+  "exportedAt": "2026-10-02T09:46:47.761Z",
+  "generator": "断舍离 v1",
+  "summary": {
+    "items": 24,
+    "categories": 10,
+    "locations": 20,
+    "attributeDefs": 5,
+    "tags": 3
+  },
+  "data": {
+    "items": [
+      {
+        "id": "sample-item-01",
+        "name": "灰色羊毛衫",
+        "quantity": 1,
+        "categoryIds": [
+          "2d3b9eb1-b8f0-428f-b4f3-d619451a039a"
+        ],
+        "locationId": "63679a61-7b74-4f19-b182-c9e7e4baf6e4",
+        "status": "active",
+        "tags": [
+          "舍不得扔"
+        ],
+        "attrs": {
+          "ad354a2b-c35f-4ff0-bd0d-4f8f4a345ccf": "MUJI",
+          "02d59a1b-9879-4ef2-a2cb-35470735db05": "灰"
+        },
+        "note": "妈妈送的，起球了但还能穿",
+        "createdAt": "2026-09-07T09:46:47.760Z",
+        "updatedAt": "2026-09-07T09:46:47.760Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-02",
+        "name": "牛仔裤",
+        "quantity": 2,
+        "categoryIds": [
+          "2d3b9eb1-b8f0-428f-b4f3-d619451a039a"
+        ],
+        "locationId": "63679a61-7b74-4f19-b182-c9e7e4baf6e4",
+        "status": "active",
+        "tags": [],
+        "attrs": {
+          "02d59a1b-9879-4ef2-a2cb-35470735db05": "彩色"
+        },
+        "note": "",
+        "createdAt": "2026-09-08T09:46:47.760Z",
+        "updatedAt": "2026-09-08T09:46:47.760Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-03",
+        "name": "羽绒服",
+        "quantity": 1,
+        "categoryIds": [
+          "2d3b9eb1-b8f0-428f-b4f3-d619451a039a"
+        ],
+        "locationId": "63679a61-7b74-4f19-b182-c9e7e4baf6e4",
+        "status": "active",
+        "tags": [],
+        "attrs": {
+          "ad354a2b-c35f-4ff0-bd0d-4f8f4a345ccf": "优衣库",
+          "b325b28f-cf23-4513-97ed-1af227900a2d": "2022-11-20"
+        },
+        "note": "",
+        "createdAt": "2026-09-09T09:46:47.760Z",
+        "updatedAt": "2026-09-09T09:46:47.760Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-04",
+        "name": "旧手机",
+        "quantity": 1,
+        "categoryIds": [
+          "7c893d02-1826-4293-8ecc-20209042777c"
+        ],
+        "locationId": "5cc4cd2c-3953-40ae-aeda-b4822e66c0e2",
+        "status": "idle",
+        "tags": [
+          "想送人"
+        ],
+        "attrs": {},
+        "note": "屏幕有划痕，还能开机",
+        "createdAt": "2026-09-10T09:46:47.760Z",
+        "updatedAt": "2026-09-10T09:46:47.760Z",
+        "idleAt": "2025-08-08T09:46:47.761Z",
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-05",
+        "name": "蓝牙耳机",
+        "quantity": 1,
+        "categoryIds": [
+          "7c893d02-1826-4293-8ecc-20209042777c"
+        ],
+        "locationId": "a4c2dc68-575d-44f2-9c58-154e6d2e8495",
+        "status": "active",
+        "tags": [],
+        "attrs": {
+          "ad354a2b-c35f-4ff0-bd0d-4f8f4a345ccf": "索尼",
+          "8e7fa0ca-948a-412a-90ad-216b76a5261d": 899
+        },
+        "note": "",
+        "createdAt": "2026-09-11T09:46:47.761Z",
+        "updatedAt": "2026-09-11T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-06",
+        "name": "充电宝",
+        "quantity": 1,
+        "categoryIds": [
+          "7c893d02-1826-4293-8ecc-20209042777c"
+        ],
+        "locationId": "a4c2dc68-575d-44f2-9c58-154e6d2e8495",
+        "status": "idle",
+        "tags": [],
+        "attrs": {
+          "8e7fa0ca-948a-412a-90ad-216b76a5261d": 129
+        },
+        "note": "",
+        "createdAt": "2026-09-12T09:46:47.761Z",
+        "updatedAt": "2026-09-12T09:46:47.761Z",
+        "idleAt": "2026-03-26T09:46:47.761Z",
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-07",
+        "name": "台灯",
+        "quantity": 1,
+        "categoryIds": [
+          "7c893d02-1826-4293-8ecc-20209042777c"
+        ],
+        "locationId": "a4c2dc68-575d-44f2-9c58-154e6d2e8495",
+        "status": "active",
+        "tags": [],
+        "attrs": {
+          "ad354a2b-c35f-4ff0-bd0d-4f8f4a345ccf": "小米",
+          "8e7fa0ca-948a-412a-90ad-216b76a5261d": 199
+        },
+        "note": "",
+        "createdAt": "2026-09-13T09:46:47.761Z",
+        "updatedAt": "2026-09-13T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-08",
+        "name": "《人类简史》",
+        "quantity": 1,
+        "categoryIds": [
+          "6fb71c74-7f63-4544-8a11-ef13d60ecc94"
+        ],
+        "locationId": "4f189da1-d8f2-49d5-a936-f22c56d3728a",
+        "status": "active",
+        "tags": [],
+        "attrs": {
+          "b325b28f-cf23-4513-97ed-1af227900a2d": "2021-06-01"
+        },
+        "note": "",
+        "createdAt": "2026-09-14T09:46:47.761Z",
+        "updatedAt": "2026-09-14T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-09",
+        "name": "《设计中的设计》",
+        "quantity": 1,
+        "categoryIds": [
+          "6fb71c74-7f63-4544-8a11-ef13d60ecc94"
+        ],
+        "locationId": "4f189da1-d8f2-49d5-a936-f22c56d3728a",
+        "status": "active",
+        "tags": [],
+        "attrs": {},
+        "note": "",
+        "createdAt": "2026-09-15T09:46:47.761Z",
+        "updatedAt": "2026-09-15T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-10",
+        "name": "平底锅",
+        "quantity": 1,
+        "categoryIds": [
+          "33db6e5f-178a-4c63-b9d7-a06458781ae3"
+        ],
+        "locationId": "b7d78d02-15f5-47b1-80a1-dee3e135a615",
+        "status": "active",
+        "tags": [],
+        "attrs": {
+          "8e7fa0ca-948a-412a-90ad-216b76a5261d": 199
+        },
+        "note": "",
+        "createdAt": "2026-09-16T09:46:47.761Z",
+        "updatedAt": "2026-09-16T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-11",
+        "name": "电饭煲",
+        "quantity": 1,
+        "categoryIds": [
+          "33db6e5f-178a-4c63-b9d7-a06458781ae3"
+        ],
+        "locationId": "b7d78d02-15f5-47b1-80a1-dee3e135a615",
+        "status": "active",
+        "tags": [],
+        "attrs": {
+          "ad354a2b-c35f-4ff0-bd0d-4f8f4a345ccf": "美的",
+          "8e7fa0ca-948a-412a-90ad-216b76a5261d": 399
+        },
+        "note": "",
+        "createdAt": "2026-09-17T09:46:47.761Z",
+        "updatedAt": "2026-09-17T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-12",
+        "name": "保温杯",
+        "quantity": 1,
+        "categoryIds": [
+          "e6d31e6f-3008-4f1e-856a-9cf213eaed1f"
+        ],
+        "locationId": "b7d78d02-15f5-47b1-80a1-dee3e135a615",
+        "status": "idle",
+        "tags": [],
+        "attrs": {
+          "02d59a1b-9879-4ef2-a2cb-35470735db05": "黑"
+        },
+        "note": "",
+        "createdAt": "2026-09-18T09:46:47.761Z",
+        "updatedAt": "2026-09-18T09:46:47.761Z",
+        "idleAt": "2026-06-29T09:46:47.761Z",
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-13",
+        "name": "洗发水",
+        "quantity": 1,
+        "categoryIds": [
+          "e6d31e6f-3008-4f1e-856a-9cf213eaed1f"
+        ],
+        "locationId": null,
+        "status": "active",
+        "tags": [],
+        "attrs": {},
+        "note": "",
+        "createdAt": "2026-09-19T09:46:47.761Z",
+        "updatedAt": "2026-09-19T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-14",
+        "name": "感冒药",
+        "quantity": 1,
+        "categoryIds": [
+          "0e94735e-38f3-4533-9105-151eff0a1c1e"
+        ],
+        "locationId": null,
+        "status": "active",
+        "tags": [],
+        "attrs": {
+          "b325b28f-cf23-4513-97ed-1af227900a2d": "2024-12-01"
+        },
+        "note": "",
+        "createdAt": "2026-09-20T09:46:47.761Z",
+        "updatedAt": "2026-09-20T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-15",
+        "name": "创可贴",
+        "quantity": 1,
+        "categoryIds": [
+          "0e94735e-38f3-4533-9105-151eff0a1c1e"
+        ],
+        "locationId": null,
+        "status": "idle",
+        "tags": [],
+        "attrs": {},
+        "note": "",
+        "createdAt": "2026-09-21T09:46:47.761Z",
+        "updatedAt": "2026-09-21T09:46:47.761Z",
+        "idleAt": "2025-12-06T09:46:47.761Z",
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-16",
+        "name": "中性笔",
+        "quantity": 5,
+        "categoryIds": [
+          "21df73c7-8ada-4e02-9ca6-245af8bce230"
+        ],
+        "locationId": "a4c2dc68-575d-44f2-9c58-154e6d2e8495",
+        "status": "active",
+        "tags": [],
+        "attrs": {},
+        "note": "",
+        "createdAt": "2026-09-22T09:46:47.761Z",
+        "updatedAt": "2026-09-22T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-17",
+        "name": "螺丝刀套装",
+        "quantity": 1,
+        "categoryIds": [
+          "5786c962-d55c-435c-8294-d0349799b5d2"
+        ],
+        "locationId": "84ba9ae3-2f20-4fb2-b313-bfc54e9fdb3e",
+        "status": "active",
+        "tags": [],
+        "attrs": {
+          "ad354a2b-c35f-4ff0-bd0d-4f8f4a345ccf": "博世"
+        },
+        "note": "",
+        "createdAt": "2026-09-23T09:46:47.761Z",
+        "updatedAt": "2026-09-23T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-18",
+        "name": "锤子",
+        "quantity": 1,
+        "categoryIds": [
+          "5786c962-d55c-435c-8294-d0349799b5d2"
+        ],
+        "locationId": "84ba9ae3-2f20-4fb2-b313-bfc54e9fdb3e",
+        "status": "active",
+        "tags": [],
+        "attrs": {},
+        "note": "",
+        "createdAt": "2026-09-24T09:46:47.761Z",
+        "updatedAt": "2026-09-24T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-19",
+        "name": "演唱会门票存根",
+        "quantity": 1,
+        "categoryIds": [
+          "462b6cc3-22ed-4ec2-9f02-e52f80138843"
+        ],
+        "locationId": "84ba9ae3-2f20-4fb2-b313-bfc54e9fdb3e",
+        "status": "active",
+        "tags": [
+          "舍不得扔"
+        ],
+        "attrs": {},
+        "note": "2019 年那场",
+        "createdAt": "2026-09-25T09:46:47.761Z",
+        "updatedAt": "2026-09-25T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-20",
+        "name": "老照片",
+        "quantity": 1,
+        "categoryIds": [
+          "462b6cc3-22ed-4ec2-9f02-e52f80138843"
+        ],
+        "locationId": "84ba9ae3-2f20-4fb2-b313-bfc54e9fdb3e",
+        "status": "idle",
+        "tags": [],
+        "attrs": {},
+        "note": "",
+        "createdAt": "2026-09-26T09:46:47.761Z",
+        "updatedAt": "2026-09-26T09:46:47.761Z",
+        "idleAt": "2025-05-20T09:46:47.761Z",
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-21",
+        "name": "折叠椅",
+        "quantity": 1,
+        "categoryIds": [],
+        "locationId": "5322f56f-f9f5-4b1f-aabb-3656cb23e5a6",
+        "status": "active",
+        "tags": [],
+        "attrs": {},
+        "note": "还没想好归到哪一类",
+        "createdAt": "2026-09-27T09:46:47.761Z",
+        "updatedAt": "2026-09-27T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-22",
+        "name": "户外帐篷",
+        "quantity": 1,
+        "categoryIds": [
+          "5786c962-d55c-435c-8294-d0349799b5d2",
+          "462b6cc3-22ed-4ec2-9f02-e52f80138843"
+        ],
+        "locationId": "69da4796-e8b1-40bd-8da0-2103581403b4",
+        "status": "active",
+        "tags": [],
+        "attrs": {
+          "8e7fa0ca-948a-412a-90ad-216b76a5261d": 680
+        },
+        "note": "",
+        "createdAt": "2026-09-28T09:46:47.761Z",
+        "updatedAt": "2026-09-28T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": null
+      },
+      {
+        "id": "sample-item-23",
+        "name": "旧拖鞋",
+        "quantity": 1,
+        "categoryIds": [
+          "e6d31e6f-3008-4f1e-856a-9cf213eaed1f"
+        ],
+        "locationId": null,
+        "status": "discarded",
+        "tags": [],
+        "attrs": {},
+        "note": "已经扔了，留个记录",
+        "createdAt": "2026-09-29T09:46:47.761Z",
+        "updatedAt": "2026-09-29T09:46:47.761Z",
+        "idleAt": null,
+        "discardedAt": "2026-09-29T09:46:47.761Z"
+      },
+      {
+        "id": "sample-item-24",
+        "name": "只剩一只的手套",
+        "quantity": 1,
+        "categoryIds": [
+          "2d3b9eb1-b8f0-428f-b4f3-d619451a039a"
+        ],
+        "locationId": null,
+        "status": "idle",
+        "tags": [
+          "想送人"
+        ],
+        "attrs": {},
+        "note": "",
+        "createdAt": "2026-09-30T09:46:47.761Z",
+        "updatedAt": "2026-09-30T09:46:47.761Z",
+        "idleAt": "2025-01-20T09:46:47.761Z",
+        "discardedAt": null
+      }
+    ],
+    "categories": [
+      {
+        "id": "2d3b9eb1-b8f0-428f-b4f3-d619451a039a",
+        "name": "衣物",
+        "order": 0,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "7c893d02-1826-4293-8ecc-20209042777c",
+        "name": "电子",
+        "order": 1,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "6fb71c74-7f63-4544-8a11-ef13d60ecc94",
+        "name": "书籍",
+        "order": 2,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "33db6e5f-178a-4c63-b9d7-a06458781ae3",
+        "name": "厨房",
+        "order": 3,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "e6d31e6f-3008-4f1e-856a-9cf213eaed1f",
+        "name": "日用品",
+        "order": 4,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "0e94735e-38f3-4533-9105-151eff0a1c1e",
+        "name": "药品",
+        "order": 5,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "21df73c7-8ada-4e02-9ca6-245af8bce230",
+        "name": "文具",
+        "order": 6,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "5786c962-d55c-435c-8294-d0349799b5d2",
+        "name": "工具",
+        "order": 7,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "462b6cc3-22ed-4ec2-9f02-e52f80138843",
+        "name": "纪念品",
+        "order": 8,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "fccb3180-dcba-4c6f-b8cd-f48bb3d10b45",
+        "name": "其他",
+        "order": 9,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      }
+    ],
+    "locations": [
+      {
+        "id": "30933a9f-ea01-4d9f-a3db-30738630be06",
+        "name": "家",
+        "parentId": null,
+        "note": "",
+        "order": 0,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "19db6d13-1f97-4865-b352-9a806422507e",
+        "name": "卧室",
+        "parentId": "30933a9f-ea01-4d9f-a3db-30738630be06",
+        "note": "",
+        "order": 0,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "36634e65-c0c6-4f0a-8f34-2f691655e780",
+        "name": "客厅",
+        "parentId": "30933a9f-ea01-4d9f-a3db-30738630be06",
+        "note": "",
+        "order": 1,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "b3a2863a-dd55-4c09-96f9-1dad2e0d890a",
+        "name": "厨房",
+        "parentId": "30933a9f-ea01-4d9f-a3db-30738630be06",
+        "note": "",
+        "order": 2,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "5b3c6be0-3921-45dd-8ca1-592478abf99c",
+        "name": "书房",
+        "parentId": "30933a9f-ea01-4d9f-a3db-30738630be06",
+        "note": "",
+        "order": 3,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "3d29d240-717f-4162-b381-347b6c4bbcf3",
+        "name": "卫生间",
+        "parentId": "30933a9f-ea01-4d9f-a3db-30738630be06",
+        "note": "",
+        "order": 4,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "5322f56f-f9f5-4b1f-aabb-3656cb23e5a6",
+        "name": "阳台",
+        "parentId": "30933a9f-ea01-4d9f-a3db-30738630be06",
+        "note": "",
+        "order": 5,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "dc7995b3-c049-4ea5-b771-d08386db82e8",
+        "name": "储物间",
+        "parentId": "30933a9f-ea01-4d9f-a3db-30738630be06",
+        "note": "",
+        "order": 6,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "63679a61-7b74-4f19-b182-c9e7e4baf6e4",
+        "name": "衣柜",
+        "parentId": "19db6d13-1f97-4865-b352-9a806422507e",
+        "note": "",
+        "order": 0,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "5cc4cd2c-3953-40ae-aeda-b4822e66c0e2",
+        "name": "床头柜",
+        "parentId": "19db6d13-1f97-4865-b352-9a806422507e",
+        "note": "",
+        "order": 1,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "941329a3-3e49-4887-9a8c-692b83375523",
+        "name": "床下收纳",
+        "parentId": "19db6d13-1f97-4865-b352-9a806422507e",
+        "note": "",
+        "order": 2,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "cff1446a-d06f-48da-8a9e-3da98701a50b",
+        "name": "电视柜",
+        "parentId": "36634e65-c0c6-4f0a-8f34-2f691655e780",
+        "note": "",
+        "order": 0,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "5b90cf2f-d0c6-4f14-ac2f-6104e2e24d35",
+        "name": "储物柜",
+        "parentId": "36634e65-c0c6-4f0a-8f34-2f691655e780",
+        "note": "",
+        "order": 1,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "e431fd01-403b-4868-a524-2120c3b62fee",
+        "name": "鞋柜",
+        "parentId": "36634e65-c0c6-4f0a-8f34-2f691655e780",
+        "note": "",
+        "order": 2,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "a4c2dc68-575d-44f2-9c58-154e6d2e8495",
+        "name": "书桌",
+        "parentId": "5b3c6be0-3921-45dd-8ca1-592478abf99c",
+        "note": "",
+        "order": 0,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "4f189da1-d8f2-49d5-a936-f22c56d3728a",
+        "name": "书架",
+        "parentId": "5b3c6be0-3921-45dd-8ca1-592478abf99c",
+        "note": "",
+        "order": 1,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "b7d78d02-15f5-47b1-80a1-dee3e135a615",
+        "name": "橱柜",
+        "parentId": "b3a2863a-dd55-4c09-96f9-1dad2e0d890a",
+        "note": "",
+        "order": 0,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "c927e714-f5b9-4e0a-8b47-cde9091605bb",
+        "name": "冰箱",
+        "parentId": "b3a2863a-dd55-4c09-96f9-1dad2e0d890a",
+        "note": "",
+        "order": 1,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "84ba9ae3-2f20-4fb2-b313-bfc54e9fdb3e",
+        "name": "收纳箱",
+        "parentId": "dc7995b3-c049-4ea5-b771-d08386db82e8",
+        "note": "",
+        "order": 0,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "69da4796-e8b1-40bd-8da0-2103581403b4",
+        "name": "货架",
+        "parentId": "dc7995b3-c049-4ea5-b771-d08386db82e8",
+        "note": "",
+        "order": 1,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      }
+    ],
+    "attributeDefs": [
+      {
+        "id": "ad354a2b-c35f-4ff0-bd0d-4f8f4a345ccf",
+        "name": "品牌",
+        "type": "text",
+        "options": [],
+        "unit": "",
+        "showByDefault": false,
+        "order": 0,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "b325b28f-cf23-4513-97ed-1af227900a2d",
+        "name": "购入日期",
+        "type": "date",
+        "options": [],
+        "unit": "",
+        "showByDefault": false,
+        "order": 1,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "8e7fa0ca-948a-412a-90ad-216b76a5261d",
+        "name": "价格",
+        "type": "number",
+        "options": [],
+        "unit": "元",
+        "showByDefault": false,
+        "order": 2,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "02d59a1b-9879-4ef2-a2cb-35470735db05",
+        "name": "颜色",
+        "type": "select",
+        "options": [
+          "黑",
+          "白",
+          "灰",
+          "木色",
+          "彩色"
+        ],
+        "unit": "",
+        "showByDefault": false,
+        "order": 3,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "id": "51dd16c4-e3a3-414e-99ee-5bdfe98ef36c",
+        "name": "尺寸",
+        "type": "text",
+        "options": [],
+        "unit": "",
+        "showByDefault": false,
+        "order": 4,
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      }
+    ],
+    "tags": [
+      {
+        "name": "想送人",
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "name": "舍不得扔",
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      },
+      {
+        "name": "待维修",
+        "createdAt": "2026-10-02T09:46:47.757Z"
+      }
+    ]
+  }
+}

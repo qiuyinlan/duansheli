@@ -1,0 +1,84 @@
+import { useEffect } from 'react'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { AppShell } from './components/AppShell'
+import { Button } from './components/ui/primitives'
+import { Attributes } from './pages/Attributes'
+import { Ai } from './pages/Ai'
+import { Categories } from './pages/Categories'
+import { Idle } from './pages/Idle'
+import { ItemEdit } from './pages/ItemEdit'
+import { Items } from './pages/Items'
+import { Locations } from './pages/Locations'
+import { More } from './pages/More'
+import { Overview } from './pages/Overview'
+import { Settings } from './pages/Settings'
+import { Tags } from './pages/Tags'
+import { useAppStore } from './store/useAppStore'
+
+/**
+ * 路由表单独抽出来，方便测试里直接渲染各页面
+ * （不用经过 App 的「加载中 / 出错」分支，那条分支会触发 init() 覆盖数据）。
+ */
+export function AppRoutes() {
+  return (
+    <Routes>
+      <Route element={<AppShell />}>
+        <Route index element={<Overview />} />
+        <Route path="items" element={<Items />} />
+        <Route path="items/new" element={<ItemEdit />} />
+        <Route path="items/:id" element={<ItemEdit />} />
+        <Route path="locations" element={<Locations />} />
+        <Route path="idle" element={<Idle />} />
+        <Route path="ai" element={<Ai />} />
+        <Route path="more" element={<More />} />
+        <Route path="categories" element={<Categories />} />
+        <Route path="attributes" element={<Attributes />} />
+        <Route path="tags" element={<Tags />} />
+        <Route path="settings" element={<Settings />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+  )
+}
+
+export function App() {
+  const status = useAppStore((s) => s.status)
+  const error = useAppStore((s) => s.error)
+  const init = useAppStore((s) => s.init)
+
+  useEffect(() => {
+    void init()
+  }, [init])
+
+  if (status === 'loading') {
+    return (
+      <div className="center-screen">
+        <div className="spinner" />
+        <div className="dim small">正在打开本地数据…</div>
+      </div>
+    )
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="center-screen">
+        <div style={{ fontSize: 'var(--fs-h2)', fontWeight: 600 }}>无法打开本地数据</div>
+        <div
+          className="muted small"
+          style={{ maxWidth: '38em', lineHeight: 1.8, textAlign: 'left' }}
+        >
+          {error}
+          <br />
+          <br />
+          常见原因：浏览器处于无痕 / 隐私模式，或禁用了网站数据存储。请改用普通窗口打开；
+          如果是 iPhone，请在「设置 → Safari → 高级 → 网站数据」中确认没有禁用。
+        </div>
+        <Button variant="primary" onClick={() => void init()}>
+          重试
+        </Button>
+      </div>
+    )
+  }
+
+  return <AppRoutes />
+}

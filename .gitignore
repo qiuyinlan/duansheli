@@ -1,0 +1,29 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+.vite
+dev-dist
+.npm-cache
+
+# 编辑器
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# 日志
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 本地导出的备份数据（属于个人隐私数据，不要提交）
+断舍离-备份-*.json
+*.backup.json
+
+# 测试基础设施的临时产物
+.test-build
+
+# 示例数据是生成出来的，不是手写的，改数据请改 scripts/sampleData.ts
+# （保留在仓库里也无害，所以不忽略）

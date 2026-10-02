@@ -1,0 +1,237 @@
+/* ==================================================================
+   断舍离 · 全局样式
+   设计语言：极简白 + 无彩色。用字号、字重、灰度差表达层级，不用颜色。
+   详见 docs/设计文档.md 第 10 章。
+   ================================================================== */
+
+:root {
+  /* 背景 */
+  --bg: #ffffff;
+  --bg-sub: #fafafa;
+  --bg-hover: #f4f4f3;
+  --bg-active: #eeeeec;
+
+  /* 线条 */
+  --line: #e8e8e6;
+  --line-strong: #d4d4d1;
+
+  /* 文字（三级即可，不再多） */
+  --text: #1a1a1a;
+  --text-2: #6b6b6b;
+  --text-3: #9b9b9b;
+
+  /* 灰阶填充：条形图与徽标用，越靠前越深 */
+  --fill-1: #1a1a1a;
+  --fill-2: #6b6b6b;
+  --fill-3: #b8b8b8;
+  --fill-4: #e0e0e0;
+
+  /* 唯一的例外色：只用于不可逆操作的文字，绝不做按钮底色 */
+  --danger: #b3261e;
+
+  /* 板块主色 —— AppShell 会按当前路由覆盖这三个值（见 src/lib/sections.ts）。
+     这里给一份默认值，保证任何情况下都不会出现"没有颜色"的样式。 */
+  --accent: #2563eb;
+  --accent-text: #1d4ed8;
+  --accent-soft: #eff6ff;
+
+  /* 圆角 */
+  --radius: 8px;
+  --radius-sm: 4px;
+  --radius-pill: 999px;
+
+  /* 间距（4 的倍数） */
+  --gap-1: 4px;
+  --gap-2: 8px;
+  --gap-3: 12px;
+  --gap-4: 16px;
+  --gap-5: 24px;
+  --gap-6: 32px;
+  --gap-7: 48px;
+
+  /* 字号 */
+  --fs-title: 28px;
+  --fs-h2: 20px;
+  --fs-body: 15px;
+  --fs-sm: 13px;
+  --fs-xs: 12px;
+
+  /* 布局尺寸 */
+  --sidebar-w: 208px;
+  --content-max: 1080px;
+  --bottomnav-h: 58px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Source Han Sans SC', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+figure {
+  margin: 0;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* 统一的键盘焦点样式 —— 鼠标点击不出现，键盘操作时清晰可见 */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* 数字统一等宽，统计数字不会随数值变化而抖动 */
+.numeric {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* ---------------- 通用小工具类 ---------------- */
+
+.muted {
+  color: var(--text-2);
+}
+
+.dim {
+  color: var(--text-3);
+}
+
+.small {
+  font-size: var(--fs-sm);
+}
+
+.tiny {
+  font-size: var(--fs-xs);
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-4);
+}
+
+.stack-sm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+}
+
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-3);
+}
+
+.wrap {
+  flex-wrap: wrap;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.divider {
+  height: 1px;
+  background: var(--line);
+  border: none;
+  margin: 0;
+}
+
+/* 屏幕阅读器专用文本 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
