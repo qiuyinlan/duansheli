@@ -17,6 +17,7 @@ import { createEmptyData } from '../src/storage/seed'
 import { createDerived } from '../src/store/selectors'
 import { useAppStore } from '../src/store/useAppStore'
 import { setLang } from '../src/i18n'
+import { ConfirmDialog } from '../src/components/ui/primitives'
 import type { AppData, Item } from '../src/types'
 import { contains, eq, fail, fixture, must, ok, suite, test } from './harness'
 
@@ -511,6 +512,58 @@ await test('每个页面在英文下都挂得住（漏订阅语言的组件会�
         page.unmount()
       }
     }
+  } finally {
+    setLang('zh')
+  }
+})
+
+await test('确认框不传按钮文字时，也要跟着语言走（13 个调用点都靠这个默认值）', () => {
+  // 这一条守的是一个很隐蔽的坏法：把默认值写成
+  //   confirmLabel = '确定'
+  // 而不是在渲染时取 t()。前者会在英文界面下弹出一个中文按钮，
+  // 而且**只有打开某个确认框才看得见** —— 逐页挂载的冒烟测试抓不到，
+  // 因为确认框默认是关着的。所以这里专门把它打开来验。
+  //
+  // 注意：Modal 是用 createPortal 挂到 document.body 上的，
+  // 所以要看 document.body 的内容，而不是容器里的 innerHTML。
+  const checkBoth = (lang: 'zh' | 'en') => {
+    setLang(lang)
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      act(() => {
+        root.render(
+          <ConfirmDialog
+            open
+            title="T"
+            message="M"
+            onConfirm={() => {}}
+            onCancel={() => {}}
+          />,
+        )
+      })
+      const text = document.body.textContent ?? ''
+      if (lang === 'zh') {
+        ok(text.includes('确定'), `中文下该有「确定」，实际正文：${text.slice(0, 120)}`)
+        ok(text.includes('取消'), '中文下该有「取消」')
+        ok(!text.includes('Confirm'), '中文下不该出现英文按钮')
+      } else {
+        ok(text.includes('Confirm'), `英文下该有 Confirm，实际正文：${text.slice(0, 120)}`)
+        ok(text.includes('Cancel'), '英文下该有 Cancel')
+        ok(!text.includes('确定'), '英文下不该出现中文按钮 —— 说明默认值是写死的常量')
+      }
+    } finally {
+      act(() => {
+        root.unmount()
+      })
+      container.remove()
+    }
+  }
+
+  try {
+    checkBoth('zh')
+    checkBoth('en')
   } finally {
     setLang('zh')
   }
