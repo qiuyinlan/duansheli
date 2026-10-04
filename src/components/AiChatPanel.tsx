@@ -1,16 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AiUsage } from '../ai/deepseek'
+import type { ChatBubble } from '../ai/chat'
 import { IconAlert, IconSparkle } from './ui/icons'
 import { Button, ConfirmDialog } from './ui/primitives'
 import { useT, type TFunction } from '../i18n'
-
-export interface ChatBubble {
-  id: string
-  role: 'user' | 'assistant' | 'note'
-  text: string
-  /** 气泡下方的小字，例如「新增 3 · 修改 5 · 删除 1」 */
-  meta?: string
-}
 
 interface Props {
   bubbles: ChatBubble[]

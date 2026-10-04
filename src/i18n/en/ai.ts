@@ -61,6 +61,16 @@ export const ai = {
   newChat: 'New chat',
   newChatTitle: 'Clear the chat and the drafts and start over',
 
+  /*
+   * Shown when the data is replaced wholesale (cleared / overwritten by an
+   * import / rolled back): the unaccepted drafts must be voided, because every
+   * draft references items, categories and places from the old data, so those
+   * references no longer line up and accepting would silently apply only part
+   * of the plan. Voiding silently is not an option either.
+   */
+  sessionClearedByDataReset:
+    'Your data was replaced, so the previous conversation and its unaccepted drafts have been voided — the drafts referenced items, categories and places from the old data, and those no longer line up.',
+
   emptyNewBold: 'To add new things',
   emptyNewTail: ': write them here and it splits them into individual items.',
   emptyEditBold: 'To change existing ones',

@@ -27,6 +27,7 @@ import type { ReparentBlock } from '../lib/tree'
 import { createSnapshot, getSnapshot } from '../storage/snapshots'
 import type { DerivedContext } from './selectors'
 import { createDerived } from './selectors'
+import { clearAiSession, useAiSessionStore } from './useAiSessionStore'
 
 /* ------------------------------------------------------------------ */
 /* 写入串行化                                                          */
@@ -586,6 +587,30 @@ export const useAppStore = create<AppState>()((set, get) => {
     const now = new Date().toISOString()
     const usedTags = items.flatMap((i) => i.tags)
     commit({ ...data, items, tags: ensureTags(data.tags, usedTags, now) }, reason)
+  }
+
+  /**
+   * 数据被**整体替换**之后，把 AI 会话作废。
+   *
+   * 为什么非做不可：AI 会话现在能跨页面存活了，而**草稿是「针对某一份数据」
+   * 的计划** —— 每条草稿的 `sourceItemId` / `locationId` / `matchedCategoryIds`
+   * 都是当时那份数据里的 id。整体替换（清空 / 导入覆盖 / 回退快照 /
+   * 恢复脚手架）之后，这些 id 就指不到任何东西了。
+   *
+   * 后果不是「会建错东西」，而是更隐蔽的一种：`draftsToApply` 对
+   * 「有 sourceItemId 但找不到」是**静默跳过**的，于是用户点「采纳」
+   * 会得到一个悄悄少了几条的结果，界面上也不说哪一条为什么不见了。
+   * 默默少做一部分还不说，正是这个项目一直在避免的事。
+   *
+   * 只在这些**整体替换**的操作里调用。普通的增删改不碰会话：
+   * 那种情况下草稿仍然有效，清掉反而会让用户白丢一段对话。
+   */
+  const invalidateAiSession = () => {
+    const session = useAiSessionStore.getState()
+    const hadWork = session.drafts.length > 0 || session.bubbles.length > 0
+    clearAiSession()
+    // 只在真的弄丢了东西的时候说一声 —— 没事就弹提示只是噪音
+    if (hadWork) get().notify(t('ai.sessionClearedByDataReset'), 'info')
   }
 
   return {
@@ -1643,6 +1668,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     replaceAll: async (next, reason, message) => {
       commit(normalizeShape(next), reason)
       await writeChain
+      invalidateAiSession()
       if (message) get().notify(message, 'success')
     },
 
@@ -1656,6 +1682,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     resetToSeed: async () => {
       commit(createSeedData(), 'destructive')
       await writeChain
+      invalidateAiSession()
       get().notify(t('data.store.scaffoldRestored'), 'success')
     },
 
@@ -1675,6 +1702,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const empty = createEmptyData()
       set({ data: empty, derived: createDerived(empty) })
       await enqueueWrite(() => getRepository().save(empty))
+      invalidateAiSession()
       get().notify(t('data.store.allCleared'), 'success')
     },
 
@@ -1694,6 +1722,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const restored = normalizeShape(snapshot.data)
       set({ data: restored, derived: createDerived(restored) })
       await enqueueWrite(() => getRepository().save(restored))
+      invalidateAiSession()
       get().notify(t('data.store.snapshotRestored'), 'success')
       return true
     },

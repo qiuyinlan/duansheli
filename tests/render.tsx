@@ -16,6 +16,7 @@ import { App, AppRoutes } from '../src/App'
 import { createEmptyData } from '../src/storage/seed'
 import { createDerived } from '../src/store/selectors'
 import { useAppStore } from '../src/store/useAppStore'
+import { clearAiSession, useAiSessionStore } from '../src/store/useAiSessionStore'
 import { setLang } from '../src/i18n'
 import { ConfirmDialog } from '../src/components/ui/primitives'
 import type { AppData, Item } from '../src/types'
@@ -242,6 +243,108 @@ await test('AI 助手页只剩一个对话框，模式切换已经去掉了', ()
     ok(!html.includes('整理已有物品'), '模式切换应该去掉了')
     ok(!html.includes('对话整理'), '模式切换应该去掉了')
   })
+})
+
+await test('切到别的页面再回 AI，对话和没采纳的草稿都还在', () => {
+  // 这条守的是用户实际报上来的问题：AI 页的会话状态原来是组件里的 useState，
+  // 去别的页面转一圈（比如去设置看数据体检）回来就全空了 ——
+  // 聊到一半的对话没了，AI 已经提取好、**还没采纳**的草稿也没了，
+  // 只能重新让 AI 整理一遍，白烧一整轮 token。
+  //
+  // 这里用「挂载 → 卸载 → 再挂载」来模拟那次来回（每次 withPage 结束都会卸载）。
+  // 只要状态还在组件里，第二次挂载就会退回空状态，这条立刻红。
+  clearAiSession()
+  useAiSessionStore.setState({
+    bubbles: [
+      { id: 'b1', role: 'user', text: '衣柜里有一件灰色的羊毛衫' },
+      { id: 'b2', role: 'assistant', text: '记下了，还要加别的吗', meta: '新增 1' },
+    ],
+    drafts: [
+      {
+        key: 'k1',
+        name: '灰色的羊毛衫',
+        quantity: 1,
+        locationId: null,
+        locationLabel: '',
+        newLocationPath: null,
+        matchedCategoryIds: [],
+        newCategoryPaths: [],
+        tags: [],
+        attrs: {},
+        droppedAttrs: [],
+        note: '',
+        expiresAt: null,
+        include: true,
+        adoptNewCategories: false,
+        adoptNewLocation: false,
+      },
+    ],
+  })
+
+  try {
+    withPage('/ai', data, (_container, html) => {
+      contains(html, '衣柜里有一件灰色的羊毛衫', '第一次挂载应该看得到对话')
+    })
+
+    // 中间去别的页面转一圈 —— 这一步会卸载 AI 页面
+    withPage('/settings', data, (_container, html) => {
+      contains(html, '数据体检')
+    })
+
+    withPage('/ai', data, (_container, html) => {
+      contains(html, '衣柜里有一件灰色的羊毛衫', '切页面回来对话不该消失')
+      contains(html, '记下了，还要加别的吗', '助手那一条也该还在')
+      contains(html, '灰色的羊毛衫', '没采纳的草稿也该还在')
+      ok(!html.includes('要录新的'), '有会话就不该退回空状态')
+    })
+  } finally {
+    clearAiSession()
+  }
+})
+
+await test('「新对话」按钮真的能把会话清掉', () => {
+  // 会话现在活得比页面久了，所以这个按钮成了唯一的重置开关 ——
+  // 它要是失灵，用户就再也没法把累积的历史清掉，而历史每一轮都会进 prompt，
+  // 等于每一轮都在为它多付一点 token。
+  //
+  // 所以这里**真的去点那个按钮**（而不是直接调 clearAiSession）：
+  // 要验的正是「按钮 → 确认框 → store」这条链路还通着。
+  // 确认框是 createPortal 挂到 document.body 上的，所以要去 body 里找。
+  clearAiSession()
+  useAiSessionStore.setState({
+    bubbles: [{ id: 'b1', role: 'user', text: '一段想清掉的话' }],
+    drafts: [],
+  })
+
+  const page = mountForSwitch('/ai', data)
+  try {
+    ok(page.html().includes('一段想清掉的话'), '先得有内容才谈得上清')
+
+    const newChat = [...page.container.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === '新对话',
+    )
+    ok(newChat !== undefined, '应该找得到「新对话」按钮')
+    act(() => {
+      ;(newChat as HTMLButtonElement).click()
+    })
+
+    // 确认按钮上的字是 ai.resetConfirm（不是默认的「确定」）——
+    // 这里故意用它的真实文案，免得以后文案改了这条断言还在假绿
+    const confirm = [...document.body.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === '开始新对话',
+    )
+    ok(confirm !== undefined, '应该弹出确认框，并有一个「开始新对话」按钮')
+    act(() => {
+      ;(confirm as HTMLButtonElement).click()
+    })
+
+    eq(useAiSessionStore.getState().bubbles.length, 0, '确认之后 store 里该清空')
+    ok(!page.html().includes('一段想清掉的话'), '界面上也该不见了')
+    ok(page.html().includes('要录新的'), '应该回到空状态')
+  } finally {
+    page.unmount()
+    clearAiSession()
+  }
 })
 
 suite('渲染冒烟：空数据与边界情况')

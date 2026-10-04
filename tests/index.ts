@@ -19,6 +19,8 @@ import './i18n'
 import './render'
 // 体检会清空真实的 IndexedDB，放最后 —— 免得把前面用例依赖的数据擦掉
 import './diagnose'
+// 同上：会话用例也会写 IndexedDB 与 store 状态，放在最后
+import './aiSession'
 
 import { finish } from './harness'
 

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { buildAiContext, buildInventoryDigest } from '../ai/prompts'
 import {
@@ -12,30 +12,27 @@ import {
   buildChatMessages,
   mergeChatResponse,
   serializeDrafts,
-  type ChatTurn,
 } from '../ai/chat'
-import { AiError, chat, createRequestController, type AiUsage } from '../ai/deepseek'
+import { AiError, chat, createRequestController } from '../ai/deepseek'
 import { extractJson, parseChatResponse, type LoadScopeRequest } from '../ai/parse'
-import { AiChatPanel, type ChatBubble } from '../components/AiChatPanel'
+import { AiChatPanel } from '../components/AiChatPanel'
 import { AiExtractPreview } from '../components/AiExtractPreview'
 import { AiKeyPanel } from '../components/AiKeyPanel'
 import { Button, EmptyState } from '../components/ui/primitives'
 import { uid } from '../lib/id'
 import { useT } from '../i18n'
 import { useAppStore } from '../store/useAppStore'
+import {
+  addUsage,
+  appendBubble,
+  cancelAiRequest,
+  clearAiSession,
+  setAiCancel,
+  useAiSessionStore,
+} from '../store/useAiSessionStore'
 
 /** AI 连续要了几轮数据还没动手，就停下来 —— 免得无限循环烧 token */
 const MAX_AUTO_TURNS = 3
-
-const EMPTY_USAGE: AiUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
-
-function addUsage(a: AiUsage, b: AiUsage): AiUsage {
-  return {
-    promptTokens: a.promptTokens + b.promptTokens,
-    completionTokens: a.completionTokens + b.completionTokens,
-    totalTokens: a.totalTokens + b.totalTokens,
-  }
-}
 
 function errorText(err: unknown): string {
   if (err instanceof AiError) return err.message
@@ -69,18 +66,20 @@ export function Ai() {
   // 顺便这一句也让整个页面订阅语言变化。
   const { t, tc } = useT()
 
-  const [bubbles, setBubbles] = useState<ChatBubble[]>([])
-  const [history, setHistory] = useState<ChatTurn[]>([])
-  const [drafts, setDrafts] = useState<ItemDraft[]>([])
-  const [changedKeys, setChangedKeys] = useState<string[]>([])
-  /** 被移出草稿的 key —— 已有物品会在采纳时移入回收站 */
-  const [removedKeys, setRemovedKeys] = useState<string[]>([])
-  const [error, setError] = useState<string | null>(null)
-
-  const [running, setRunning] = useState(false)
-  const [usage, setUsage] = useState<AiUsage>(EMPTY_USAGE)
-  const [lastTurnUsage, setLastTurnUsage] = useState<AiUsage>(EMPTY_USAGE)
-  const cancelRef = useRef<(() => void) | null>(null)
+  /*
+   * 会话状态全部来自 useAiSessionStore（内存级），不是 useState ——
+   * 这样切到别的页面再回来，对话和没采纳的草稿都还在。
+   * 刷新就清空：那个 store 不落盘，是刻意的。
+   */
+  const bubbles = useAiSessionStore((s) => s.bubbles)
+  /* history 不订阅：界面上不显示它，send() 里是从 getState() 现取的 */
+  const drafts = useAiSessionStore((s) => s.drafts)
+  const changedKeys = useAiSessionStore((s) => s.changedKeys)
+  const removedKeys = useAiSessionStore((s) => s.removedKeys)
+  const error = useAiSessionStore((s) => s.error)
+  const running = useAiSessionStore((s) => s.running)
+  const usage = useAiSessionStore((s) => s.usage)
+  const lastTurnUsage = useAiSessionStore((s) => s.lastTurnUsage)
 
   /** 采纳时会发生什么 —— 实时显示，让人心里有数 */
   const applyPlan = useMemo(
@@ -92,15 +91,7 @@ export function Ai() {
   const newCount = drafts.filter((d) => !d.sourceItemId).length
   const selectedCount = drafts.filter((d) => d.include).length
 
-  const reset = () => {
-    setBubbles([])
-    setHistory([])
-    setDrafts([])
-    setChangedKeys([])
-    setRemovedKeys([])
-    setError(null)
-    setLastTurnUsage(EMPTY_USAGE)
-  }
+  const reset = () => clearAiSession()
 
   const send = async (instruction: string) => {
     if (aiApiKey.trim() === '') {
@@ -108,17 +99,22 @@ export function Ai() {
       return
     }
 
-    setBubbles((prev) => [...prev, { id: uid(), role: 'user', text: instruction }])
-    setRunning(true)
-    setError(null)
+    // 会话状态现在跨页面存活，`running` 也跟着活 —— 所以这里要自己挡一道。
+    // 不然「点了发送立刻切走、回来再点一次」就能发出两个并发请求。
+    if (useAiSessionStore.getState().running) return
+
+    appendBubble({ id: uid(), role: 'user', text: instruction })
+    useAiSessionStore.setState({ running: true, error: null })
 
     const controller = createRequestController()
-    cancelRef.current = controller.cancel
+    setAiCancel(controller.cancel)
 
     try {
-      let historyNow = history
-      let draftsNow = drafts
-      let removedNow = removedKeys
+      // 每次发送都从 store 现取一次 —— 组件重挂过之后闭包里的旧值已经过期了
+      const session = useAiSessionStore.getState()
+      let historyNow = session.history
+      let draftsNow = session.drafts
+      let removedNow = session.removedKeys
       let pending = instruction
 
       for (let turn = 0; turn < MAX_AUTO_TURNS; turn++) {
@@ -139,8 +135,10 @@ export function Ai() {
           signal: controller.signal,
         })
 
-        setUsage((prev) => addUsage(prev, result.usage))
-        setLastTurnUsage(result.usage)
+        useAiSessionStore.setState((state) => ({
+          usage: addUsage(state.usage, result.usage),
+          lastTurnUsage: result.usage,
+        }))
 
         const parsed = parseChatResponse(extractJson(result.content))
         historyNow = [
@@ -156,20 +154,17 @@ export function Ai() {
           const added = loaded.filter((d) => !known.has(d.key))
 
           if (added.length > 0) draftsNow = [...draftsNow, ...added]
-          setDrafts(draftsNow)
+          useAiSessionStore.setState({ drafts: draftsNow })
 
-          setBubbles((prev) => [
-            ...prev,
-            {
-              id: uid(),
-              role: 'assistant',
-              text: parsed.reply || t('ai.needToSeeItems'),
-              meta:
-                added.length > 0
-                  ? tc(added.length, 'ai.loadedIntoDrafts')
-                  : t('ai.noMatchingItems'),
-            },
-          ])
+          appendBubble({
+            id: uid(),
+            role: 'assistant',
+            text: parsed.reply || t('ai.needToSeeItems'),
+            meta:
+              added.length > 0
+                ? tc(added.length, 'ai.loadedIntoDrafts')
+                : t('ai.noMatchingItems'),
+          })
 
           if (added.length === 0) break
 
@@ -179,10 +174,12 @@ export function Ai() {
 
         // ---- 纯问答 ----
         if (parsed.noChanges) {
-          setBubbles((prev) => [
-            ...prev,
-            { id: uid(), role: 'assistant', text: parsed.reply, meta: t('ai.noDraftChangesMeta') },
-          ])
+          appendBubble({
+            id: uid(),
+            role: 'assistant',
+            text: parsed.reply,
+            meta: t('ai.noDraftChangesMeta'),
+          })
           break
         }
 
@@ -191,9 +188,11 @@ export function Ai() {
         draftsNow = outcome.drafts
         removedNow = [...new Set([...removedNow, ...outcome.removedKeys])]
 
-        setDrafts(draftsNow)
-        setRemovedKeys(removedNow)
-        setChangedKeys(outcome.changedKeys)
+        useAiSessionStore.setState({
+          drafts: draftsNow,
+          removedKeys: removedNow,
+          changedKeys: outcome.changedKeys,
+        })
 
         const parts: string[] = []
         if (outcome.added > 0) parts.push(t('ai.metaAdded', { count: outcome.added }))
@@ -203,25 +202,22 @@ export function Ai() {
         else if (outcome.unchanged > 0) parts.push(t('ai.metaUnchanged', { count: outcome.unchanged }))
         if (outcome.unknownIds > 0) parts.push(t('ai.metaUnknownIds', { count: outcome.unknownIds }))
 
-        setBubbles((prev) => [
-          ...prev,
-          {
-            id: uid(),
-            role: 'assistant',
-            text: parsed.reply || t('ai.noReplyNote'),
-            meta: parts.join(' · '),
-          },
-        ])
+        appendBubble({
+          id: uid(),
+          role: 'assistant',
+          text: parsed.reply || t('ai.noReplyNote'),
+          meta: parts.join(' · '),
+        })
         break
       }
 
-      setHistory(historyNow)
+      useAiSessionStore.setState({ history: historyNow })
     } catch (err) {
-      setError(errorText(err))
+      useAiSessionStore.setState({ error: errorText(err) })
     } finally {
-      setRunning(false)
+      useAiSessionStore.setState({ running: false })
       controller.dispose()
-      cancelRef.current = null
+      setAiCancel(null)
     }
   }
 
@@ -262,7 +258,7 @@ export function Ai() {
     if (result.added > 0 && result.updated === 0) navigate('/items')
   }
 
-  const cancel = () => cancelRef.current?.()
+  const cancel = () => cancelAiRequest()
 
   return (
     <>
@@ -336,7 +332,11 @@ export function Ai() {
                   ) : null}
                 </div>
                 {changedKeys.length > 0 ? (
-                  <Button size="sm" variant="ghost" onClick={() => setChangedKeys([])}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => useAiSessionStore.setState({ changedKeys: [] })}
+                  >
                     {t('ai.clearHighlight')}
                   </Button>
                 ) : null}
@@ -344,7 +344,7 @@ export function Ai() {
 
               <AiExtractPreview
                 drafts={drafts}
-                onChange={setDrafts}
+                onChange={(next) => useAiSessionStore.setState({ drafts: next })}
                 highlightKeys={changedKeys}
               />
 
