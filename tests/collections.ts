@@ -13,7 +13,7 @@ import { buildExportFile } from '../src/data/exportJson'
 import { mergeAppData } from '../src/data/importData'
 import { parseExportFile } from '../src/data/validate'
 import { SCHEMA_VERSION } from '../src/types'
-import type { AppData, Collection } from '../src/types'
+import type { AppData, Checklist, Collection } from '../src/types'
 import {
   collectionsOf,
   countByCollection,
@@ -316,8 +316,8 @@ await test('合并导入：id 相同视为同一个活动，名字保留本地�
   eq(must(merged.data.collections[0], '第一个').name, '旅行', '本地改过的名字更可信，保留它')
 })
 
-await test('数据版本已经升到 4，老版本号仍能导入', () => {
-  eq(SCHEMA_VERSION, 4, '加了新实体就该升版本，好让老程序明确拒绝而不是静默丢字段')
+await test('数据版本已经升到 5，老版本号仍能导入', () => {
+  eq(SCHEMA_VERSION, 5, '加了新实体就该升版本，好让老程序明确拒绝而不是静默丢字段')
 
   const raw = JSON.parse(JSON.stringify(buildExportFile(fixture()))) as Record<string, unknown>
   raw.schemaVersion = SCHEMA_VERSION - 1
@@ -325,6 +325,373 @@ await test('数据版本已经升到 4，老版本号仍能导入', () => {
 
   raw.schemaVersion = SCHEMA_VERSION + 1
   ok(!parseExportFile(JSON.stringify(raw)).ok, '更高版本要明确拒绝')
+})
+
+/* ------------------------------------------------------------------ */
+/* 4. 清单（一次性的待办）                                              */
+/* ------------------------------------------------------------------ */
+
+suite('清单：从物品或活动建，打钩，编辑，删')
+
+await test('从物品勾选建清单：条目是**快照**，物品后来改名也不影响它', () => {
+  seed(fixture())
+  const id = must(
+    useAppStore.getState().createChecklist({ name: '周六露营', itemIds: ['i1', 'i2'] }),
+    '应该拿到 id',
+  )
+
+  const created = must(
+    useAppStore.getState().data.checklists.find((c) => c.id === id),
+    '清单应存在',
+  )
+  eq(created.entries.length, 2, '勾了两件就该有两条')
+  eq(must(created.entries[0], '第一条').name, '灰色羊毛衫', '名字要抄下来')
+  eq(must(created.entries[0], '第一条').checked, false, '新建的都是未打钩')
+  eq(must(created.entries[1], '第二条').quantity, 2, '数量也要抄下来（牛仔裤是 2 条）')
+
+  // 改物品的名字：清单上还是当时那个名字，这才对（那是当时的决定）
+  useAppStore.getState().updateItem('i1', { name: '改过名的毛衣' })
+  const after = must(
+    useAppStore.getState().data.checklists.find((c) => c.id === id),
+    '清单还在',
+  )
+  eq(must(after.entries[0], '第一条').name, '灰色羊毛衫', '快照不该跟着物品改名而变')
+})
+
+await test('从活动建清单：勾选的那几件进来，并记下来源', () => {
+  seed(fixture())
+  const travel = must(useAppStore.getState().addCollection('旅行'), '旅行')
+  useAppStore.getState().addItemsToCollection(['i1', 'i2', 'i3'], travel)
+
+  // 用户在活动里勾了其中两件
+  const id = must(
+    useAppStore.getState().createChecklist({
+      name: '这次的旅行清单',
+      itemIds: ['i1', 'i3'],
+      fromCollectionId: travel,
+    }),
+    'id',
+  )
+
+  const created = must(
+    useAppStore.getState().data.checklists.find((c) => c.id === id),
+    '清单',
+  )
+  eq(created.entries.length, 2, '只勾了两件')
+  eq(created.fromCollectionId, travel, '要记下来源')
+})
+
+await test('清单是快照：把活动删掉，清单一点不受影响', () => {
+  seed(fixture())
+  const travel = must(useAppStore.getState().addCollection('旅行'), '旅行')
+  useAppStore.getState().addItemsToCollection(['i1'], travel)
+  const id = must(
+    useAppStore.getState().createChecklist({
+      name: '清单',
+      itemIds: ['i1'],
+      fromCollectionId: travel,
+    }),
+    'id',
+  )
+
+  useAppStore.getState().deleteCollection(travel)
+
+  const after = must(
+    useAppStore.getState().data.checklists.find((c) => c.id === id),
+    '清单还在',
+  )
+  eq(after.entries.length, 1, '清单里的条目不该因为活动被删而消失')
+  eq(after.fromCollectionId, travel, '来源 id 留着；界面上找不到那个活动就不显示「来自」而已')
+})
+
+await test('把物品删掉，清单条目也还在（只是跳不过去了）', async () => {
+  seed(fixture())
+  const id = must(
+    useAppStore.getState().createChecklist({ name: '清单', itemIds: ['i1'] }),
+    'id',
+  )
+  // 从回收站里彻底删掉（真正的物理删除），模拟「用户把东西清掉了」
+  useAppStore.getState().purgeItem('i1')
+
+  const after = must(
+    useAppStore.getState().data.checklists.find((c) => c.id === id),
+    '清单还在',
+  )
+  eq(after.entries.length, 1, '清单不该变成一片空白')
+  eq(must(after.entries[0], '条目').itemId, 'i1', 'itemId 留着，界面上会显示「已不在库里」')
+  await flushWrites()
+})
+
+await test('打钩与取消打钩', () => {
+  seed(fixture())
+  const id = must(useAppStore.getState().createChecklist({ name: '清单', itemIds: ['i1'] }), 'id')
+  const entryId = must(
+    must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').entries[0],
+    '条目',
+  ).id
+
+  useAppStore.getState().toggleChecklistEntry(id, entryId)
+  eq(
+    must(must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').entries[0], '条目')
+      .checked,
+    true,
+  )
+
+  useAppStore.getState().toggleChecklistEntry(id, entryId)
+  eq(
+    must(must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').entries[0], '条目')
+      .checked,
+    false,
+    '再点一次就是取消',
+  )
+
+  // 也可以显式指定，用于「全部取消打钩」那种批量场景
+  useAppStore.getState().toggleChecklistEntry(id, entryId, true)
+  eq(
+    must(must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').entries[0], '条目')
+      .checked,
+    true,
+  )
+})
+
+await test('清单里就地改名和改数量，**不会去动库里的物品**', () => {
+  // 这是刻意的：清单是「这次要带什么」的临时记录，
+  // 在里面把「充电宝」写成「充电宝（借的）」，不该把库里的物品也改了名
+  seed(fixture())
+  const id = must(useAppStore.getState().createChecklist({ name: '清单', itemIds: ['i1'] }), 'id')
+  const entryId = must(
+    must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').entries[0],
+    '条目',
+  ).id
+
+  useAppStore.getState().updateChecklistEntry(id, entryId, { name: '带妈妈送的那件', quantity: 3 })
+
+  const entry = must(
+    must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').entries[0],
+    '条目',
+  )
+  eq(entry.name, '带妈妈送的那件')
+  eq(entry.quantity, 3)
+
+  const item = must(useAppStore.getState().data.items.find((i) => i.id === 'i1'), 'i1')
+  eq(item.name, '灰色羊毛衫', '库里的物品不该被改')
+  eq(item.quantity, 1, '数量也不该被改')
+})
+
+await test('名字不能改成空的', () => {
+  seed(fixture())
+  const id = must(useAppStore.getState().createChecklist({ name: '清单', itemIds: ['i1'] }), 'id')
+  const entryId = must(
+    must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').entries[0],
+    '条目',
+  ).id
+
+  useAppStore.getState().updateChecklistEntry(id, entryId, { name: '   ' })
+  eq(
+    must(must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').entries[0], '条目')
+      .name,
+    '灰色羊毛衫',
+    '空名字该被拒绝',
+  )
+})
+
+await test('可以往清单里加库里没有的东西，也能删掉', () => {
+  seed(fixture())
+  const id = must(useAppStore.getState().createChecklist({ name: '清单' }), 'id')
+
+  const entryId = must(useAppStore.getState().addChecklistEntry(id, ' 顺路买瓶水 ', 2), '条目 id')
+  const entry = must(
+    must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').entries[0],
+    '条目',
+  )
+  eq(entry.name, '顺路买瓶水', '两头空格要去掉')
+  eq(entry.quantity, 2)
+  eq(entry.itemId, null, '库里没有对应物品，itemId 就是 null')
+
+  useAppStore.getState().removeChecklistEntry(id, entryId)
+  eq(
+    must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').entries.length,
+    0,
+  )
+})
+
+await test('空名字加不进去', () => {
+  seed(fixture())
+  const id = must(useAppStore.getState().createChecklist({ name: '清单' }), 'id')
+  eq(useAppStore.getState().addChecklistEntry(id, '  '), null)
+  eq(must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').entries.length, 0)
+})
+
+await test('一键清掉已打钩的，只剩没办的', () => {
+  seed(fixture())
+  const id = must(
+    useAppStore.getState().createChecklist({ name: '清单', itemIds: ['i1', 'i2', 'i3'] }),
+    'id',
+  )
+  const entries = must(
+    useAppStore.getState().data.checklists.find((c) => c.id === id),
+    '清单',
+  ).entries
+  useAppStore.getState().toggleChecklistEntry(id, must(entries[0], 'e0').id, true)
+  useAppStore.getState().toggleChecklistEntry(id, must(entries[2], 'e2').id, true)
+
+  const removed = useAppStore.getState().clearCheckedEntries(id)
+  eq(removed, 2)
+
+  const left = must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').entries
+  eq(left.length, 1, '只剩没打钩的那条')
+  eq(must(left[0], '剩下的一条').name, '牛仔裤')
+
+  eq(useAppStore.getState().clearCheckedEntries(id), 0, '没有打钩的就没什么可清')
+})
+
+await test('删整份清单：清单没了，物品和活动都不受影响', async () => {
+  seed(fixture())
+  const travel = must(useAppStore.getState().addCollection('旅行'), '旅行')
+  const id = must(
+    useAppStore.getState().createChecklist({
+      name: '清单',
+      itemIds: ['i1', 'i2'],
+      fromCollectionId: travel,
+    }),
+    'id',
+  )
+
+  const itemsBefore = useAppStore.getState().data.items.length
+  useAppStore.getState().deleteChecklist(id)
+
+  eq(useAppStore.getState().data.checklists.length, 0, '清单没了')
+  eq(useAppStore.getState().data.items.length, itemsBefore, '物品一件都不能少')
+  eq(useAppStore.getState().data.collections.length, 1, '活动也不受影响')
+  await flushWrites()
+})
+
+await test('改名：空名字拒绝', () => {
+  seed(fixture())
+  const id = must(useAppStore.getState().createChecklist({ name: '露营' }), 'id')
+  useAppStore.getState().renameChecklist(id, '   ')
+  eq(must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').name, '露营')
+
+  useAppStore.getState().renameChecklist(id, ' 周六露营 ')
+  eq(
+    must(useAppStore.getState().data.checklists.find((c) => c.id === id), '清单').name,
+    '周六露营',
+  )
+})
+
+await test('清单完全没名字就建不出来', () => {
+  seed(fixture())
+  eq(useAppStore.getState().createChecklist({ name: '   ' }), null)
+  eq(useAppStore.getState().data.checklists.length, 0)
+})
+
+/* ------------------------------------------------------------------ */
+/* 5. 清单的导出 / 导入                                                */
+/* ------------------------------------------------------------------ */
+
+suite('清单：导出与导入')
+
+await test('清单连打钩状态一起往返', () => {
+  const data: AppData = {
+    ...fixture(),
+    checklists: [
+      {
+        id: 'list-1',
+        name: '周六露营',
+        fromCollectionId: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        entries: [
+          { id: 'e1', itemId: 'i1', name: '帐篷', quantity: 1, checked: true },
+          { id: 'e2', itemId: null, name: '顺路买瓶水', quantity: 2, checked: false },
+        ],
+      },
+    ],
+  }
+
+  const parsed = mustParse(parseExportFile(JSON.stringify(buildExportFile(data))))
+  deepEq(parsed.data.checklists, data.checklists, '清单要原样回来，包括打钩状态')
+})
+
+await test('老备份（v4，没有 checklists）能导入，清单为空', () => {
+  const raw = JSON.parse(JSON.stringify(buildExportFile(fixture()))) as Record<string, unknown>
+  raw.schemaVersion = 4
+  delete (raw.data as Record<string, unknown>).checklists
+
+  const parsed = mustParse(parseExportFile(JSON.stringify(raw)))
+  deepEq(parsed.data.checklists, [], '缺字段就当没有清单')
+})
+
+await test('清单里坏了一两条：跳过那几条，剩下的照留（不整份丢）', () => {
+  // 清单是用户临时攒的，坏一条就整份不要，比丢一条糟得多
+  const data: AppData = {
+    ...fixture(),
+    checklists: [
+      {
+        id: 'list-1',
+        name: '露营',
+        fromCollectionId: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        entries: [
+          { id: 'e1', itemId: null, name: '帐篷', quantity: 1, checked: false },
+          // 名字是空的 → 这条跳过
+          { id: 'e2', itemId: null, name: '   ', quantity: 1, checked: false },
+          // 条目 id 缺失 → 补一个，而不是丢掉
+          { id: '', itemId: null, name: '水', quantity: 1, checked: true },
+        ],
+      },
+    ],
+  }
+
+  const parsed = mustParse(parseExportFile(JSON.stringify(buildExportFile(data))))
+  const list = must(parsed.data.checklists[0], '清单')
+  eq(list.name, '露营', '整份清单要留着')
+  eq(list.entries.length, 2, '坏的那条跳过，其余两条都在')
+  eq(must(list.entries[0], '第一条').name, '帐篷')
+  eq(must(list.entries[1], '第二条').name, '水', '缺 id 的补一个 id，不该被丢掉')
+  ok(list.entries[1]?.id !== '', '补出来的 id 不能是空字符串')
+  ok(
+    parsed.warnings.some((w) => w.includes('露营')),
+    `该提示是哪份清单的哪一条坏了：${parsed.warnings.join(' / ')}`,
+  )
+})
+
+await test('合并导入：清单按 id 去重，撞了就整份保留本地那份', () => {
+  // 清单里有「打没打钩」，两边各勾一部分的话怎么合都会丢一半信息，
+  // 所以宁可整份保留本地那份 —— 至少是用户上次看到的样子
+  const local: Checklist = {
+    id: 'list-1',
+    name: '周六露营',
+    fromCollectionId: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    entries: [{ id: 'e1', itemId: null, name: '帐篷', quantity: 1, checked: true }],
+  }
+  const incoming: Checklist = {
+    id: 'list-1',
+    name: '周六露营',
+    fromCollectionId: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    entries: [{ id: 'e1', itemId: null, name: '帐篷', quantity: 1, checked: false }],
+  }
+  const fresh: Checklist = {
+    id: 'list-2',
+    name: '这周采购',
+    fromCollectionId: null,
+    createdAt: '2026-01-02T00:00:00.000Z',
+    entries: [],
+  }
+
+  const current: AppData = { ...fixture(), checklists: [local] }
+  const merged = mergeAppData(current, { ...fixture(), checklists: [incoming, fresh] })
+
+  eq(merged.data.checklists.length, 2, '撞的那个保留，新的补进来')
+  eq(must(merged.data.checklists[0], '第一条').id, 'list-1')
+  eq(
+    must(must(merged.data.checklists[0], '第一条').entries[0], '条目').checked,
+    true,
+    '本地已打钩的状态要保住',
+  )
+  eq(merged.report.checklists.added, 1)
+  eq(merged.report.checklists.kept, 1)
 })
 
 /* ------------------------------------------------------------------ */

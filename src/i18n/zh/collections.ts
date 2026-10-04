@@ -60,4 +60,10 @@ export const collections = {
   toastNoteSaved: '备注已保存',
   toastDuplicate: '已经有一个叫「{name}」的活动了',
   belongToOne: '属于「{name}」',
+
+  /* 从活动生成清单 */
+  makeChecklist: '生成清单',
+  makeChecklistHint: '把这里勾选的东西做一份清单，边办边打钩。清单是临时的，活动本身不受影响。',
+  makeChecklistName: '{name} 的清单',
+  makeChecklistAll: '全选这里的东西',
 }

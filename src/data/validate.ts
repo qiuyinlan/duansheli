@@ -4,6 +4,8 @@ import type {
   AttrValue,
   AttributeDef,
   Category,
+  Checklist,
+  ChecklistEntry,
   Collection,
   Item,
   ItemStatus,
@@ -225,6 +227,64 @@ function normalizeCollection(raw: unknown, now: string, warn: string[]): Collect
   }
 }
 
+/**
+ * 归一化一份清单。
+ *
+ * 清单和别的东西不一样的地方：**它坏掉一两条也不该整份丢掉**。
+ * 里面装的是「这次出门要带什么」，是用户临时攒的；
+ * 一条条目缺字段就跳过那一条，剩下的照留，比整份不要好得多。
+ */
+function normalizeChecklist(raw: unknown, now: string, warn: string[]): Checklist | null {
+  if (!isRecord(raw)) {
+    warn.push(t('data.validate.checklistNotObject'))
+    return null
+  }
+  const name = str(raw.name).trim()
+  const id = str(raw.id).trim()
+  if (id === '' || name === '') {
+    warn.push(t('data.validate.checklistNoIdOrName'))
+    return null
+  }
+
+  const rawEntries = Array.isArray(raw.entries) ? raw.entries : []
+  const entries: ChecklistEntry[] = []
+  const seen = new Set<string>()
+
+  rawEntries.forEach((rawEntry, index) => {
+    if (!isRecord(rawEntry)) {
+      warn.push(t('data.validate.checklistEntrySkipped', { name, index: index + 1 }))
+      return
+    }
+    const entryName = str(rawEntry.name).trim()
+    if (entryName === '') {
+      warn.push(t('data.validate.checklistEntrySkipped', { name, index: index + 1 }))
+      return
+    }
+    // 条目 id 缺失就补一个，而不是丢掉这条 —— 它还可能有用
+    const entryId = str(rawEntry.id).trim() || `entry-${id}-${index + 1}`
+    if (seen.has(entryId)) return
+    seen.add(entryId)
+
+    const itemIdRaw = rawEntry.itemId
+    entries.push({
+      id: entryId,
+      itemId: typeof itemIdRaw === 'string' && itemIdRaw.trim() !== '' ? itemIdRaw : null,
+      name: entryName,
+      quantity: Math.max(1, Math.round(num(rawEntry.quantity, 1))),
+      checked: bool(rawEntry.checked),
+    })
+  })
+
+  const fromRaw = raw.fromCollectionId
+  return {
+    id,
+    name,
+    fromCollectionId: typeof fromRaw === 'string' && fromRaw.trim() !== '' ? fromRaw : null,
+    entries,
+    createdAt: isoDate(raw.createdAt, now),
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* 解析与校验                                                          */
 /* ------------------------------------------------------------------ */
@@ -303,6 +363,8 @@ export function parseExportFile(text: string): ParseOutcome {
   const rawTags = Array.isArray(dataRaw.tags) ? dataRaw.tags : []
   // v3 及更早的备份里没有 collections 字段 —— 读成空数组即可，不需要额外的迁移逻辑
   const rawCollections = Array.isArray(dataRaw.collections) ? dataRaw.collections : []
+  // v4 及更早没有 checklists
+  const rawChecklists = Array.isArray(dataRaw.checklists) ? dataRaw.checklists : []
 
   if (
     !Array.isArray(dataRaw.items) &&
@@ -352,6 +414,12 @@ export function parseExportFile(text: string): ParseOutcome {
     if (collection) collections.push(collection)
   }
 
+  const checklists: Checklist[] = []
+  for (const raw of rawChecklists) {
+    const checklist = normalizeChecklist(raw, now, warnings)
+    if (checklist) checklists.push(checklist)
+  }
+
   // 去重：id 重复时保留第一条，避免出现两个「同一个位置」
   const dedupe = <T extends { id: string }>(list: T[], kind: string): T[] => {
     const seen = new Set<string>()
@@ -372,6 +440,7 @@ export function parseExportFile(text: string): ParseOutcome {
   const dedupedCategories = dedupe(categories, t('data.kind.category'))
   const dedupedAttrDefs = dedupe(attributeDefs, t('data.kind.attribute'))
   const dedupedCollections = dedupe(collections, t('data.kind.collection'))
+  const dedupedChecklists = dedupe(checklists, t('data.kind.checklist'))
 
   // 悬空引用修复：物品指向了不存在的位置/分类/属性/活动
   const locIds = new Set(dedupedLocations.map((l) => l.id))
@@ -435,6 +504,7 @@ export function parseExportFile(text: string): ParseOutcome {
     attributeDefs: dedupedAttrDefs,
     tags,
     collections: dedupedCollections,
+    checklists: dedupedChecklists,
     updatedAt: now,
   }
 

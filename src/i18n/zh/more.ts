@@ -16,6 +16,7 @@ export const more = {
 
   /* 活动合集 */
   collectionsDesc: '旅行、学习这类，一份要用的清单',
+  checklistsDesc: '临时待办，边办边打钩，办完删掉',
 
   /* 管理各页 */
   categoriesDesc: '你亲手维护的固定分类清单',

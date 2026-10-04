@@ -46,9 +46,13 @@ export const itemEdit = {
   idleOff: '在用（打开开关可以标记为闲置）',
 
   /* 更多（标签、备注） */
-  moreToggle: '更多（标签、备注）',
+  moreToggle: '更多（标签、活动、备注）',
   fieldTags: '标签',
   tagsHint: '标签适合记「情境」而不是「是什么」，例如「想送人」「舍不得扔」。',
+  fieldCollections: '属于哪些活动',
+  collectionsHint: '旅行、学习这类。一件东西可以同时属于多个活动，点一下就切换。',
+  collectionPlaceholder: '输一个新活动名字，回车新建',
+  noCollectionsYet: '还没有任何活动 —— 在下面输一个名字就能建。',
   fieldNote: '备注',
   notePlaceholder: '任何想记下来的事，比如「妈妈送的」「有点漏水」',
 

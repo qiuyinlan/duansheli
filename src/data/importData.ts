@@ -323,6 +323,29 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
     return kept.length === item.collectionIds.length ? item : { ...item, collectionIds: kept }
   })
 
+  /* ---------------- 清单 ---------------- */
+  /*
+   * 清单是**一次性的、用户临时攒的**东西，所以合并策略要保守：
+   * 按 id 去重，id 撞了就**整份保留本地那份**，不做字段级合并。
+   *
+   * 原因：清单里有「打没打钩」这种状态。两边各勾了一部分的话，
+   * 无论怎么合都会丢另一半打钩信息，而用户看到的会是「我勾好的怎么没了」。
+   * 保留本地那份至少是「我上次看到的样子」，还能解释。
+   */
+  const localChecklistIds = new Set(current.checklists.map((c) => c.id))
+  const checklists = current.checklists.map((c) => ({ ...c }))
+  let checklistAdded = 0
+  let checklistKept = 0
+
+  for (const incomingChecklist of incoming.checklists) {
+    if (localChecklistIds.has(incomingChecklist.id)) {
+      checklistKept++
+      continue
+    }
+    checklists.push({ ...incomingChecklist, entries: incomingChecklist.entries.map((e) => ({ ...e })) })
+    checklistAdded++
+  }
+
   const data: AppData = {
     schemaVersion: SCHEMA_VERSION,
     items: itemsWithCollections,
@@ -331,6 +354,7 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
     attributeDefs,
     tags,
     collections,
+    checklists,
     updatedAt: now,
   }
 
@@ -346,6 +370,7 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
     attributeDefs: { added: attrAdded, updated: attrMatched },
     tags: { added: tagAdded },
     collections: { added: collectionAdded, updated: collectionUpdated },
+    checklists: { added: checklistAdded, kept: checklistKept },
     warnings,
   }
 

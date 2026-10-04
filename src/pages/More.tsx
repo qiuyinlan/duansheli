@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  IconChecklist,
   IconChevronRight,
   IconClock,
   IconFolder,
@@ -51,6 +52,13 @@ export function More() {
       meta: t('more.count', { count: data.collections.length }),
       Icon: IconSuitcase,
       desc: t('more.collectionsDesc'),
+    },
+    {
+      to: '/checklists',
+      label: t('nav.checklists'),
+      meta: t('more.count', { count: data.checklists.length }),
+      Icon: IconChecklist,
+      desc: t('more.checklistsDesc'),
     },
     {
       to: '/categories',

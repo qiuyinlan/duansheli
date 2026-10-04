@@ -79,6 +79,13 @@ export const SECTION_THEMES: Record<string, SectionTheme> = {
     accentText: '#0369a1',
     accentSoft: '#f0f9ff',
   },
+  /* 清单：临时待办，用一档更轻的紫色，和「活动」的蓝区分开 */
+  checklists: {
+    key: 'checklists',
+    accent: '#9333ea',
+    accentText: '#7e22ce',
+    accentSoft: '#faf5ff',
+  },
   /* 分类 */
   categories: {
     key: 'categories',
@@ -119,6 +126,7 @@ export function sectionKeyForPath(pathname: string): string {
   if (pathname.startsWith('/idle')) return 'idle'
   if (pathname.startsWith('/expiry')) return 'expiry'
   if (pathname.startsWith('/collections')) return 'collections'
+  if (pathname.startsWith('/checklists')) return 'checklists'
   if (pathname.startsWith('/ai')) return 'ai'
   if (pathname.startsWith('/categories')) return 'categories'
   if (pathname.startsWith('/attributes')) return 'attributes'

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ItemRow } from '../components/ItemRow'
 import { IconArrowLeft, IconChevronRight, IconSuitcase } from '../components/ui/icons'
 import { Button, ConfirmDialog, EmptyState, Modal } from '../components/ui/primitives'
+import { CreateChecklistDialog } from './Checklists'
 import type { Collection } from '../types'
 import { useT } from '../i18n'
 import { countByCollection, itemsInCollection, liveItems } from '../store/selectors'
@@ -142,12 +143,14 @@ function CollectionDetail({ id }: { id: string }) {
   const updateCollection = useAppStore((s) => s.updateCollection)
   const deleteCollection = useAppStore((s) => s.deleteCollection)
   const removeItemsFromCollection = useAppStore((s) => s.removeItemsFromCollection)
+  const createChecklist = useAppStore((s) => s.createChecklist)
   const notify = useAppStore((s) => s.notify)
   const { t, tc } = useT()
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [checklistOpen, setChecklistOpen] = useState(false)
   const [noteDraft, setNoteDraft] = useState('')
 
   const collection = data.collections.find((c) => c.id === id)
@@ -269,6 +272,13 @@ function CollectionDetail({ id }: { id: string }) {
                 <span className="small muted">{tc(selected.size, 'collections.count')}</span>
                 <Button
                   size="sm"
+                  variant="primary"
+                  onClick={() => setChecklistOpen(true)}
+                >
+                  {t('collections.makeChecklist')}
+                </Button>
+                <Button
+                  size="sm"
                   onClick={() => {
                     const removed = removeItemsFromCollection(selectedIds, collection.id)
                     notify(t('collections.removeSelected', { count: removed }), 'success')
@@ -319,6 +329,30 @@ function CollectionDetail({ id }: { id: string }) {
           updateCollection(collection.id, { name })
           setRenameOpen(false)
           notify(t('collections.toastRenamed'), 'success')
+        }}
+      />
+
+      <CreateChecklistDialog
+        open={checklistOpen}
+        itemCount={selectedIds.length}
+        defaultName={t('collections.makeChecklistName', { name: collection.name })}
+        onClose={() => setChecklistOpen(false)}
+        onConfirm={(name) => {
+          const created = createChecklist({
+            name,
+            itemIds: selectedIds,
+            // 记下来源，清单页上会写「来自「旅行」」——
+            // 但活动后来被删掉也不影响这份清单，它已经是一份独立的快照了
+            fromCollectionId: collection.id,
+          })
+          setChecklistOpen(false)
+          if (created === null) return
+          notify(
+            t('checklists.createdToast', { name, count: selectedIds.length }),
+            'success',
+          )
+          setSelected(new Set())
+          navigate(`/checklists/${created}`)
         }}
       />
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { AttributePicker, CategoryPicker, LocationPicker, TagInput } from '../components/pickers'
+import { AttributePicker, CategoryPicker, CollectionPicker, LocationPicker, TagInput } from '../components/pickers'
 import { IconChevronRight, IconClose, IconPlus, IconTrash } from '../components/ui/icons'
 import { Button, EmptyState, Switch } from '../components/ui/primitives'
 import type { DictKey } from '../i18n'
@@ -128,6 +128,7 @@ export function ItemEdit() {
   const setUi = useAppStore((s) => s.setUi)
   const addItem = useAppStore((s) => s.addItem)
   const updateItem = useAppStore((s) => s.updateItem)
+  const addCollection = useAppStore((s) => s.addCollection)
   const markDiscarded = useAppStore((s) => s.markDiscarded)
   const rememberAttrSelection = useAppStore((s) => s.rememberAttrSelection)
   const notify = useAppStore((s) => s.notify)
@@ -149,6 +150,8 @@ export function ItemEdit() {
   const [attrIds, setAttrIds] = useState<string[]>([])
   /** 有效期至（YYYY-MM-DD）；null = 没设置 —— 和「已过期」是两回事 */
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
+  /** 所属的活动合集 */
+  const [collectionIds, setCollectionIds] = useState<string[]>([])
 
   const [moreOpen, setMoreOpen] = useState(false)
   const [locationOpen, setLocationOpen] = useState(false)
@@ -170,7 +173,12 @@ export function ItemEdit() {
       setAttrs(existing.attrs)
       setAttrIds(Object.keys(existing.attrs))
       setExpiresAt(existing.expiresAt)
-      setMoreOpen(existing.tags.length > 0 || existing.note !== '')
+      setCollectionIds(existing.collectionIds)
+      // 有标签、有备注、或属于某个活动，就默认把「更多」摊开 ——
+      // 否则用户会看不到自己之前填过的东西，以为丢了
+      setMoreOpen(
+        existing.tags.length > 0 || existing.note !== '' || existing.collectionIds.length > 0,
+      )
     } else {
       setName('')
       setLocationId(ui.lastLocationId)
@@ -182,6 +190,7 @@ export function ItemEdit() {
       setAttrs({})
       setAttrIds(suggestAttrIds(ui, data.attributeDefs, ui.lastCategoryIds))
       setExpiresAt(null)
+      setCollectionIds([])
       setMoreOpen(false)
     }
     // 只在进入页面或切换物品时重新初始化
@@ -229,6 +238,7 @@ export function ItemEdit() {
     tags,
     note,
     expiresAt,
+    collectionIds,
     attrs: Object.fromEntries(
       Object.entries(attrs).filter(([key]) => attrIds.includes(key)),
     ) as Record<string, AttrValue>,
@@ -505,6 +515,23 @@ export function ItemEdit() {
                   suggestions={data.tags.map((tag) => tag.name)}
                 />
                 <div className="field__hint">{t('itemEdit.tagsHint')}</div>
+              </div>
+
+              <div className="field">
+                <span className="field__label">{t('itemEdit.fieldCollections')}</span>
+                <CollectionPicker
+                  value={collectionIds}
+                  onChange={setCollectionIds}
+                  collections={data.collections}
+                  onCreate={(name) => {
+                    const id = addCollection(name)
+                    if (id === null) return null
+                    // 刚建的顺手勾上 —— 用户在这里输名字就是为了把东西放进去
+                    setCollectionIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+                    return id
+                  }}
+                />
+                <div className="field__hint">{t('itemEdit.collectionsHint')}</div>
               </div>
 
               <div className="field">

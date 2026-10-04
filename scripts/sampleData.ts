@@ -11,7 +11,15 @@
 import { buildExportFile } from '../src/data/exportJson'
 import { parseExportFile } from '../src/data/validate'
 import { createSeedData } from '../src/storage/seed'
-import type { AppData, AttrValue, Category, Collection, Item, ItemStatus } from '../src/types'
+import type {
+  AppData,
+  AttrValue,
+  Category,
+  Checklist,
+  Collection,
+  Item,
+  ItemStatus,
+} from '../src/types'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -334,7 +342,49 @@ export function buildSampleBackup(): SampleBackupResult {
     }
   })
 
-  const data: AppData = { ...seed, categories, collections, items }
+  /*
+   * 清单：给一份演示用的。
+   *
+   * 内容是**从「旅行」抄一份快照** —— 正好演示清单和活动的分工：
+   * 活动是模板（长期攒的），清单是这次的实例（打钩、用完就删）。
+   * 刻意只勾上一部分，好让进度条不是 0% 也不是 100%。
+   * 另外放一条库里没有的，演示「顺路要买的可以直接写进来」。
+   */
+  const travelCollection = collections.find((c) => c.name === '旅行')
+  const travelItems =
+    travelCollection === undefined
+      ? []
+      : items.filter((it) => it.collectionIds.includes(travelCollection.id))
+
+  const checklists: Checklist[] =
+    travelCollection === undefined
+      ? []
+      : [
+          {
+            id: 'sample-checklist-1',
+            name: '周末露营',
+            fromCollectionId: travelCollection.id,
+            createdAt: now,
+            entries: [
+              ...travelItems.map((entry, index) => ({
+                id: `sample-entry-${index + 1}`,
+                itemId: entry.id,
+                name: entry.name,
+                quantity: entry.quantity,
+                checked: index === 0,
+              })),
+              {
+                id: 'sample-entry-buy',
+                itemId: null,
+                name: '顺路买瓶水',
+                quantity: 2,
+                checked: false,
+              },
+            ],
+          },
+        ]
+
+  const data: AppData = { ...seed, categories, collections, checklists, items }
 
   // 生成之后立刻用真实的导入校验读回来对比 —— 不通过就说明这份示例数据是坏的，
   // 宁可当场炸掉，也不要把一个导不进去的文件交给用户。

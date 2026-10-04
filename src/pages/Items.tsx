@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { FilterPanel } from '../components/FilterPanel'
 import { ItemRow } from '../components/ItemRow'
 import { AddToCollectionDialog } from './Collections'
+import { CreateChecklistDialog } from './Checklists'
 import { LocationPicker, TagInput } from '../components/pickers'
 import { IconChevronRight, IconTrash } from '../components/ui/icons'
 import { Button, ConfirmDialog, EmptyState, Modal, SearchInput } from '../components/ui/primitives'
@@ -106,6 +107,7 @@ export function Items() {
   const batchMoveToLocation = useAppStore((s) => s.batchMoveToLocation)
   const batchAddTag = useAppStore((s) => s.batchAddTag)
   const addItemsToCollection = useAppStore((s) => s.addItemsToCollection)
+  const createChecklist = useAppStore((s) => s.createChecklist)
   const notify = useAppStore((s) => s.notify)
 
   // useT() 一方面给 t/tc，另一方面**订阅语言**：语言一换这个组件就重渲染。
@@ -124,6 +126,7 @@ export function Items() {
   const [tagOpen, setTagOpen] = useState(false)
   const [batchTagDraft, setBatchTagDraft] = useState<string[]>([])
   const [collectionOpen, setCollectionOpen] = useState(false)
+  const [checklistOpen, setChecklistOpen] = useState(false)
   const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false)
 
   // URL 是「从别处跳进来」时的唯一真源；之后再手动改筛选不会写回 URL，
@@ -558,6 +561,9 @@ export function Items() {
           <Button size="sm" onClick={() => setCollectionOpen(true)}>
             {t('items.addToCollection')}
           </Button>
+          <Button size="sm" onClick={() => setChecklistOpen(true)}>
+            {t('items.makeChecklist')}
+          </Button>
           <Button size="sm" onClick={() => setConfirmDiscardOpen(true)}>
             {t('items.discard')}
           </Button>
@@ -669,6 +675,25 @@ export function Items() {
           )
           setSelected(new Set())
           setCollectionOpen(false)
+        }}
+      />
+
+      <CreateChecklistDialog
+        open={checklistOpen}
+        itemCount={selectedIds.length}
+        defaultName={t('checklists.defaultName')}
+        onClose={() => setChecklistOpen(false)}
+        onConfirm={(name) => {
+          const created = createChecklist({ name, itemIds: selectedIds })
+          setChecklistOpen(false)
+          if (created === null) return
+          notify(
+            t('checklists.createdToast', { name, count: selectedIds.length }),
+            'success',
+          )
+          setSelected(new Set())
+          // 直接进新清单 —— 建它就是为了马上打钩
+          navigate(`/checklists/${created}`)
         }}
       />
 

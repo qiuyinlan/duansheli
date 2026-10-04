@@ -14,6 +14,7 @@ export function createEmptyData(): AppData {
     attributeDefs: [],
     tags: [],
     collections: [],
+    checklists: [],
     updatedAt: new Date().toISOString(),
   }
 }
@@ -160,6 +161,7 @@ export function createSeedData(lang: Lang = getLang()): AppData {
      * 所以留空，让页面上的空状态去解释它能干什么。
      */
     collections: [],
+    checklists: [],
     updatedAt: now,
   }
 }

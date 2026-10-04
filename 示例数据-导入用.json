@@ -1,15 +1,16 @@
 {
   "format": "duansheli",
-  "schemaVersion": 4,
-  "exportedAt": "2026-10-04T06:24:52.037Z",
-  "generator": "断舍离 v4",
+  "schemaVersion": 5,
+  "exportedAt": "2026-10-04T06:41:38.371Z",
+  "generator": "断舍离 v5",
   "summary": {
     "items": 33,
     "categories": 17,
     "locations": 20,
     "attributeDefs": 5,
     "tags": 3,
-    "collections": 3
+    "collections": 3,
+    "checklists": 1
   },
   "data": {
     "items": [
@@ -18,21 +19,21 @@
         "name": "灰色羊毛衫",
         "quantity": 1,
         "categoryIds": [
-          "214c0a88-8209-4a6e-9071-5fb361028e55"
+          "0c52779a-4ba9-43a0-b032-7a62fdd9eba7"
         ],
-        "locationId": "036dc441-6c32-407f-a206-920d61d4dcad",
+        "locationId": "90c1538c-e289-42cd-bf22-bca880d36f55",
         "status": "active",
         "tags": [
           "舍不得扔"
         ],
         "attrs": {
-          "57605b66-13ac-497b-b97a-88c8fc5871d9": "MUJI",
-          "9c60dbfe-37e9-422e-ba56-e71b23e02e03": "灰"
+          "e28d4baa-1e62-4737-86b4-d8d2510d6191": "MUJI",
+          "89b9084a-88d2-4f48-b28a-9fc09f21027b": "灰"
         },
         "note": "妈妈送的，起球了但还能穿",
         "collectionIds": [],
-        "createdAt": "2026-08-31T06:24:52.034Z",
-        "updatedAt": "2026-08-31T06:24:52.034Z",
+        "createdAt": "2026-08-31T06:41:38.369Z",
+        "updatedAt": "2026-08-31T06:41:38.369Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -42,18 +43,18 @@
         "name": "牛仔裤",
         "quantity": 2,
         "categoryIds": [
-          "214c0a88-8209-4a6e-9071-5fb361028e55"
+          "0c52779a-4ba9-43a0-b032-7a62fdd9eba7"
         ],
-        "locationId": "036dc441-6c32-407f-a206-920d61d4dcad",
+        "locationId": "90c1538c-e289-42cd-bf22-bca880d36f55",
         "status": "active",
         "tags": [],
         "attrs": {
-          "9c60dbfe-37e9-422e-ba56-e71b23e02e03": "彩色"
+          "89b9084a-88d2-4f48-b28a-9fc09f21027b": "彩色"
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-01T06:24:52.035Z",
-        "updatedAt": "2026-09-01T06:24:52.035Z",
+        "createdAt": "2026-09-01T06:41:38.369Z",
+        "updatedAt": "2026-09-01T06:41:38.369Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -63,19 +64,19 @@
         "name": "羽绒服",
         "quantity": 1,
         "categoryIds": [
-          "214c0a88-8209-4a6e-9071-5fb361028e55"
+          "0c52779a-4ba9-43a0-b032-7a62fdd9eba7"
         ],
-        "locationId": "036dc441-6c32-407f-a206-920d61d4dcad",
+        "locationId": "90c1538c-e289-42cd-bf22-bca880d36f55",
         "status": "active",
         "tags": [],
         "attrs": {
-          "57605b66-13ac-497b-b97a-88c8fc5871d9": "优衣库",
-          "944a1d6e-ae9f-4757-ab13-9c8b77dcb1dc": "2022-11-20"
+          "e28d4baa-1e62-4737-86b4-d8d2510d6191": "优衣库",
+          "7131160a-8efe-4440-976d-9093052881fe": "2022-11-20"
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-02T06:24:52.035Z",
-        "updatedAt": "2026-09-02T06:24:52.035Z",
+        "createdAt": "2026-09-02T06:41:38.369Z",
+        "updatedAt": "2026-09-02T06:41:38.369Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -85,9 +86,9 @@
         "name": "旧手机",
         "quantity": 1,
         "categoryIds": [
-          "3f8b667b-158c-4c86-9fe3-60b3797d502f"
+          "e4a7513d-f7ec-4489-81a5-0a23350a0115"
         ],
-        "locationId": "de21102f-4e44-42bb-975f-e6b60ec1b08e",
+        "locationId": "35609104-271e-43b3-ba8c-d87ee6656960",
         "status": "idle",
         "tags": [
           "想送人"
@@ -95,9 +96,9 @@
         "attrs": {},
         "note": "屏幕有划痕，还能开机",
         "collectionIds": [],
-        "createdAt": "2026-09-03T06:24:52.035Z",
-        "updatedAt": "2026-09-03T06:24:52.035Z",
-        "idleAt": "2025-08-10T06:24:52.035Z",
+        "createdAt": "2026-09-03T06:41:38.369Z",
+        "updatedAt": "2026-09-03T06:41:38.369Z",
+        "idleAt": "2025-08-10T06:41:38.369Z",
         "discardedAt": null,
         "expiresAt": null
       },
@@ -106,19 +107,19 @@
         "name": "蓝牙耳机",
         "quantity": 1,
         "categoryIds": [
-          "3f8b667b-158c-4c86-9fe3-60b3797d502f"
+          "e4a7513d-f7ec-4489-81a5-0a23350a0115"
         ],
-        "locationId": "7151a6ac-07d1-48f8-a221-5e7011012393",
+        "locationId": "0087e635-6c03-4cd2-bf6d-f6418c100443",
         "status": "active",
         "tags": [],
         "attrs": {
-          "57605b66-13ac-497b-b97a-88c8fc5871d9": "索尼",
-          "da9aa8c8-2053-4d05-8167-4d721f3be464": 899
+          "e28d4baa-1e62-4737-86b4-d8d2510d6191": "索尼",
+          "156d4f0a-64c4-40c9-91fe-82b45840a7d3": 899
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-04T06:24:52.035Z",
-        "updatedAt": "2026-09-04T06:24:52.035Z",
+        "createdAt": "2026-09-04T06:41:38.369Z",
+        "updatedAt": "2026-09-04T06:41:38.369Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -128,19 +129,19 @@
         "name": "充电宝",
         "quantity": 1,
         "categoryIds": [
-          "3f8b667b-158c-4c86-9fe3-60b3797d502f"
+          "e4a7513d-f7ec-4489-81a5-0a23350a0115"
         ],
-        "locationId": "7151a6ac-07d1-48f8-a221-5e7011012393",
+        "locationId": "0087e635-6c03-4cd2-bf6d-f6418c100443",
         "status": "idle",
         "tags": [],
         "attrs": {
-          "da9aa8c8-2053-4d05-8167-4d721f3be464": 129
+          "156d4f0a-64c4-40c9-91fe-82b45840a7d3": 129
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-05T06:24:52.035Z",
-        "updatedAt": "2026-09-05T06:24:52.035Z",
-        "idleAt": "2026-03-28T06:24:52.035Z",
+        "createdAt": "2026-09-05T06:41:38.369Z",
+        "updatedAt": "2026-09-05T06:41:38.369Z",
+        "idleAt": "2026-03-28T06:41:38.369Z",
         "discardedAt": null,
         "expiresAt": null
       },
@@ -149,19 +150,19 @@
         "name": "台灯",
         "quantity": 1,
         "categoryIds": [
-          "3f8b667b-158c-4c86-9fe3-60b3797d502f"
+          "e4a7513d-f7ec-4489-81a5-0a23350a0115"
         ],
-        "locationId": "7151a6ac-07d1-48f8-a221-5e7011012393",
+        "locationId": "0087e635-6c03-4cd2-bf6d-f6418c100443",
         "status": "active",
         "tags": [],
         "attrs": {
-          "57605b66-13ac-497b-b97a-88c8fc5871d9": "小米",
-          "da9aa8c8-2053-4d05-8167-4d721f3be464": 199
+          "e28d4baa-1e62-4737-86b4-d8d2510d6191": "小米",
+          "156d4f0a-64c4-40c9-91fe-82b45840a7d3": 199
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-06T06:24:52.035Z",
-        "updatedAt": "2026-09-06T06:24:52.035Z",
+        "createdAt": "2026-09-06T06:41:38.369Z",
+        "updatedAt": "2026-09-06T06:41:38.369Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -171,20 +172,20 @@
         "name": "《人类简史》",
         "quantity": 1,
         "categoryIds": [
-          "80c8bf60-8a63-4d20-a510-adb559a40c9c"
+          "837ce9d7-134c-4f1d-8fc5-8bf9d1559ef2"
         ],
-        "locationId": "2f918a90-f236-42ec-bd43-adaf0fb04f42",
+        "locationId": "24333735-a7e4-4f81-baa0-98a9febd33aa",
         "status": "active",
         "tags": [],
         "attrs": {
-          "944a1d6e-ae9f-4757-ab13-9c8b77dcb1dc": "2021-06-01"
+          "7131160a-8efe-4440-976d-9093052881fe": "2021-06-01"
         },
         "note": "",
         "collectionIds": [
           "sample-collection-2"
         ],
-        "createdAt": "2026-09-07T06:24:52.036Z",
-        "updatedAt": "2026-09-07T06:24:52.036Z",
+        "createdAt": "2026-09-07T06:41:38.370Z",
+        "updatedAt": "2026-09-07T06:41:38.370Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -194,16 +195,16 @@
         "name": "《设计中的设计》",
         "quantity": 1,
         "categoryIds": [
-          "80c8bf60-8a63-4d20-a510-adb559a40c9c"
+          "837ce9d7-134c-4f1d-8fc5-8bf9d1559ef2"
         ],
-        "locationId": "2f918a90-f236-42ec-bd43-adaf0fb04f42",
+        "locationId": "24333735-a7e4-4f81-baa0-98a9febd33aa",
         "status": "active",
         "tags": [],
         "attrs": {},
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-08T06:24:52.036Z",
-        "updatedAt": "2026-09-08T06:24:52.036Z",
+        "createdAt": "2026-09-08T06:41:38.370Z",
+        "updatedAt": "2026-09-08T06:41:38.370Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -213,18 +214,18 @@
         "name": "平底锅",
         "quantity": 1,
         "categoryIds": [
-          "1d8991bc-f071-463a-935c-bf41c3ad9e95"
+          "ac5f23b8-b2c2-4113-8789-89f449e65d47"
         ],
-        "locationId": "b9ddc096-afe4-45bc-bd49-e6564532a8f4",
+        "locationId": "71226292-dd4c-491b-b904-4ef2e58c3b8b",
         "status": "active",
         "tags": [],
         "attrs": {
-          "da9aa8c8-2053-4d05-8167-4d721f3be464": 199
+          "156d4f0a-64c4-40c9-91fe-82b45840a7d3": 199
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-09T06:24:52.036Z",
-        "updatedAt": "2026-09-09T06:24:52.036Z",
+        "createdAt": "2026-09-09T06:41:38.370Z",
+        "updatedAt": "2026-09-09T06:41:38.370Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -234,19 +235,19 @@
         "name": "电饭煲",
         "quantity": 1,
         "categoryIds": [
-          "1d8991bc-f071-463a-935c-bf41c3ad9e95"
+          "ac5f23b8-b2c2-4113-8789-89f449e65d47"
         ],
-        "locationId": "b9ddc096-afe4-45bc-bd49-e6564532a8f4",
+        "locationId": "71226292-dd4c-491b-b904-4ef2e58c3b8b",
         "status": "active",
         "tags": [],
         "attrs": {
-          "57605b66-13ac-497b-b97a-88c8fc5871d9": "美的",
-          "da9aa8c8-2053-4d05-8167-4d721f3be464": 399
+          "e28d4baa-1e62-4737-86b4-d8d2510d6191": "美的",
+          "156d4f0a-64c4-40c9-91fe-82b45840a7d3": 399
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-10T06:24:52.036Z",
-        "updatedAt": "2026-09-10T06:24:52.036Z",
+        "createdAt": "2026-09-10T06:41:38.370Z",
+        "updatedAt": "2026-09-10T06:41:38.370Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": "2029-03-22"
@@ -256,19 +257,19 @@
         "name": "保温杯",
         "quantity": 1,
         "categoryIds": [
-          "4473c1da-a080-4f25-b6c7-ecaf207130b7"
+          "eb25024f-9260-4872-85cf-9c652f70ae46"
         ],
-        "locationId": "b9ddc096-afe4-45bc-bd49-e6564532a8f4",
+        "locationId": "71226292-dd4c-491b-b904-4ef2e58c3b8b",
         "status": "idle",
         "tags": [],
         "attrs": {
-          "9c60dbfe-37e9-422e-ba56-e71b23e02e03": "黑"
+          "89b9084a-88d2-4f48-b28a-9fc09f21027b": "黑"
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-11T06:24:52.036Z",
-        "updatedAt": "2026-09-11T06:24:52.036Z",
-        "idleAt": "2026-07-01T06:24:52.036Z",
+        "createdAt": "2026-09-11T06:41:38.370Z",
+        "updatedAt": "2026-09-11T06:41:38.370Z",
+        "idleAt": "2026-07-01T06:41:38.370Z",
         "discardedAt": null,
         "expiresAt": null
       },
@@ -277,7 +278,7 @@
         "name": "洗发水",
         "quantity": 1,
         "categoryIds": [
-          "4473c1da-a080-4f25-b6c7-ecaf207130b7"
+          "eb25024f-9260-4872-85cf-9c652f70ae46"
         ],
         "locationId": null,
         "status": "active",
@@ -285,8 +286,8 @@
         "attrs": {},
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-12T06:24:52.036Z",
-        "updatedAt": "2026-09-12T06:24:52.036Z",
+        "createdAt": "2026-09-12T06:41:38.370Z",
+        "updatedAt": "2026-09-12T06:41:38.370Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": "2026-10-24"
@@ -296,18 +297,18 @@
         "name": "感冒药",
         "quantity": 1,
         "categoryIds": [
-          "317d9b5e-5938-4c1c-86f4-501f06a3f569"
+          "cb68566a-0956-43e1-8ada-5d7d73a3deb5"
         ],
         "locationId": null,
         "status": "active",
         "tags": [],
         "attrs": {
-          "944a1d6e-ae9f-4757-ab13-9c8b77dcb1dc": "2024-12-01"
+          "7131160a-8efe-4440-976d-9093052881fe": "2024-12-01"
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-13T06:24:52.036Z",
-        "updatedAt": "2026-09-13T06:24:52.036Z",
+        "createdAt": "2026-09-13T06:41:38.370Z",
+        "updatedAt": "2026-09-13T06:41:38.370Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": "2026-11-18"
@@ -317,7 +318,7 @@
         "name": "创可贴",
         "quantity": 1,
         "categoryIds": [
-          "317d9b5e-5938-4c1c-86f4-501f06a3f569"
+          "cb68566a-0956-43e1-8ada-5d7d73a3deb5"
         ],
         "locationId": null,
         "status": "idle",
@@ -325,9 +326,9 @@
         "attrs": {},
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-14T06:24:52.036Z",
-        "updatedAt": "2026-09-14T06:24:52.036Z",
-        "idleAt": "2025-12-08T06:24:52.036Z",
+        "createdAt": "2026-09-14T06:41:38.370Z",
+        "updatedAt": "2026-09-14T06:41:38.370Z",
+        "idleAt": "2025-12-08T06:41:38.370Z",
         "discardedAt": null,
         "expiresAt": "2026-03-18"
       },
@@ -336,9 +337,9 @@
         "name": "中性笔",
         "quantity": 5,
         "categoryIds": [
-          "8f320b1a-90d1-4020-996f-abca96a5563a"
+          "9219ffc1-14c7-442e-83eb-ae218559e845"
         ],
-        "locationId": "7151a6ac-07d1-48f8-a221-5e7011012393",
+        "locationId": "0087e635-6c03-4cd2-bf6d-f6418c100443",
         "status": "active",
         "tags": [],
         "attrs": {},
@@ -346,8 +347,8 @@
         "collectionIds": [
           "sample-collection-2"
         ],
-        "createdAt": "2026-09-15T06:24:52.036Z",
-        "updatedAt": "2026-09-15T06:24:52.036Z",
+        "createdAt": "2026-09-15T06:41:38.370Z",
+        "updatedAt": "2026-09-15T06:41:38.370Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -357,18 +358,18 @@
         "name": "螺丝刀套装",
         "quantity": 1,
         "categoryIds": [
-          "2b74bbc6-4f55-45ce-889f-5bdabb32e3e0"
+          "408f83b0-83b0-4198-87c6-f36f134bae55"
         ],
-        "locationId": "54490f79-aafc-4acd-8671-6d0b6770bcb5",
+        "locationId": "7026aded-282b-4138-a8b6-801c93b56062",
         "status": "active",
         "tags": [],
         "attrs": {
-          "57605b66-13ac-497b-b97a-88c8fc5871d9": "博世"
+          "e28d4baa-1e62-4737-86b4-d8d2510d6191": "博世"
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-16T06:24:52.036Z",
-        "updatedAt": "2026-09-16T06:24:52.036Z",
+        "createdAt": "2026-09-16T06:41:38.370Z",
+        "updatedAt": "2026-09-16T06:41:38.370Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -378,16 +379,16 @@
         "name": "锤子",
         "quantity": 1,
         "categoryIds": [
-          "2b74bbc6-4f55-45ce-889f-5bdabb32e3e0"
+          "408f83b0-83b0-4198-87c6-f36f134bae55"
         ],
-        "locationId": "54490f79-aafc-4acd-8671-6d0b6770bcb5",
+        "locationId": "7026aded-282b-4138-a8b6-801c93b56062",
         "status": "active",
         "tags": [],
         "attrs": {},
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-17T06:24:52.036Z",
-        "updatedAt": "2026-09-17T06:24:52.036Z",
+        "createdAt": "2026-09-17T06:41:38.370Z",
+        "updatedAt": "2026-09-17T06:41:38.370Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -397,9 +398,9 @@
         "name": "演唱会门票存根",
         "quantity": 1,
         "categoryIds": [
-          "9ce2dd22-d05f-42af-a804-4ddff26a8dd0"
+          "9fb2c86e-0566-48f7-a538-3ee321164c9e"
         ],
-        "locationId": "54490f79-aafc-4acd-8671-6d0b6770bcb5",
+        "locationId": "7026aded-282b-4138-a8b6-801c93b56062",
         "status": "active",
         "tags": [
           "舍不得扔"
@@ -407,8 +408,8 @@
         "attrs": {},
         "note": "2019 年那场",
         "collectionIds": [],
-        "createdAt": "2026-09-18T06:24:52.036Z",
-        "updatedAt": "2026-09-18T06:24:52.036Z",
+        "createdAt": "2026-09-18T06:41:38.371Z",
+        "updatedAt": "2026-09-18T06:41:38.371Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -418,17 +419,17 @@
         "name": "老照片",
         "quantity": 1,
         "categoryIds": [
-          "9ce2dd22-d05f-42af-a804-4ddff26a8dd0"
+          "9fb2c86e-0566-48f7-a538-3ee321164c9e"
         ],
-        "locationId": "54490f79-aafc-4acd-8671-6d0b6770bcb5",
+        "locationId": "7026aded-282b-4138-a8b6-801c93b56062",
         "status": "idle",
         "tags": [],
         "attrs": {},
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-19T06:24:52.036Z",
-        "updatedAt": "2026-09-19T06:24:52.036Z",
-        "idleAt": "2025-05-22T06:24:52.036Z",
+        "createdAt": "2026-09-19T06:41:38.371Z",
+        "updatedAt": "2026-09-19T06:41:38.371Z",
+        "idleAt": "2025-05-22T06:41:38.371Z",
         "discardedAt": null,
         "expiresAt": null
       },
@@ -437,7 +438,7 @@
         "name": "折叠椅",
         "quantity": 1,
         "categoryIds": [],
-        "locationId": "1d06a4e6-0a3d-475a-bdbb-1cb4f3b1a31f",
+        "locationId": "0ad60c50-8fab-4f03-9d3d-464a5135de4a",
         "status": "active",
         "tags": [],
         "attrs": {},
@@ -445,8 +446,8 @@
         "collectionIds": [
           "sample-collection-1"
         ],
-        "createdAt": "2026-09-20T06:24:52.036Z",
-        "updatedAt": "2026-09-20T06:24:52.036Z",
+        "createdAt": "2026-09-20T06:41:38.371Z",
+        "updatedAt": "2026-09-20T06:41:38.371Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -456,21 +457,21 @@
         "name": "户外帐篷",
         "quantity": 1,
         "categoryIds": [
-          "2b74bbc6-4f55-45ce-889f-5bdabb32e3e0",
-          "9ce2dd22-d05f-42af-a804-4ddff26a8dd0"
+          "408f83b0-83b0-4198-87c6-f36f134bae55",
+          "9fb2c86e-0566-48f7-a538-3ee321164c9e"
         ],
-        "locationId": "ddc8ba7a-9e00-4be1-a880-e5463bc92e76",
+        "locationId": "33435e12-44fd-49a1-aa76-a9296d590e28",
         "status": "active",
         "tags": [],
         "attrs": {
-          "da9aa8c8-2053-4d05-8167-4d721f3be464": 680
+          "156d4f0a-64c4-40c9-91fe-82b45840a7d3": 680
         },
         "note": "",
         "collectionIds": [
           "sample-collection-1"
         ],
-        "createdAt": "2026-09-21T06:24:52.036Z",
-        "updatedAt": "2026-09-21T06:24:52.036Z",
+        "createdAt": "2026-09-21T06:41:38.371Z",
+        "updatedAt": "2026-09-21T06:41:38.371Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -480,7 +481,7 @@
         "name": "旧拖鞋",
         "quantity": 1,
         "categoryIds": [
-          "4473c1da-a080-4f25-b6c7-ecaf207130b7"
+          "eb25024f-9260-4872-85cf-9c652f70ae46"
         ],
         "locationId": null,
         "status": "discarded",
@@ -488,10 +489,10 @@
         "attrs": {},
         "note": "已经扔了，留个记录",
         "collectionIds": [],
-        "createdAt": "2026-09-22T06:24:52.036Z",
-        "updatedAt": "2026-09-22T06:24:52.036Z",
+        "createdAt": "2026-09-22T06:41:38.371Z",
+        "updatedAt": "2026-09-22T06:41:38.371Z",
         "idleAt": null,
-        "discardedAt": "2026-10-01T06:24:52.036Z",
+        "discardedAt": "2026-10-01T06:41:38.371Z",
         "expiresAt": null
       },
       {
@@ -499,7 +500,7 @@
         "name": "只剩一只的手套",
         "quantity": 1,
         "categoryIds": [
-          "214c0a88-8209-4a6e-9071-5fb361028e55"
+          "0c52779a-4ba9-43a0-b032-7a62fdd9eba7"
         ],
         "locationId": null,
         "status": "idle",
@@ -509,9 +510,9 @@
         "attrs": {},
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-23T06:24:52.036Z",
-        "updatedAt": "2026-09-23T06:24:52.036Z",
-        "idleAt": "2025-01-22T06:24:52.037Z",
+        "createdAt": "2026-09-23T06:41:38.371Z",
+        "updatedAt": "2026-09-23T06:41:38.371Z",
+        "idleAt": "2025-01-22T06:41:38.371Z",
         "discardedAt": null,
         "expiresAt": null
       },
@@ -526,13 +527,13 @@
         "status": "active",
         "tags": [],
         "attrs": {
-          "57605b66-13ac-497b-b97a-88c8fc5871d9": "某品牌",
-          "da9aa8c8-2053-4d05-8167-4d721f3be464": 268
+          "e28d4baa-1e62-4737-86b4-d8d2510d6191": "某品牌",
+          "156d4f0a-64c4-40c9-91fe-82b45840a7d3": 268
         },
         "note": "用了两年，还剩一半",
         "collectionIds": [],
-        "createdAt": "2026-09-24T06:24:52.037Z",
-        "updatedAt": "2026-09-24T06:24:52.037Z",
+        "createdAt": "2026-09-24T06:41:38.371Z",
+        "updatedAt": "2026-09-24T06:41:38.371Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -548,12 +549,12 @@
         "status": "active",
         "tags": [],
         "attrs": {
-          "da9aa8c8-2053-4d05-8167-4d721f3be464": 89
+          "156d4f0a-64c4-40c9-91fe-82b45840a7d3": 89
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-25T06:24:52.037Z",
-        "updatedAt": "2026-09-25T06:24:52.037Z",
+        "createdAt": "2026-09-25T06:41:38.371Z",
+        "updatedAt": "2026-09-25T06:41:38.371Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": "2026-09-04"
@@ -569,13 +570,13 @@
         "status": "active",
         "tags": [],
         "attrs": {
-          "57605b66-13ac-497b-b97a-88c8fc5871d9": "MAC",
-          "da9aa8c8-2053-4d05-8167-4d721f3be464": 190
+          "e28d4baa-1e62-4737-86b4-d8d2510d6191": "MAC",
+          "156d4f0a-64c4-40c9-91fe-82b45840a7d3": 190
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-26T06:24:52.037Z",
-        "updatedAt": "2026-09-26T06:24:52.037Z",
+        "createdAt": "2026-09-26T06:41:38.371Z",
+        "updatedAt": "2026-09-26T06:41:38.371Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -591,12 +592,12 @@
         "status": "active",
         "tags": [],
         "attrs": {
-          "da9aa8c8-2053-4d05-8167-4d721f3be464": 39
+          "156d4f0a-64c4-40c9-91fe-82b45840a7d3": 39
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-27T06:24:52.037Z",
-        "updatedAt": "2026-09-27T06:24:52.037Z",
+        "createdAt": "2026-09-27T06:41:38.371Z",
+        "updatedAt": "2026-09-27T06:41:38.371Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": "2026-10-11"
@@ -612,13 +613,13 @@
         "status": "idle",
         "tags": [],
         "attrs": {
-          "da9aa8c8-2053-4d05-8167-4d721f3be464": 320
+          "156d4f0a-64c4-40c9-91fe-82b45840a7d3": 320
         },
         "note": "开了没用完",
         "collectionIds": [],
-        "createdAt": "2026-09-28T06:24:52.037Z",
-        "updatedAt": "2026-09-28T06:24:52.037Z",
-        "idleAt": "2026-05-07T06:24:52.037Z",
+        "createdAt": "2026-09-28T06:41:38.371Z",
+        "updatedAt": "2026-09-28T06:41:38.371Z",
+        "idleAt": "2026-05-07T06:41:38.371Z",
         "discardedAt": null,
         "expiresAt": "2026-10-16"
       },
@@ -633,12 +634,12 @@
         "status": "active",
         "tags": [],
         "attrs": {
-          "da9aa8c8-2053-4d05-8167-4d721f3be464": 450
+          "156d4f0a-64c4-40c9-91fe-82b45840a7d3": 450
         },
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-09-29T06:24:52.037Z",
-        "updatedAt": "2026-09-29T06:24:52.037Z",
+        "createdAt": "2026-09-29T06:41:38.371Z",
+        "updatedAt": "2026-09-29T06:41:38.371Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -656,8 +657,8 @@
         "attrs": {},
         "note": "挂在中间层 —— 它算不上眼妆也算不上唇妆",
         "collectionIds": [],
-        "createdAt": "2026-09-30T06:24:52.037Z",
-        "updatedAt": "2026-09-30T06:24:52.037Z",
+        "createdAt": "2026-09-30T06:41:38.371Z",
+        "updatedAt": "2026-09-30T06:41:38.371Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -669,19 +670,19 @@
         "categoryIds": [
           "sample-cat-数码配件-数据线"
         ],
-        "locationId": "7151a6ac-07d1-48f8-a221-5e7011012393",
+        "locationId": "0087e635-6c03-4cd2-bf6d-f6418c100443",
         "status": "active",
         "tags": [],
         "attrs": {
-          "da9aa8c8-2053-4d05-8167-4d721f3be464": 29
+          "156d4f0a-64c4-40c9-91fe-82b45840a7d3": 29
         },
         "note": "",
         "collectionIds": [
           "sample-collection-1",
           "sample-collection-2"
         ],
-        "createdAt": "2026-10-01T06:24:52.037Z",
-        "updatedAt": "2026-10-01T06:24:52.037Z",
+        "createdAt": "2026-10-01T06:41:38.371Z",
+        "updatedAt": "2026-10-01T06:41:38.371Z",
         "idleAt": null,
         "discardedAt": null,
         "expiresAt": null
@@ -693,335 +694,335 @@
         "categoryIds": [
           "sample-cat-数码配件-数据线"
         ],
-        "locationId": "7151a6ac-07d1-48f8-a221-5e7011012393",
+        "locationId": "0087e635-6c03-4cd2-bf6d-f6418c100443",
         "status": "idle",
         "tags": [],
         "attrs": {},
         "note": "",
         "collectionIds": [],
-        "createdAt": "2026-10-02T06:24:52.037Z",
-        "updatedAt": "2026-10-02T06:24:52.037Z",
-        "idleAt": "2026-01-17T06:24:52.037Z",
+        "createdAt": "2026-10-02T06:41:38.371Z",
+        "updatedAt": "2026-10-02T06:41:38.371Z",
+        "idleAt": "2026-01-17T06:41:38.371Z",
         "discardedAt": null,
         "expiresAt": null
       }
     ],
     "categories": [
       {
-        "id": "214c0a88-8209-4a6e-9071-5fb361028e55",
+        "id": "0c52779a-4ba9-43a0-b032-7a62fdd9eba7",
         "name": "衣物",
         "parentId": null,
         "order": 0,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "3f8b667b-158c-4c86-9fe3-60b3797d502f",
+        "id": "e4a7513d-f7ec-4489-81a5-0a23350a0115",
         "name": "电子",
         "parentId": null,
         "order": 1,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "80c8bf60-8a63-4d20-a510-adb559a40c9c",
+        "id": "837ce9d7-134c-4f1d-8fc5-8bf9d1559ef2",
         "name": "书籍",
         "parentId": null,
         "order": 2,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "1d8991bc-f071-463a-935c-bf41c3ad9e95",
+        "id": "ac5f23b8-b2c2-4113-8789-89f449e65d47",
         "name": "厨房",
         "parentId": null,
         "order": 3,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "4473c1da-a080-4f25-b6c7-ecaf207130b7",
+        "id": "eb25024f-9260-4872-85cf-9c652f70ae46",
         "name": "日用品",
         "parentId": null,
         "order": 4,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "317d9b5e-5938-4c1c-86f4-501f06a3f569",
+        "id": "cb68566a-0956-43e1-8ada-5d7d73a3deb5",
         "name": "药品",
         "parentId": null,
         "order": 5,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "8f320b1a-90d1-4020-996f-abca96a5563a",
+        "id": "9219ffc1-14c7-442e-83eb-ae218559e845",
         "name": "文具",
         "parentId": null,
         "order": 6,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "2b74bbc6-4f55-45ce-889f-5bdabb32e3e0",
+        "id": "408f83b0-83b0-4198-87c6-f36f134bae55",
         "name": "工具",
         "parentId": null,
         "order": 7,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "9ce2dd22-d05f-42af-a804-4ddff26a8dd0",
+        "id": "9fb2c86e-0566-48f7-a538-3ee321164c9e",
         "name": "纪念品",
         "parentId": null,
         "order": 8,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "a3128d40-09b6-43d5-bee9-1269188d9956",
+        "id": "21f343d2-5451-4fdf-96bb-31df9bb3638c",
         "name": "其他",
         "parentId": null,
         "order": 9,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
         "id": "sample-cat-化妆品",
         "name": "化妆品",
         "parentId": null,
         "order": 10,
-        "createdAt": "2026-10-04T06:24:52.034Z"
+        "createdAt": "2026-10-04T06:41:38.368Z"
       },
       {
         "id": "sample-cat-化妆品-眼妆",
         "name": "眼妆",
         "parentId": "sample-cat-化妆品",
         "order": 0,
-        "createdAt": "2026-10-04T06:24:52.034Z"
+        "createdAt": "2026-10-04T06:41:38.368Z"
       },
       {
         "id": "sample-cat-化妆品-唇妆",
         "name": "唇妆",
         "parentId": "sample-cat-化妆品",
         "order": 1,
-        "createdAt": "2026-10-04T06:24:52.034Z"
+        "createdAt": "2026-10-04T06:41:38.368Z"
       },
       {
         "id": "sample-cat-化妆品-护肤",
         "name": "护肤",
         "parentId": "sample-cat-化妆品",
         "order": 2,
-        "createdAt": "2026-10-04T06:24:52.034Z"
+        "createdAt": "2026-10-04T06:41:38.368Z"
       },
       {
         "id": "sample-cat-化妆品-底妆",
         "name": "底妆",
         "parentId": "sample-cat-化妆品",
         "order": 3,
-        "createdAt": "2026-10-04T06:24:52.034Z"
+        "createdAt": "2026-10-04T06:41:38.368Z"
       },
       {
         "id": "sample-cat-数码配件",
         "name": "数码配件",
         "parentId": null,
         "order": 11,
-        "createdAt": "2026-10-04T06:24:52.034Z"
+        "createdAt": "2026-10-04T06:41:38.368Z"
       },
       {
         "id": "sample-cat-数码配件-数据线",
         "name": "数据线",
         "parentId": "sample-cat-数码配件",
         "order": 0,
-        "createdAt": "2026-10-04T06:24:52.034Z"
+        "createdAt": "2026-10-04T06:41:38.368Z"
       }
     ],
     "locations": [
       {
-        "id": "56084e25-73c3-4cec-8fd5-aa15e04ab95d",
+        "id": "bb8a6d87-8fcc-4ac5-9e5c-095be0d6e5da",
         "name": "家",
         "parentId": null,
         "note": "",
         "order": 0,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "7582170d-ef0c-4714-a200-74bfd5bfa166",
+        "id": "76ab3f30-d22b-4055-a93d-0539939f6ad2",
         "name": "卧室",
-        "parentId": "56084e25-73c3-4cec-8fd5-aa15e04ab95d",
+        "parentId": "bb8a6d87-8fcc-4ac5-9e5c-095be0d6e5da",
         "note": "",
         "order": 0,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "7f319f78-7fe7-4c91-876f-fdd9da16de3c",
+        "id": "d3258620-36d7-421d-a9d8-e7ad31cfb6d4",
         "name": "客厅",
-        "parentId": "56084e25-73c3-4cec-8fd5-aa15e04ab95d",
+        "parentId": "bb8a6d87-8fcc-4ac5-9e5c-095be0d6e5da",
         "note": "",
         "order": 1,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "fd0939ec-ca82-44ad-9b20-35242b4d4eb0",
+        "id": "b3495267-3a81-4b84-b3d1-e8fe4194346f",
         "name": "厨房",
-        "parentId": "56084e25-73c3-4cec-8fd5-aa15e04ab95d",
+        "parentId": "bb8a6d87-8fcc-4ac5-9e5c-095be0d6e5da",
         "note": "",
         "order": 2,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "7643ef26-8370-4712-96a9-096c9cf55117",
+        "id": "999bdfd4-d0a1-4885-bbaf-89584870410b",
         "name": "书房",
-        "parentId": "56084e25-73c3-4cec-8fd5-aa15e04ab95d",
+        "parentId": "bb8a6d87-8fcc-4ac5-9e5c-095be0d6e5da",
         "note": "",
         "order": 3,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "c19bb624-dff1-4445-a021-71a7b70709b8",
+        "id": "a5fd7d6b-fb2c-4ecf-a762-31a1cb465229",
         "name": "卫生间",
-        "parentId": "56084e25-73c3-4cec-8fd5-aa15e04ab95d",
+        "parentId": "bb8a6d87-8fcc-4ac5-9e5c-095be0d6e5da",
         "note": "",
         "order": 4,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "1d06a4e6-0a3d-475a-bdbb-1cb4f3b1a31f",
+        "id": "0ad60c50-8fab-4f03-9d3d-464a5135de4a",
         "name": "阳台",
-        "parentId": "56084e25-73c3-4cec-8fd5-aa15e04ab95d",
+        "parentId": "bb8a6d87-8fcc-4ac5-9e5c-095be0d6e5da",
         "note": "",
         "order": 5,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "51d8beee-6981-42d4-940e-b301234e2859",
+        "id": "0832a578-356c-4dfd-ac59-a6fbad4bd99d",
         "name": "储物间",
-        "parentId": "56084e25-73c3-4cec-8fd5-aa15e04ab95d",
+        "parentId": "bb8a6d87-8fcc-4ac5-9e5c-095be0d6e5da",
         "note": "",
         "order": 6,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "036dc441-6c32-407f-a206-920d61d4dcad",
+        "id": "90c1538c-e289-42cd-bf22-bca880d36f55",
         "name": "衣柜",
-        "parentId": "7582170d-ef0c-4714-a200-74bfd5bfa166",
+        "parentId": "76ab3f30-d22b-4055-a93d-0539939f6ad2",
         "note": "",
         "order": 0,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "de21102f-4e44-42bb-975f-e6b60ec1b08e",
+        "id": "35609104-271e-43b3-ba8c-d87ee6656960",
         "name": "床头柜",
-        "parentId": "7582170d-ef0c-4714-a200-74bfd5bfa166",
+        "parentId": "76ab3f30-d22b-4055-a93d-0539939f6ad2",
         "note": "",
         "order": 1,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "054764f4-590f-4a49-a71f-0738447e64e8",
+        "id": "5b0b27c2-4716-4c0e-b09d-e3782740c51f",
         "name": "床下收纳",
-        "parentId": "7582170d-ef0c-4714-a200-74bfd5bfa166",
+        "parentId": "76ab3f30-d22b-4055-a93d-0539939f6ad2",
         "note": "",
         "order": 2,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "6f7976c8-1582-41ac-a7f1-5a8fec364aaa",
+        "id": "1684fcab-de72-4ef1-8722-0c8df2a07fa4",
         "name": "电视柜",
-        "parentId": "7f319f78-7fe7-4c91-876f-fdd9da16de3c",
+        "parentId": "d3258620-36d7-421d-a9d8-e7ad31cfb6d4",
         "note": "",
         "order": 0,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "6c03f2ce-6c21-47fd-a697-47ea47d0ccf2",
+        "id": "e5c41146-49eb-489b-af13-2ffa253ae63a",
         "name": "储物柜",
-        "parentId": "7f319f78-7fe7-4c91-876f-fdd9da16de3c",
+        "parentId": "d3258620-36d7-421d-a9d8-e7ad31cfb6d4",
         "note": "",
         "order": 1,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "56225121-e73d-4e38-b2cb-88f836068569",
+        "id": "10eab5f5-c92c-4efa-9b8e-d136228d1c03",
         "name": "鞋柜",
-        "parentId": "7f319f78-7fe7-4c91-876f-fdd9da16de3c",
+        "parentId": "d3258620-36d7-421d-a9d8-e7ad31cfb6d4",
         "note": "",
         "order": 2,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "7151a6ac-07d1-48f8-a221-5e7011012393",
+        "id": "0087e635-6c03-4cd2-bf6d-f6418c100443",
         "name": "书桌",
-        "parentId": "7643ef26-8370-4712-96a9-096c9cf55117",
+        "parentId": "999bdfd4-d0a1-4885-bbaf-89584870410b",
         "note": "",
         "order": 0,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "2f918a90-f236-42ec-bd43-adaf0fb04f42",
+        "id": "24333735-a7e4-4f81-baa0-98a9febd33aa",
         "name": "书架",
-        "parentId": "7643ef26-8370-4712-96a9-096c9cf55117",
+        "parentId": "999bdfd4-d0a1-4885-bbaf-89584870410b",
         "note": "",
         "order": 1,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "b9ddc096-afe4-45bc-bd49-e6564532a8f4",
+        "id": "71226292-dd4c-491b-b904-4ef2e58c3b8b",
         "name": "橱柜",
-        "parentId": "fd0939ec-ca82-44ad-9b20-35242b4d4eb0",
+        "parentId": "b3495267-3a81-4b84-b3d1-e8fe4194346f",
         "note": "",
         "order": 0,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "3926a590-bb30-43fa-9fe0-ff1a89bba983",
+        "id": "4aa38fc3-a640-465e-a2ab-55727332518c",
         "name": "冰箱",
-        "parentId": "fd0939ec-ca82-44ad-9b20-35242b4d4eb0",
+        "parentId": "b3495267-3a81-4b84-b3d1-e8fe4194346f",
         "note": "",
         "order": 1,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "54490f79-aafc-4acd-8671-6d0b6770bcb5",
+        "id": "7026aded-282b-4138-a8b6-801c93b56062",
         "name": "收纳箱",
-        "parentId": "51d8beee-6981-42d4-940e-b301234e2859",
+        "parentId": "0832a578-356c-4dfd-ac59-a6fbad4bd99d",
         "note": "",
         "order": 0,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "ddc8ba7a-9e00-4be1-a880-e5463bc92e76",
+        "id": "33435e12-44fd-49a1-aa76-a9296d590e28",
         "name": "货架",
-        "parentId": "51d8beee-6981-42d4-940e-b301234e2859",
+        "parentId": "0832a578-356c-4dfd-ac59-a6fbad4bd99d",
         "note": "",
         "order": 1,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       }
     ],
     "attributeDefs": [
       {
-        "id": "57605b66-13ac-497b-b97a-88c8fc5871d9",
+        "id": "e28d4baa-1e62-4737-86b4-d8d2510d6191",
         "name": "品牌",
         "type": "text",
         "options": [],
         "unit": "",
         "showByDefault": false,
         "order": 0,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "944a1d6e-ae9f-4757-ab13-9c8b77dcb1dc",
+        "id": "7131160a-8efe-4440-976d-9093052881fe",
         "name": "购入日期",
         "type": "date",
         "options": [],
         "unit": "",
         "showByDefault": false,
         "order": 1,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "da9aa8c8-2053-4d05-8167-4d721f3be464",
+        "id": "156d4f0a-64c4-40c9-91fe-82b45840a7d3",
         "name": "价格",
         "type": "number",
         "options": [],
         "unit": "元",
         "showByDefault": false,
         "order": 2,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "9c60dbfe-37e9-422e-ba56-e71b23e02e03",
+        "id": "89b9084a-88d2-4f48-b28a-9fc09f21027b",
         "name": "颜色",
         "type": "select",
         "options": [
@@ -1034,31 +1035,31 @@
         "unit": "",
         "showByDefault": false,
         "order": 3,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
-        "id": "c5541a4c-c394-4df7-a80c-35c9a5315871",
+        "id": "e003761e-8c5e-42ab-9fe1-54f4c6faa20f",
         "name": "尺寸",
         "type": "text",
         "options": [],
         "unit": "",
         "showByDefault": false,
         "order": 4,
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       }
     ],
     "tags": [
       {
         "name": "想送人",
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
         "name": "舍不得扔",
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       },
       {
         "name": "待维修",
-        "createdAt": "2026-10-04T06:24:52.030Z"
+        "createdAt": "2026-10-04T06:41:38.365Z"
       }
     ],
     "collections": [
@@ -1067,21 +1068,59 @@
         "name": "旅行",
         "note": "",
         "order": 0,
-        "createdAt": "2026-10-04T06:24:52.034Z"
+        "createdAt": "2026-10-04T06:41:38.368Z"
       },
       {
         "id": "sample-collection-2",
         "name": "学习",
         "note": "",
         "order": 1,
-        "createdAt": "2026-10-04T06:24:52.034Z"
+        "createdAt": "2026-10-04T06:41:38.368Z"
       },
       {
         "id": "sample-collection-3",
         "name": "搬家",
         "note": "",
         "order": 2,
-        "createdAt": "2026-10-04T06:24:52.034Z"
+        "createdAt": "2026-10-04T06:41:38.368Z"
+      }
+    ],
+    "checklists": [
+      {
+        "id": "sample-checklist-1",
+        "name": "周末露营",
+        "fromCollectionId": "sample-collection-1",
+        "createdAt": "2026-10-04T06:41:38.368Z",
+        "entries": [
+          {
+            "id": "sample-entry-1",
+            "itemId": "sample-item-21",
+            "name": "折叠椅",
+            "quantity": 1,
+            "checked": true
+          },
+          {
+            "id": "sample-entry-2",
+            "itemId": "sample-item-22",
+            "name": "户外帐篷",
+            "quantity": 1,
+            "checked": false
+          },
+          {
+            "id": "sample-entry-3",
+            "itemId": "sample-item-32",
+            "name": "USB-C 数据线",
+            "quantity": 3,
+            "checked": false
+          },
+          {
+            "id": "sample-entry-buy",
+            "itemId": null,
+            "name": "顺路买瓶水",
+            "quantity": 2,
+            "checked": false
+          }
+        ]
       }
     ]
   }

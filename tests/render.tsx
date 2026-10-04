@@ -489,6 +489,7 @@ await test('每个页面在英文下都挂得住（漏订阅语言的组件会�
     '/idle',
     '/expiry',
     '/collections',
+    '/checklists',
     '/ai',
     '/more',
     '/categories',
@@ -672,6 +673,92 @@ await test('活动页在英文下也挂得住', () => {
     // 空状态那一条换一份空数据来验
     withPage('/collections', createEmptyData(), (_container, html) => {
       contains(html, 'No collections yet')
+    })
+  } finally {
+    setLang('zh')
+  }
+})
+
+await test('清单页：空数据给引导，有清单时显示进度', () => {
+  withPage('/checklists', createEmptyData(), (_container, html) => {
+    contains(html, '还没有清单')
+    contains(html, '新建清单')
+  })
+
+  const data = fixture()
+  data.checklists = [
+    {
+      id: 'l1',
+      name: '周末露营',
+      fromCollectionId: null,
+      createdAt: '2026-01-02T00:00:00.000Z',
+      entries: [
+        { id: 'e1', itemId: 'i1', name: '帐篷', quantity: 1, checked: true },
+        { id: 'e2', itemId: null, name: '顺路买瓶水', quantity: 2, checked: false },
+      ],
+    },
+  ]
+
+  withPage('/checklists', data, (_container, html) => {
+    contains(html, '周末露营')
+    contains(html, '已打钩 1 / 2', '进度要显示出来')
+  })
+})
+
+await test('清单详情页：列条目、能打钩、能加一条', () => {
+  const data = fixture()
+  data.checklists = [
+    {
+      id: 'l1',
+      name: '周末露营',
+      fromCollectionId: null,
+      createdAt: '2026-01-02T00:00:00.000Z',
+      entries: [
+        { id: 'e1', itemId: 'i1', name: '帐篷', quantity: 1, checked: true },
+        { id: 'e2', itemId: null, name: '顺路买瓶水', quantity: 2, checked: false },
+      ],
+    },
+  ]
+
+  withPage('/checklists/l1', data, (container, html) => {
+    contains(html, '周末露营')
+    contains(html, '帐篷')
+    contains(html, '顺路买瓶水')
+    contains(html, '加一条')
+    contains(html, '全部清单', '要有回去的路')
+    contains(html, '清掉打钩的 1 条', '有打钩的才显示清理按钮')
+
+    // 勾选框的初始状态要对上
+    const boxes = [...container.querySelectorAll('.checklist__check input')]
+    eq(boxes.length, 2, '两条各一个勾选框')
+    eq((boxes[0] as HTMLInputElement).checked, true, '画面上第一条是已打钩的')
+    eq((boxes[1] as HTMLInputElement).checked, false)
+  })
+})
+
+await test('清单详情页：清单一不存在就提示，不白屏', () => {
+  withPage('/checklists/不存在的id', fixture(), (_container, html) => {
+    contains(html, '全部清单')
+  })
+})
+
+await test('清单页在英文下也挂得住', () => {
+  const data = fixture()
+  data.checklists = [
+    {
+      id: 'l1',
+      name: '周末露营',
+      fromCollectionId: null,
+      createdAt: '2026-01-02T00:00:00.000Z',
+      entries: [{ id: 'e1', itemId: null, name: '帐篷', quantity: 1, checked: false }],
+    },
+  ]
+  setLang('en')
+  try {
+    withPage('/checklists', data, (_container, html) => {
+      contains(html, 'Lists')
+      contains(html, 'New list')
+      contains(html, '周末露营', '用户自己起的清单名不该被翻译')
     })
   } finally {
     setLang('zh')

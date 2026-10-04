@@ -17,6 +17,7 @@ export function buildExportFile(data: AppData): ExportFile {
       attributeDefs: data.attributeDefs.length,
       tags: data.tags.length,
       collections: data.collections.length,
+      checklists: data.checklists.length,
     },
     data: {
       items: data.items,
@@ -25,6 +26,7 @@ export function buildExportFile(data: AppData): ExportFile {
       attributeDefs: data.attributeDefs,
       tags: data.tags,
       collections: data.collections,
+      checklists: data.checklists,
     },
   }
 }

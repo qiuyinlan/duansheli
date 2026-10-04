@@ -17,6 +17,7 @@ export const data = {
     category: 'category',
     attribute: 'attribute',
     collection: 'collection',
+    checklist: 'list',
   },
 
   /* ---------------- Import file validation ---------------- */
@@ -31,6 +32,9 @@ export const data = {
     collectionNotObject: 'A collection is not a valid object; skipped',
     collectionNoName: 'A collection has no name; skipped',
     collectionNoId: 'Collection "{name}" is missing its id; skipped',
+    checklistNotObject: 'A list is not a valid object; skipped',
+    checklistNoIdOrName: 'A list is missing its id or name; skipped',
+    checklistEntrySkipped: 'Entry #{index} of list "{name}" has no name; skipped',
 
     duplicateId: 'Duplicate {kind} id found; the later one was ignored',
     danglingLocation_one: '{count} item pointed to a place that does not exist; set to "No place"',

@@ -74,4 +74,11 @@ export const collections = {
   toastNoteSaved: 'Note saved',
   toastDuplicate: 'There is already a collection called "{name}"',
   belongToOne: 'In "{name}"',
+
+  /* Making a list out of a collection */
+  makeChecklist: 'Make a list',
+  makeChecklistHint:
+    'Turn the ticked items here into a list you can tick off as you go. The list is temporary; the collection is untouched.',
+  makeChecklistName: 'List for {name}',
+  makeChecklistAll: 'Select everything here',
 }

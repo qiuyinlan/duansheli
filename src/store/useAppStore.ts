@@ -5,6 +5,8 @@ import type {
   AttrType,
   AttrValue,
   Category,
+  Checklist,
+  ChecklistEntry,
   Collection,
   ImportReport,
   Item,
@@ -150,6 +152,8 @@ function normalizeShape(data: AppData): AppData {
     tags: Array.isArray(data.tags) ? data.tags : [],
     // v4 新增：老数据里没有活动合集
     collections: Array.isArray(data.collections) ? data.collections : [],
+    // v5 新增：老数据里没有清单
+    checklists: Array.isArray(data.checklists) ? data.checklists : [],
     updatedAt: data.updatedAt ?? new Date().toISOString(),
   }
 }
@@ -507,6 +511,38 @@ export interface AppState {
   addItemsToCollection: (itemIds: string[], collectionId: string) => number
   /** 把一批物品从某个活动里移出 */
   removeItemsFromCollection: (itemIds: string[], collectionId: string) => number
+
+  /* 清单（一次性的待办） */
+  /**
+   * 建一份清单。
+   *
+   * 两种来源都用它：
+   *   · 从物品列表勾选 → 传 itemIds
+   *   · 从活动里勾选   → 传 itemIds + fromCollectionId（只是记个来源）
+   *
+   * 条目里的名字和数量是**从物品抄一份快照**，之后物品改名或删掉都不影响这份清单。
+   */
+  createChecklist: (input: {
+    name: string
+    itemIds?: string[]
+    fromCollectionId?: string | null
+  }) => string | null
+  renameChecklist: (id: string, name: string) => void
+  /** 删掉整份清单。清单本来就是临时的东西，删了不留痕迹 */
+  deleteChecklist: (id: string) => void
+  /** 打钩 / 取消。不传 checked 就是取反 */
+  toggleChecklistEntry: (checklistId: string, entryId: string, checked?: boolean) => void
+  /** 改条目本身（清单内的编辑，**不会去改库里的物品** —— 这是张临时清单） */
+  updateChecklistEntry: (
+    checklistId: string,
+    entryId: string,
+    patch: { name?: string; quantity?: number },
+  ) => void
+  /** 往清单里加一条（可以是库里没有的东西，比如顺路买瓶水） */
+  addChecklistEntry: (checklistId: string, name: string, quantity?: number) => string | null
+  removeChecklistEntry: (checklistId: string, entryId: string) => void
+  /** 把已打钩的一次清掉，剩下一堆未办的在眼前 */
+  clearCheckedEntries: (checklistId: string) => number
 
   /* 数据整体操作 */
   replaceAll: (next: AppData, reason: SnapshotReason, message?: string) => Promise<void>
@@ -1438,6 +1474,168 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (changed === 0) return 0
       commit({ ...data, items })
       return changed
+    },
+
+    /* ---------------- 清单 ---------------- */
+
+    createChecklist: ({ name, itemIds = [], fromCollectionId = null }) => {
+      const trimmed = name.trim()
+      if (trimmed === '') return null
+
+      const data = get().data
+      const now = new Date().toISOString()
+      const wanted = new Set(itemIds)
+
+      // 从物品抄一份快照：名字和数量都记下来，
+      // 之后物品改名、改数量、甚至被删掉，这张清单都还是当时那个样子
+      const entries: ChecklistEntry[] = data.items
+        .filter((item) => wanted.has(item.id))
+        .map((item) => ({
+          id: uid(),
+          itemId: item.id,
+          name: item.name,
+          quantity: item.quantity,
+          checked: false,
+        }))
+
+      const checklist: Checklist = {
+        id: uid(),
+        name: trimmed,
+        fromCollectionId,
+        entries,
+        createdAt: now,
+      }
+
+      commit({ ...data, checklists: [...data.checklists, checklist] })
+      return checklist.id
+    },
+
+    renameChecklist: (id, name) => {
+      const trimmed = name.trim()
+      if (trimmed === '') return
+      const data = get().data
+      if (!data.checklists.some((c) => c.id === id)) return
+      commit({
+        ...data,
+        checklists: data.checklists.map((c) => (c.id === id ? { ...c, name: trimmed } : c)),
+      })
+    },
+
+    deleteChecklist: (id) => {
+      const data = get().data
+      if (!data.checklists.some((c) => c.id === id)) return
+      commit({ ...data, checklists: data.checklists.filter((c) => c.id !== id) })
+    },
+
+    toggleChecklistEntry: (checklistId, entryId, checked) => {
+      const data = get().data
+      commit({
+        ...data,
+        checklists: data.checklists.map((checklist) =>
+          checklist.id !== checklistId
+            ? checklist
+            : {
+                ...checklist,
+                entries: checklist.entries.map((entry) =>
+                  entry.id !== entryId
+                    ? entry
+                    : { ...entry, checked: checked === undefined ? !entry.checked : checked },
+                ),
+              },
+        ),
+      })
+    },
+
+    updateChecklistEntry: (checklistId, entryId, patch) => {
+      const data = get().data
+      const name = patch.name === undefined ? undefined : patch.name.trim()
+      // 名字不能改成空的 —— 一条没名字的待办在清单里没法认
+      if (name === '') return
+
+      commit({
+        ...data,
+        checklists: data.checklists.map((checklist) =>
+          checklist.id !== checklistId
+            ? checklist
+            : {
+                ...checklist,
+                entries: checklist.entries.map((entry) =>
+                  entry.id !== entryId
+                    ? entry
+                    : {
+                        ...entry,
+                        name: name ?? entry.name,
+                        quantity:
+                          patch.quantity === undefined
+                            ? entry.quantity
+                            : Math.max(1, Math.round(patch.quantity)),
+                      },
+                ),
+              },
+        ),
+      })
+    },
+
+    addChecklistEntry: (checklistId, name, quantity = 1) => {
+      const trimmed = name.trim()
+      if (trimmed === '') return null
+      const data = get().data
+      if (!data.checklists.some((c) => c.id === checklistId)) return null
+
+      const entryId = uid()
+      commit({
+        ...data,
+        checklists: data.checklists.map((checklist) =>
+          checklist.id !== checklistId
+            ? checklist
+            : {
+                ...checklist,
+                entries: [
+                  ...checklist.entries,
+                  {
+                    id: entryId,
+                    // 手打的条目在库里没有对应物品 —— 这是刻意的，
+                    // 「顺路买瓶水」这种事本来就不该先录一件物品
+                    itemId: null,
+                    name: trimmed,
+                    quantity: Math.max(1, Math.round(quantity)),
+                    checked: false,
+                  },
+                ],
+              },
+        ),
+      })
+      return entryId
+    },
+
+    removeChecklistEntry: (checklistId, entryId) => {
+      const data = get().data
+      commit({
+        ...data,
+        checklists: data.checklists.map((checklist) =>
+          checklist.id !== checklistId
+            ? checklist
+            : { ...checklist, entries: checklist.entries.filter((e) => e.id !== entryId) },
+        ),
+      })
+    },
+
+    clearCheckedEntries: (checklistId) => {
+      const data = get().data
+      const target = data.checklists.find((c) => c.id === checklistId)
+      if (!target) return 0
+      const removed = target.entries.filter((e) => e.checked).length
+      if (removed === 0) return 0
+
+      commit({
+        ...data,
+        checklists: data.checklists.map((checklist) =>
+          checklist.id !== checklistId
+            ? checklist
+            : { ...checklist, entries: checklist.entries.filter((e) => !e.checked) },
+        ),
+      })
+      return removed
     },
 
     /* ---------------- 数据整体操作 ---------------- */

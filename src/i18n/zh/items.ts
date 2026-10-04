@@ -55,6 +55,7 @@ export const items = {
   moveLocation: '移动位置',
   addTags: '加标签',
   addToCollection: '加入活动',
+  makeChecklist: '新建清单',
   discard: '舍弃',
   selectAllShown: '全选当前 {count} 件',
   batchStatus_one: '已把 {count} 件物品标记为「{status}」',

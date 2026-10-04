@@ -46,10 +46,15 @@ export const itemEdit = {
   idleOff: 'In use (switch it on to mark it idle)',
 
   /* More (tags, notes) */
-  moreToggle: 'More (tags, notes)',
+  moreToggle: 'More (tags, collections, notes)',
   fieldTags: 'Tags',
   tagsHint:
     'Tags are for the situation, not the thing — “gift idea”, “hard to let go of”.',
+  fieldCollections: 'In which collections',
+  collectionsHint:
+    'Trips, courses and the like. One item can be in several collections — tap to toggle.',
+  collectionPlaceholder: 'Type a new collection name and press Enter',
+  noCollectionsYet: 'No collections yet — type a name below to create one.',
   fieldNote: 'Notes',
   notePlaceholder: 'Anything worth writing down, e.g. “a gift from mum”, “leaks a little”',
 

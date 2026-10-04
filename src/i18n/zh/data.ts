@@ -16,6 +16,7 @@ export const data = {
     category: '分类',
     attribute: '属性',
     collection: '活动',
+    checklist: '清单',
   },
 
   /* ---------------- 导入文件的校验 ---------------- */
@@ -30,6 +31,9 @@ export const data = {
     collectionNotObject: '发现一条不是有效对象的活动，已跳过',
     collectionNoName: '发现一条没有名称的活动，已跳过',
     collectionNoId: '活动「{name}」缺少 id，已跳过',
+    checklistNotObject: '发现一条不是有效对象的清单，已跳过',
+    checklistNoIdOrName: '发现一条缺少 id 或名称的清单，已跳过',
+    checklistEntrySkipped: '清单「{name}」第 {index} 条没有名字，已跳过',
 
     duplicateId: '发现重复的{kind} id，已忽略后出现的那条',
     danglingLocation_one: '{count} 件物品指向了不存在的位置，已改为「未归位」',

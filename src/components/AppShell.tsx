@@ -9,6 +9,7 @@ import { LanguageSwitch } from './LanguageSwitch'
 import { ToastStack } from './ui/primitives'
 import {
   IconArrowLeft,
+  IconChecklist,
   IconClock,
   IconFolder,
   IconGear,
@@ -50,6 +51,7 @@ const PRIMARY_NAV: NavEntry[] = [
   { to: '/idle', labelKey: 'nav.idle', Icon: IconIdle, badge: 'idle' },
   { to: '/expiry', labelKey: 'nav.expiry', Icon: IconClock, badge: 'expiry' },
   { to: '/collections', labelKey: 'nav.collections', Icon: IconSuitcase },
+  { to: '/checklists', labelKey: 'nav.checklists', Icon: IconChecklist },
   { to: '/ai', labelKey: 'nav.ai', Icon: IconSparkle },
 ]
 
@@ -80,6 +82,7 @@ const ROOT_ROUTES = new Set([
   '/idle',
   '/expiry',
   '/collections',
+  '/checklists',
   '/ai',
   '/more',
   '/categories',
@@ -97,6 +100,7 @@ function titleKeyForPath(pathname: string): DictKey {
   if (pathname === '/idle') return 'nav.titleIdle'
   if (pathname === '/expiry') return 'nav.titleExpiry'
   if (pathname.startsWith('/collections')) return 'nav.titleCollections'
+  if (pathname.startsWith('/checklists')) return 'nav.titleChecklists'
   if (pathname === '/ai') return 'nav.titleAi'
   if (pathname === '/more') return 'nav.titleMore'
   if (pathname === '/categories') return 'nav.titleCategories'

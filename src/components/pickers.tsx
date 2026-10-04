@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { AttributeDef } from '../types'
+import type { AttributeDef, Collection } from '../types'
 import { UNASSIGNED_ID } from '../types'
 import type { DerivedContext } from '../store/selectors'
 import { countByCategoryIncludingDescendants, liveItems } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
 import { useT } from '../i18n'
 import { TreeView } from './TreeView'
-import { IconClose, IconPlus } from './ui/icons'
+import { IconClose, IconPlus, IconSuitcase } from './ui/icons'
 import { Button, Modal } from './ui/primitives'
 
 /* ------------------------------------------------------------------ */
@@ -303,6 +303,101 @@ export function TagInput({ value, onChange, suggestions }: TagInputProps) {
           ))}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* 活动合集选择器                                                      */
+/* ------------------------------------------------------------------ */
+
+interface CollectionPickerProps {
+  value: string[]
+  onChange: (ids: string[]) => void
+  collections: Collection[]
+  /**
+   * 输一个新名字时建活动。返回新 id（建不出来返回 null）。
+   *
+   * 做成回调而不是在这里直接调 store，是因为「建完要不要顺手勾上」是
+   * 调用方的决定 —— 录入页显然要勾上，别的地方未必。
+   */
+  onCreate: (name: string) => string | null
+}
+
+/**
+ * 活动合集选择器。
+ *
+ * 和 TagInput 长得像，但有个关键区别：**已选和候选都是点一下切换的按钮**，
+ * 而不是「去掉一个标签」。因为活动是有限几个、而且反复勾来勾去，
+ * 切换比「先删再加」顺手得多。
+ */
+export function CollectionPicker({
+  value,
+  onChange,
+  collections,
+  onCreate,
+}: CollectionPickerProps) {
+  const { t } = useT()
+  const [draft, setDraft] = useState('')
+
+  const sorted = useMemo(
+    () => [...collections].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)),
+    [collections],
+  )
+
+  const toggle = (id: string) => {
+    onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id])
+  }
+
+  const submitDraft = () => {
+    const name = draft.trim()
+    if (name === '') return
+    // 名字已经存在就当「勾上它」，而不是报重名 —— 用户的意图显然是选中
+    const existing = sorted.find((c) => c.name === name)
+    if (existing) {
+      if (!value.includes(existing.id)) onChange([...value, existing.id])
+      setDraft('')
+      return
+    }
+    const created = onCreate(name)
+    setDraft('')
+    if (created === null) return
+  }
+
+  return (
+    <div className="stack-sm">
+      {sorted.length > 0 ? (
+        <div className="chip-list">
+          {sorted.map((collection) => (
+            <button
+              key={collection.id}
+              type="button"
+              className={`chip${value.includes(collection.id) ? ' is-active' : ''}`}
+              aria-pressed={value.includes(collection.id)}
+              onClick={() => toggle(collection.id)}
+            >
+              <IconSuitcase size={11} />
+              {collection.name}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="field__hint">{t('itemEdit.noCollectionsYet')}</div>
+      )}
+
+      <input
+        className="input"
+        placeholder={t('itemEdit.collectionPlaceholder')}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            submitDraft()
+          }
+        }}
+        onBlur={submitDraft}
+      />
     </div>
   )
 }

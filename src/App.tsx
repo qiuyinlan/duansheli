@@ -5,6 +5,7 @@ import { Button } from './components/ui/primitives'
 import { Attributes } from './pages/Attributes'
 import { Ai } from './pages/Ai'
 import { Categories } from './pages/Categories'
+import { Checklists } from './pages/Checklists'
 import { Collections } from './pages/Collections'
 import { Expiry } from './pages/Expiry'
 import { Idle } from './pages/Idle'
@@ -35,6 +36,8 @@ export function AppRoutes() {
         <Route path="expiry" element={<Expiry />} />
         <Route path="collections" element={<Collections />} />
         <Route path="collections/:id" element={<Collections />} />
+        <Route path="checklists" element={<Checklists />} />
+        <Route path="checklists/:id" element={<Checklists />} />
         <Route path="ai" element={<Ai />} />
         <Route path="more" element={<More />} />
         <Route path="categories" element={<Categories />} />

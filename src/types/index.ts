@@ -12,13 +12,15 @@ export const APP_ID = 'duansheli'
  * v1 → v2：分类从扁平变成不限层级的树（Category 增加 parentId）。
  * v2 → v3：物品增加 expiresAt（有效期至）。
  * v3 → v4：新增活动合集（AppData.collections + Item.collectionIds）。
+ * v4 → v5：新增清单（AppData.checklists）—— 活动是一次性的实例，
+ *          和作为模板的「活动合集」分开存。
  *
  * 升版本号是为了保护老程序：它拿到更高版本的备份会**明确拒绝**并提示升级，
  * 而不是静默把不认识的字段丢掉 —— 静默丢字段是最糟的，用户会以为备份是完整的。
  * 反过来老备份能正常导入新程序，缺的字段按默认值补齐
- * （分类全是顶层、有效期为空、不属于任何活动）。
+ * （分类全是顶层、有效期为空、不属于任何活动、没有清单）。
  */
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 
 /* ------------------------------------------------------------------ */
 /* 物品                                                                */
@@ -167,6 +169,56 @@ export interface Collection {
 }
 
 /* ------------------------------------------------------------------ */
+/* 清单（一次性的待办）                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 清单里的一条。
+ *
+ * ── 和「活动合集」的分工 ────────────────────────────────────────
+ * 活动是**模板**（长期）：旅行要带的东西攒一次，以后每次出门都能用。
+ * 清单是**本次的实例**（临时）：这一次真要带哪些、打包了没、用完就删。
+ *
+ * ── 为什么名字 / 数量是**快照**，而不是每次都去查物品 ────────────
+ * 清单是「临时的、看完就扔」的东西，它得**自己站得住**：
+ *   · 物品后来改了名，清单上还是当时那个名字，这才对（那是当时的决定）
+ *   · 物品被删了，清单也不该变成一行空白
+ * 而且清单里可以放**库里没有的东西**（顺路买瓶水、借个充电器），
+ * 那些条目根本没有 itemId 可查。
+ *
+ * `itemId` 只是留个链接，用来跳回物品页 —— 它可能是已经删掉的 id，
+ * 所以取用前一定要判存在，不能假设它有效。
+ */
+export interface ChecklistEntry {
+  id: string
+  /** 关联的物品 id；null = 清单里临时加的，库里没有这件东西 */
+  itemId: string | null
+  /** 当时的名字（快照，不随后续改名而变） */
+  name: string
+  quantity: number
+  /** 打包/办好了没 */
+  checked: boolean
+}
+
+/**
+ * 一份清单。
+ *
+ * 它是**可以随便删的** —— 这正是它和活动合集最大的区别：
+ * 活动删了要心疼（那份模板是你慢慢攒的），清单删了就删了，本来就是为了这一次。
+ */
+export interface Checklist {
+  id: string
+  name: string
+  /**
+   * 从哪个活动生成的。**只是记个来源**，用来在界面上写「来自「旅行」」；
+   * 活动后来被删掉也不影响这份清单（所以它可能指向一个不存在的活动）。
+   */
+  fromCollectionId: string | null
+  entries: ChecklistEntry[]
+  createdAt: string
+}
+
+/* ------------------------------------------------------------------ */
 /* 属性库                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -201,6 +253,8 @@ export interface AppData {
   tags: Tag[]
   /** 活动合集（旅行 / 学习 这类） */
   collections: Collection[]
+  /** 清单（一次性的待办，可打钩、可删） */
+  checklists: Checklist[]
   updatedAt: string
 }
 
@@ -244,6 +298,7 @@ export interface ExportFile {
     attributeDefs: number
     tags: number
     collections: number
+    checklists: number
   }
   data: {
     items: Item[]
@@ -252,6 +307,7 @@ export interface ExportFile {
     attributeDefs: AttributeDef[]
     tags: Tag[]
     collections: Collection[]
+    checklists: Checklist[]
   }
 }
 
@@ -265,6 +321,8 @@ export interface ImportReport {
   attributeDefs: { added: number; updated: number }
   tags: { added: number }
   collections: { added: number; updated: number }
+  /** 清单是按 id 去重、较新的整份覆盖，所以只有这两个数 */
+  checklists: { added: number; kept: number }
   /** 合并时因引用缺失而自动补建的位置（给人看的提示） */
   warnings: string[]
 }

@@ -16,6 +16,7 @@ export const more = {
 
   /* Collections */
   collectionsDesc: 'Trip, course, moving — the things one occasion needs',
+  checklistsDesc: 'A throwaway to-do: tick it off, then bin it',
 
   /* Manage pages */
   categoriesDesc: 'The fixed category list you maintain yourself',

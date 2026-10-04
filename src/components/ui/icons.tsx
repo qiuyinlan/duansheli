@@ -197,6 +197,16 @@ export const IconSuitcase = (p: IconProps) => (
   </Svg>
 )
 
+/** 清单：一张打了两个钩的纸 —— 和「活动」的手提箱一眼分得开 */
+export const IconChecklist = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3.25 2.75h9.5a1 1 0 0 1 1 1v8.5a1 1 0 0 1-1 1h-9.5a1 1 0 0 1-1-1v-8.5a1 1 0 0 1 1-1Z" />
+    <path d="m4.75 6.5 1.1 1.1 2-2.2" />
+    <path d="m4.75 10.25 1.1 1.1 2-2.2" />
+    <path d="M10 6.75h1.5M10 10.5h1.5" />
+  </Svg>
+)
+
 export const IconAlert = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="8" cy="8" r="5.75" />

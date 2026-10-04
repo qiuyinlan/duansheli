@@ -59,6 +59,7 @@ export const items = {
   moveLocation: 'Move',
   addTags: 'Add tags',
   addToCollection: 'Add to collection',
+  makeChecklist: 'New list',
   discard: 'Discard',
   selectAllShown: 'Select all {count} shown',
   batchStatus_one: 'Marked {count} item as “{status}”',
