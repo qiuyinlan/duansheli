@@ -41,6 +41,13 @@ export interface DerivedContext {
   categoryById: Map<string, Category>
 
   attrDefById: Map<string, AttributeDef>
+  /**
+   * 活动 id → 活动。
+   *
+   * 和 attrDefById 是同一个用途：AI 草稿那边存的是 id，
+   * 但发给模型、以及给人看的时候都得是名字。
+   */
+  collectionById: Map<string, Collection>
 
   /**
    * 「快过期」的天数阈值，从界面偏好带进来。
@@ -72,6 +79,7 @@ export function createDerived(
   const categoryById = new Map(data.categories.map((c) => [c.id, c]))
 
   const attrDefById = new Map(data.attributeDefs.map((a) => [a.id, a]))
+  const collectionById = new Map(data.collections.map((c) => [c.id, c]))
 
   return {
     index,
@@ -85,6 +93,7 @@ export function createDerived(
     categoryOrder,
     categoryById,
     attrDefById,
+    collectionById,
     expirySoonDays,
   }
 }

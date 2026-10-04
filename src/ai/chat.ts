@@ -24,7 +24,7 @@
  *   · 无论如何都不会自动写进数据库，必须用户点「采纳」
  */
 
-import type { ParsedChatResponse, RawRevisedItem } from './parse'
+import type { ParsedChatResponse, RawRevisedItem, AiStatus } from './parse'
 import type { ChatMessage } from './deepseek'
 import type { AiContext, InventoryDigest } from './prompts'
 import { renderContextBlock, renderInventoryDigest } from './prompts'
@@ -69,6 +69,17 @@ export interface DraftForAi {
   note: string
   /** 有效期至（YYYY-MM-DD）；没设置就是 null */
   expiresAt: string | null
+  /**
+   * 状态。
+   *
+   * **必须发给 AI**，否则它看不到「这件现在是闲置」，也就无从判断
+   * 用户说的「改成备用」是从哪改到哪 —— 而且它改别的字段时，
+   * 也无法把状态原样写回来。
+   * null = 这条草稿还没定状态（新建的、AI 也没说）。
+   */
+  status: AiStatus | null
+  /** 所属活动的名字 —— AI 那边只认名字，不认 id */
+  collections: string[]
 }
 
 type DraftContent = Omit<DraftForAi, 'id'>
@@ -97,6 +108,10 @@ export function effectiveContent(draft: ItemDraft, derived: DerivedContext): Dra
     attributes: { ...draft.attrs },
     note: draft.note.trim(),
     expiresAt: draft.expiresAt,
+    status: draft.status,
+    collections: draft.matchedCollectionIds
+      .map((id) => derived.collectionById.get(id)?.name)
+      .filter((name): name is string => name !== undefined),
   }
 }
 
@@ -120,6 +135,10 @@ function compactDraft(item: DraftForAi): Record<string, unknown> {
   // 有效期跟别的字段不一样：它有值就要发（AI 得知道现状才判断得出要不要改），
   // 没值也不发（跟其他空字段一样省 token）。
   if (item.expiresAt) out.expiresAt = item.expiresAt
+  // 状态也一样：有值就发，AI 才知道现在是闲置还是在用。
+  // 「没值」= 这条还没定状态，发了纯属浪费。
+  if (item.status) out.status = item.status
+  if (item.collections.length > 0) out.collections = item.collections
   return out
 }
 
@@ -140,6 +159,17 @@ function signature(content: DraftContent): string {
       .join('|'),
     content.note,
     content.expiresAt ?? '',
+    /*
+     * 状态和活动也进指纹。
+     *
+     * 漏掉状态会出这种事：用户说「这件改成闲置」，AI 乖乖把 status 填成 idle，
+     * 但别的字段一个没动 → 指纹一致 → 判定「没改动」→ 这一条被跳过 →
+     * 界面上什么都没发生。用户只会觉得「AI 又没听懂」，
+     * 而实际上是程序把它的回答丢了。
+     * （变异验证过：删掉下面两行，这条用例立刻变红。）
+     */
+    content.status ?? '',
+    [...content.collections].sort().join('|'),
   ].join('\u0000')
 }
 
@@ -281,6 +311,20 @@ export function mergeChatResponse(
       continue
     }
 
+    /*
+     * AI 用 status 说了「已舍弃」→ 当成一次删除请求。
+     *
+     * 为什么不让它直接写进 status：那条路是**改字段**，而这个动作是
+     * 「把东西扔掉」，两者走的机制不同（删除会进回收站，可恢复）。
+     * 为什么也不能忽略：用户说「这个扔了吧」，AI 也听懂了，界面上却
+     * 什么都不发生 —— 那看起来就是 AI 又没听懂。这里把它接到
+     * removedIds 那条正规路径上，效果一样，而且可恢复。
+     */
+    if (item.status === 'discarded') {
+      if (byKey.has(item.id)) removedSet.add(item.id)
+      continue
+    }
+
     const existing = byKey.get(item.id)
     const fresh = toItemDraft(item, matchCtx, derived)
 
@@ -294,6 +338,14 @@ export function mergeChatResponse(
       replaced.set(existing.key, {
         ...fresh,
         key: existing.key,
+        /*
+         * 状态：AI 没提到就**保留原来的**。
+         *
+         * 这条是必须的，因为「没提到」在模型那边的含义就是「不用动」——
+         * 直接取 fresh 的 null 会让「只改了个名字」把一件闲置的东西
+         * 变回「在用」。有测试守着（tests/ai.ts 的「更新不该把它的闲置状态改掉」）。
+         */
+        status: fresh.status ?? existing.status,
         // 用户手动做过的选择要保留 —— AI 改内容不该把他勾的东西清掉
         include: existing.include,
         adoptNewCategories: existing.adoptNewCategories,

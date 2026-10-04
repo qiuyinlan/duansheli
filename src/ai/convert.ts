@@ -18,7 +18,7 @@ import { itemsInCategory, itemsInLocation } from '../store/selectors'
 import type { DraftApplyItem } from '../store/useAppStore'
 import type { TreeIndex } from '../lib/tree'
 import { uid } from '../lib/id'
-import type { LoadScopeRequest, RawExtractedItem } from './parse'
+import type { LoadScopeRequest, AiStatus, RawExtractedItem } from './parse'
 
 /* ------------------------------------------------------------------ */
 /* 路径匹配                                                            */
@@ -40,6 +40,13 @@ export interface MatchContext {
   locations: PathMatcher
   /** 属性名（归一化）→ 真实属性名 */
   attributeRealName: Map<string, string>
+  /**
+   * 活动名（归一化）→ 活动 id。
+   *
+   * 活动是**平的**（没有层级），所以不需要 PathMatcher 那一套
+   * 完整路径 / 后缀的降级匹配 —— 名字对得上就是它。
+   */
+  collections: Map<string, string>
 }
 
 function buildPathMatcher<T extends TreeItem>(index: TreeIndex<T>): PathMatcher {
@@ -79,7 +86,18 @@ export function createMatchContext(data: AppData, derived: DerivedContext): Matc
     categories: buildPathMatcher(derived.categoryIndex),
     locations: buildPathMatcher(derived.index),
     attributeRealName,
+    collections: buildCollectionMatcher(data),
   }
+}
+
+/** 活动名 → id。同名活动理论上不该存在，真撞了就认第一个，不猜。 */
+function buildCollectionMatcher(data: AppData): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const collection of data.collections) {
+    const key = norm(collection.name)
+    if (key !== '' && !out.has(key)) out.set(key, collection.id)
+  }
+  return out
 }
 
 /**
@@ -141,6 +159,23 @@ export interface ItemDraft {
   note: string
   /** 有效期至（YYYY-MM-DD）；null = 没设置 */
   expiresAt: string | null
+  /**
+   * 状态（在用 / 闲置 / 备用）。
+   *
+   * 为什么草稿里非要有这一栏：用户说「这件改成闲置」，AI 得有地方放它。
+   * 以前没有这一栏，模型只能把它塞进 tags —— 这就是那个 bug。
+   *
+   * `null` = **AI 没提到状态**，和「在用」是两回事：
+   *   · 改已有物品时没提到 → 保留原来的状态（否则 AI 只改个名字，
+   *     就会把一件闲置的东西悄悄变回「在用」）
+   *   · 新建时没提到 → 按「在用」
+   * 所以这里不能拿 'active' 当缺省值 —— 那正是上面那个坑。
+   */
+  status: AiStatus | null
+  /** 匹配到的活动 id（活动是受控词表，只认已有的） */
+  matchedCollectionIds: string[]
+  /** 被丢掉的活动名（本地没有这个活动），界面上如实提示 */
+  droppedCollections: string[]
 
   include: boolean
   /** 是否采纳 AI 建议的新分类（默认否 —— 分类是受控词表，得你点头） */
@@ -176,6 +211,27 @@ export function toItemDraft(
     else droppedAttrs.push(name)
   }
 
+  /*
+   * 活动：只认已有的，**不新建**。
+   *
+   * 和分类的处理刻意不一样：分类允许 AI 提议新的（因为用户原文里的归类名
+   * 是他自己的意图，而且界面上有「采纳新分类」的勾选让他点头）。
+   * 活动没有这一层 —— 它是用户自己攒的「要凑齐哪些东西」的清单，
+   * 让模型随口造一个，他会发现自己多出一堆从没建过的活动。
+   * 认不出来的名字如实记进 droppedCollections，界面上提示出来，
+   * 而不是默默丢掉。
+   */
+  const matchedCollectionIds: string[] = []
+  const droppedCollections: string[] = []
+  for (const name of raw.collections) {
+    const id = ctx.collections.get(norm(name))
+    if (id) {
+      if (!matchedCollectionIds.includes(id)) matchedCollectionIds.push(id)
+    } else {
+      droppedCollections.push(name)
+    }
+  }
+
   const locationLabel = locationId
     ? derived.index.pathString(locationId, ' / ')
     : newLocationPath
@@ -196,6 +252,15 @@ export function toItemDraft(
     droppedAttrs,
     note: raw.note,
     expiresAt: raw.expiresAt,
+    /*
+     * 状态：**AI 没提就是 null**（不是「在用」）。
+     *
+     * 「已舍弃」也走 null —— 解析层把它单独拎出来了（RawStatus 里的
+     * 'discarded'），由 mergeChatResponse 转成一次删除请求。
+     */
+    status: raw.status === null || raw.status === 'discarded' ? null : raw.status,
+    matchedCollectionIds,
+    droppedCollections,
     include: true,
     adoptNewCategories: false,
     adoptNewLocation: false,
@@ -228,25 +293,37 @@ export function draftsFromItems(
   ctx: MatchContext,
   derived: DerivedContext,
 ): ItemDraft[] {
-  return items.map((item) => {
-    const draft = toItemDraft(
-      {
-        name: item.name,
-        quantity: item.quantity,
-        categoryPaths: item.categoryIds
-          .map((id) => derived.categoryIndex.pathNames(id))
-          .filter((path) => path.length > 0),
-        location: item.locationId ? derived.index.pathNames(item.locationId) : null,
-        tags: item.tags,
-        attributes: attrNamesOf(item, derived),
-        note: item.note,
-        expiresAt: item.expiresAt,
-      },
-      ctx,
-      derived,
-    )
-    return { ...draft, key: item.id, sourceItemId: item.id }
-  })
+  /*
+   * 已舍弃的进不了草稿：草稿的状态栏只有 在用/闲置/备用 三档，
+   * 硬塞进来要么编译不过，要么被悄悄改成「在用」—— 那等于让一件
+   * 已经扔掉的东西复活。现成的调用方本来就只传没舍弃的
+   * （itemsForLoadScope 会过滤），这里再挡一道。
+   */
+  return items
+    .filter((item) => item.status !== 'discarded')
+    .map((item) => {
+      const draft = toItemDraft(
+        {
+          name: item.name,
+          quantity: item.quantity,
+          categoryPaths: item.categoryIds
+            .map((id) => derived.categoryIndex.pathNames(id))
+            .filter((path) => path.length > 0),
+          location: item.locationId ? derived.index.pathNames(item.locationId) : null,
+          tags: item.tags,
+          attributes: attrNamesOf(item, derived),
+          note: item.note,
+          expiresAt: item.expiresAt,
+          status: item.status,
+          collections: item.collectionIds
+            .map((id) => derived.collectionById.get(id)?.name)
+            .filter((name): name is string => name !== undefined),
+        },
+        ctx,
+        derived,
+      )
+      return { ...draft, key: item.id, sourceItemId: item.id }
+    })
 }
 
 /** 一条草稿「要是落库，最终会写成什么」的指纹 */
@@ -281,6 +358,15 @@ function effectiveSignable(draft: ItemDraft, derived: DerivedContext): string {
     // 有效期也要进指纹。漏了它就会出这种鬼事：
     // AI 只把有效期改了，指纹没变 → 判定「没改动」→ 跳过 → 用户的修改凭空消失。
     draft.expiresAt ?? '',
+    // 状态同理，而且更严重：用户说「这件改成闲置」，AI 乖乖填了 status，
+    // 要是指纹里没有它，就会被判成「没改动」直接跳过 ——
+    // 界面上什么都不会发生，用户只会觉得 AI 又没听懂。
+    draft.status ?? '',
+    // 活动同理：只加了活动、别的都没动，也是一种改动
+    draft.matchedCollectionIds
+      .map((id) => derived.collectionById.get(id)?.name ?? id)
+      .sort()
+      .join('|'),
   ].join('\u0000')
 }
 
@@ -302,6 +388,11 @@ function itemSignature(item: Item, derived: DerivedContext): string {
       .join('|'),
     item.note.trim(),
     item.expiresAt ?? '',
+    item.status,
+    item.collectionIds
+      .map((id) => derived.collectionById.get(id)?.name ?? id)
+      .sort()
+      .join('|'),
   ].join('\u0000')
 }
 
@@ -363,6 +454,9 @@ export function draftsToApply(
       attrs: draft.attrs,
       note: draft.note,
       expiresAt: draft.expiresAt,
+      // undefined = 没提到 → applyDraftItems 会保留物品原来的状态
+      status: draft.status ?? undefined,
+      collectionIds: draft.matchedCollectionIds,
     }
 
     if (draft.sourceItemId) {
@@ -432,6 +526,7 @@ export function itemsForLoadScope(
 
   if (scope.all) add(live)
   if (scope.idle) add(live.filter((item) => item.status === 'idle'))
+  if (scope.spare) add(live.filter((item) => item.status === 'spare'))
   if (scope.uncategorized) {
     add(live.filter((item) => item.categoryIds.filter((id) => derived.categoryIndex.has(id)).length === 0))
   }

@@ -27,6 +27,14 @@ export interface AiContext {
   locationPaths: string[][]
   attributes: string[]
   tags: string[]
+  /**
+   * 用户已有的活动名（旅行 / 学习 / 搬家 这类）。
+   *
+   * 为什么不给 AI 建活动的权力：活动是用户自己维护的「要凑齐哪些东西」的
+   * 长期清单，是受控词表。让它随口造一个，用户会发现自己多出一堆
+   * 从没建过的活动 —— 那比它说「没有这个活动」糟得多。
+   */
+  collections: string[]
   /** 是否因为太多而被截断（界面上要如实提示） */
   truncated: boolean
 }
@@ -48,6 +56,8 @@ export interface InventoryDigest {
   /** 没有位置的物品数 */
   unassigned: number
   idle: number
+  /** 备用的件数 —— 让 AI 知道「囤着等用的那些」有多少，别把它们当闲置劝人处理 */
+  spare: number
 }
 
 export interface ContextLimits {
@@ -55,6 +65,7 @@ export interface ContextLimits {
   locations: number
   attributes: number
   tags: number
+  collections: number
 }
 
 const DEFAULT_LIMITS: ContextLimits = {
@@ -62,6 +73,8 @@ const DEFAULT_LIMITS: ContextLimits = {
   locations: 250,
   attributes: 30,
   tags: 40,
+  // 活动一般就几个，给宽一点也不会贵
+  collections: 40,
 }
 
 export function buildAiContext(
@@ -81,17 +94,24 @@ export function buildAiContext(
 
   const tagNames = data.tags.map((t) => t.name)
 
+  // 活动按用户自己排的顺序发过去 —— 顺序本身就是他的组织方式
+  const collectionNames = [...data.collections]
+    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'zh-CN'))
+    .map((c) => c.name)
+
   const truncated =
     categoryPaths.length > limits.categories ||
     locationPaths.length > limits.locations ||
     attributeNames.length > limits.attributes ||
-    tagNames.length > limits.tags
+    tagNames.length > limits.tags ||
+    collectionNames.length > limits.collections
 
   return {
     categoryPaths: categoryPaths.slice(0, limits.categories),
     locationPaths: locationPaths.slice(0, limits.locations),
     attributes: attributeNames.slice(0, limits.attributes),
     tags: tagNames.slice(0, limits.tags),
+    collections: collectionNames.slice(0, limits.collections),
     truncated,
   }
 }
@@ -123,6 +143,10 @@ export function renderContextBlock(ctx: AiContext): string {
     '',
     p.ctxTagsHead,
     listOrEmpty(ctx.tags, p.ctxTagsEmpty),
+    '',
+    p.ctxCollectionsHead,
+    p.ctxCollectionsNote,
+    listOrEmpty(ctx.collections, p.ctxCollectionsEmpty),
     ctx.truncated ? `\n${p.ctxTruncated}` : '',
   ]
     .filter((line) => line !== '')
@@ -160,6 +184,7 @@ export function buildInventoryDigest(data: AppData, derived: DerivedContext): In
     locations: toEntries(derived.index, derived.flat, locationCounts),
     unassigned: locationCounts.get(UNASSIGNED_ID) ?? 0,
     idle: live.filter((item) => item.status === 'idle').length,
+    spare: live.filter((item) => item.status === 'spare').length,
   }
 }
 
@@ -191,6 +216,7 @@ export function renderInventoryDigest(digest: InventoryDigest): string {
     fill(p.digestByLocation, { list: locations }),
     digest.unassigned > 0 ? fill(p.digestUnassigned, { count: digest.unassigned }) : '',
     digest.idle > 0 ? fill(p.digestIdle, { count: digest.idle }) : '',
+    digest.spare > 0 ? fill(p.digestSpare, { count: digest.spare }) : '',
     '',
     p.digestFootnote1,
     p.digestFootnote2,

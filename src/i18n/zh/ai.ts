@@ -117,9 +117,14 @@ export const ai = {
   fieldCategories: '分类',
   newCategoryToggleTitle: '这是 AI 建议的新分类。点击切换：是否创建',
   fieldNote: '备注',
+  fieldStatus: '状态',
+  fieldCollections: '活动',
   droppedAttrsLead: 'AI 还提到 ',
   droppedAttrsTail:
     '，但你的属性库里没有这些属性，已忽略。（想记录的话，去「属性」页面先定义它们）',
+  droppedCollectionsLead: 'AI 还提到活动 ',
+  droppedCollectionsTail:
+    '，但你没有这个活动，已忽略。（活动只能你自己建，去「活动」页面建一个再试）',
 
   /* ---- 页面本体 ---- */
   subtitle: '写要录的东西，或者说要改什么 —— 它会自己去找相关的物品，改完给你过目',

@@ -238,6 +238,9 @@ function raw(partial: Partial<RawExtractedItem> & { name: string }): RawExtracte
     attributes: partial.attributes ?? {},
     note: partial.note ?? '',
     expiresAt: partial.expiresAt ?? null,
+    // 「没提到」的默认值：状态为空、不属于任何活动
+    status: partial.status ?? null,
+    collections: partial.collections ?? [],
   }
 }
 
@@ -524,6 +527,7 @@ await test('清单太长时截断并如实标注', () => {
     locations: 3,
     attributes: 1,
     tags: 1,
+    collections: 1,
   })
   eq(trimmed.truncated, true)
   eq(trimmed.categoryPaths.length, 2)
@@ -561,6 +565,16 @@ function draftOf(patch: Partial<ItemDraft> & { name: string }): ItemDraft {
     droppedAttrs: [],
     note: '',
     expiresAt: null,
+    /*
+     * 默认 null = 「AI 没提到状态」。
+     *
+     * 不能默认 'active' —— 那样这个夹具就代表「AI 明确说要改成在用」，
+     * 而绝大多数用例想的只是「AI 改了个别的字段」。
+     * 这个区别是有测试守着的（见「更新不该把它的闲置状态改掉」）。
+     */
+    status: null,
+    matchedCollectionIds: [],
+    droppedCollections: [],
     include: true,
     adoptNewCategories: false,
     adoptNewLocation: false,
@@ -925,6 +939,8 @@ function revisedItem(
     attributes: partial.attributes ?? {},
     note: partial.note ?? '',
     expiresAt: partial.expiresAt ?? null,
+    status: partial.status ?? null,
+    collections: partial.collections ?? [],
     removed: partial.removed ?? false,
   }
 }

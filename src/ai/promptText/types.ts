@@ -14,6 +14,18 @@
  */
 
 export interface PromptText {
+  /* ---------------- 零、概念表（这个工具里的词汇） ---------------- */
+
+  /**
+   * 状态与活动那一套词汇。
+   *
+   * 抽成独立一段而不是塞进两个 system 里各写一遍：它是**同一份知识**，
+   * 抽取和对话都要用。两份各写一遍的话，改了一处忘了另一处，
+   * 就会出现「录入时懂、对话时又不懂」这种半截状态 ——
+   * 而这正是当初「说闲置它给我打了个标签」的成因。
+   */
+  conceptVocab: string
+
   /* ---------------- 一、从自由文字抽取物品 ---------------- */
 
   /** 抽取任务的角色与全部规则 */
@@ -39,6 +51,9 @@ export interface PromptText {
   ctxAttributesEmpty: string
   ctxTagsHead: string
   ctxTagsEmpty: string
+  ctxCollectionsHead: string
+  ctxCollectionsNote: string
+  ctxCollectionsEmpty: string
   ctxTruncated: string
   /** 列表分隔符。中文用顿号，英文用逗号 */
   ctxListSeparator: string
@@ -54,6 +69,7 @@ export interface PromptText {
   digestNoLocations: string
   digestUnassigned: string
   digestIdle: string
+  digestSpare: string
   digestFootnote1: string
   digestFootnote2: string
   /** 目录里一条的写法：{path}（{count}） */

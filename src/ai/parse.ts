@@ -148,6 +148,68 @@ function uniq(values: string[]): string[] {
   return [...new Set(values)]
 }
 
+/* ------------------------------------------------------------------ */
+/* 状态：AI 能说的话                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * AI **能**表达的状态。
+ *
+ * 「已舍弃」刻意不在这里 —— 它的正当路径是 `removedIds`（进回收站，可恢复）。
+ * 让模型在一个数组元素里顺手说出「已舍弃」，等于把「扔东西」变成一个
+ * 可以随口带出来的副作用，那太轻率了。
+ */
+export type AiStatus = 'active' | 'idle' | 'spare'
+
+/**
+ * 解析出来的状态：`'discarded'` 是**单独一档**，因为它要被转成一次删除请求，
+ * 不是被塞进物品的字段。
+ */
+export type RawStatus = AiStatus | 'discarded' | null
+
+/**
+ * 状态词的别名表。
+ *
+ * 为什么要认这么多写法：模型有时给代码值，有时给界面上的中文，切到英文界面
+ * 又给英文词。这几种都是「同一个意思」，认不出来就会退化成「AI 没提状态」，
+ * 而用户明明说了 —— 那正是这次要修的那个 bug。
+ */
+const STATUS_ALIASES: Record<string, RawStatus> = {
+  active: 'active',
+  在用: 'active',
+  使用中: 'active',
+  正常: 'active',
+  'in use': 'active',
+  'in-use': 'active',
+  inuse: 'active',
+  using: 'active',
+
+  idle: 'idle',
+  闲置: 'idle',
+  闲置中: 'idle',
+
+  spare: 'spare',
+  备用: 'spare',
+  备份: 'spare',
+  囤货: 'spare',
+
+  discarded: 'discarded',
+  已舍弃: 'discarded',
+  舍弃: 'discarded',
+  丢弃: 'discarded',
+  扔掉: 'discarded',
+  扔了: 'discarded',
+  discard: 'discarded',
+  deleted: 'discarded',
+  removed: 'discarded',
+}
+
+function asAiStatus(value: unknown): RawStatus {
+  const text = asString(value).toLowerCase().replace(/\s+/g, ' ').trim()
+  if (text === '') return null
+  return STATUS_ALIASES[text] ?? null
+}
+
 /**
  * 分类字段的解析。
  *
@@ -193,6 +255,21 @@ export interface RawExtractedItem {
   note: string
   /** 有效期至（YYYY-MM-DD）；AI 没提到、或写的日期认不出来，都是 null */
   expiresAt: string | null
+  /**
+   * 状态（在用 / 闲置 / 备用）。
+   *
+   * 这个字段存在的理由就是那个 bug：用户说「这个改成闲置」，而输出格式里
+   * 根本没有能装「闲置」的地方 —— 于是模型唯一能做的就是把它塞进 tags。
+   * 有了这一栏，它才**有地方可放**。
+   *
+   * null = AI 没提状态（新建时按「在用」，改已有物品时保持原样）。
+   */
+  status: RawStatus
+  /**
+   * 活动的名字（旅行 / 学习 这类），只可能命中已有活动 —— 活动是用户
+   * 自己维护的清单，不让模型随口造一个新的。
+   */
+  collections: string[]
 }
 
 export interface ParsedExtraction {
@@ -223,6 +300,14 @@ function normalizeExtractedItem(raw: unknown): RawExtractedItem | null {
     expiresAt: normalizeExpiryDate(
       raw.expiresAt ?? raw.expires ?? raw.有效期 ?? raw.过期时间 ?? raw.expiryDate,
     ),
+    status: asAiStatus(raw.status ?? raw.状态),
+    /*
+     * 活动的别名里刻意**不含「清单」**。
+     *
+     * 清单（checklists）是另一件东西：一次性待办，用户在物品列表里勾选后
+     * 自己建的。把 AI 说的「清单」当成活动，会把它塞进一个完全不同的实体里。
+     */
+    collections: uniq(asStringList(raw.collections ?? raw.活动 ?? raw.合集 ?? raw.所属活动)),
   }
 }
 
@@ -281,6 +366,8 @@ export interface LoadScopeRequest {
   /** 全部在用物品（不含已舍弃） */
   all?: boolean
   idle?: boolean
+  /** 备用（特意囤着等用的那些） */
+  spare?: boolean
   uncategorized?: boolean
   unassigned?: boolean
   /** 已过期 + 快过期的（快过期的天数阈值由界面偏好决定） */
@@ -323,6 +410,7 @@ function normalizeLoadScope(raw: unknown): LoadScopeRequest | null {
   const scope: LoadScopeRequest = {}
   if (raw.all === true) scope.all = true
   if (raw.idle === true) scope.idle = true
+  if (raw.spare === true) scope.spare = true
   if (raw.uncategorized === true) scope.uncategorized = true
   if (raw.unassigned === true) scope.unassigned = true
   if (raw.expiring === true) scope.expiring = true
@@ -339,6 +427,7 @@ function normalizeLoadScope(raw: unknown): LoadScopeRequest | null {
   const empty =
     !scope.all &&
     !scope.idle &&
+    !scope.spare &&
     !scope.uncategorized &&
     !scope.unassigned &&
     !scope.expiring &&

@@ -273,10 +273,19 @@ export interface DraftApplyItem {
    * 所属活动合集。
    *
    * 可选，而且**更新已有物品时不传就等于「保持原样」**（不是清空）——
-   * AI 现在还认不出活动，如果默认成空数组，那每次让 AI 改个名字
-   * 都会把物品身上的活动全抹掉。
+   * 这是为了兼容早期版本：那时候 AI 还认不出活动，如果默认成空数组，
+   * 每次让 AI 改个名字都会把物品身上的活动全抹掉。
+   * 现在 AI 会明确给出它看到的活动列表，所以传了就是「替换成这一批」。
    */
   collectionIds?: string[]
+  /**
+   * 状态（在用 / 闲置 / 备用）。
+   *
+   * 刻意**没有**可选值里的「已舍弃」：舍弃是另一个动作（走 removedKeys
+   * 进回收站）。让一个字段顺手就能把东西扔掉太轻率了。
+   * 不传 = 保持原样（新建时按「在用」）。
+   */
+  status?: 'active' | 'idle' | 'spare'
 }
 
 export interface ApplyDraftResult {
@@ -737,11 +746,25 @@ export const useAppStore = create<AppState>()((set, get) => {
 
         const index = entry.existingId ? indexById.get(entry.existingId) : undefined
 
+        /*
+         * 状态。
+         *
+         * 只在 entry.status 明确给了值时改动 —— 而且**顺手维护 idleAt**：
+         * 变成闲置就记下开始闲置的时刻，离开闲置就清掉。
+         * 漏了这一步，「闲置了 217 天」那个排序就会算在错误的起点上。
+         *
+         * 只有这三个值能走到这里：`DraftApplyItem.status` 里没有「已舍弃」，
+         * 舍弃是 removedKeys 那条路（进回收站，可恢复）。
+         */
+        const previousStatus: ItemStatus = index === undefined ? 'active' : items[index].status
+        const nextStatus: ItemStatus = entry.status ?? previousStatus
+
         if (index !== undefined) {
-          // 更新：只动这几项，status / createdAt / 闲置时间都保持原样
+          const prev = items[index] as Item
+          // 更新：只动这几项，createdAt / 已舍弃时间保持原样
           items[index] = {
-            ...items[index],
-            name: name || items[index].name,
+            ...prev,
+            name: name || prev.name,
             quantity,
             categoryIds,
             locationId,
@@ -749,7 +772,14 @@ export const useAppStore = create<AppState>()((set, get) => {
             attrs,
             note: entry.note ?? '',
             expiresAt,
-            collectionIds: entry.collectionIds ?? items[index].collectionIds,
+            collectionIds: entry.collectionIds ?? prev.collectionIds,
+            status: nextStatus,
+            idleAt:
+              nextStatus === 'idle'
+                ? previousStatus === 'idle'
+                  ? prev.idleAt
+                  : now
+                : null,
             updatedAt: now,
           }
           updated++
@@ -763,14 +793,15 @@ export const useAppStore = create<AppState>()((set, get) => {
           quantity,
           categoryIds,
           locationId,
-          status: 'active',
+          // 新建但 AI 明确说了「备用」的，就按备用建 —— 别丢掉这个信息
+          status: nextStatus,
           tags,
           attrs,
           note: entry.note ?? '',
           collectionIds: entry.collectionIds ?? [],
           createdAt: now,
           updatedAt: now,
-          idleAt: null,
+          idleAt: nextStatus === 'idle' ? now : null,
           discardedAt: null,
           expiresAt,
         })

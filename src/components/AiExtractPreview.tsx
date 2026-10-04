@@ -3,6 +3,7 @@ import type { ItemDraft } from '../ai/convert'
 import { useAppStore } from '../store/useAppStore'
 import { IconAlert } from './ui/icons'
 import { Button } from './ui/primitives'
+import { statusLabel } from '../store/selectors'
 import { useT } from '../i18n'
 
 interface Props {
@@ -243,6 +244,46 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
                     aria-label={t('ai.fieldNote')}
                     onChange={(e) => update(draft.key, { note: e.target.value })}
                   />
+                </div>
+              ) : null}
+
+              {/* ---------------- 状态 ---------------- */}
+              {/*
+                状态单独一行，而且**只在 AI 明确说了状态时才显示**。
+                这一行是给「我说了闲置，它却给我打了个标签」那件事收尾的：
+                用户要能一眼看见「闲置」被当成了状态，而不是一个标签。
+                status 为 null（AI 没提）= 不动原有状态，所以不显示。
+              */}
+              {draft.status !== null ? (
+                <div className="ai-row__line">
+                  <span className="ai-row__label">{t('ai.fieldStatus')}</span>
+                  <span className="chip is-active">{statusLabel(draft.status)}</span>
+                </div>
+              ) : null}
+
+              {/* ---------------- 活动 ---------------- */}
+              {draft.matchedCollectionIds.length > 0 ? (
+                <div className="ai-row__line">
+                  <span className="ai-row__label">{t('ai.fieldCollections')}</span>
+                  <span className="chip-list">
+                    {draft.matchedCollectionIds.map((id) => (
+                      <span key={id} className="chip is-active">
+                        {derived.collectionById.get(id)?.name ?? id}
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              ) : null}
+
+              {/* ---------------- 被丢掉的活动名 ---------------- */}
+              {draft.droppedCollections.length > 0 ? (
+                <div className="ai-row__line">
+                  <span className="ai-row__label" />
+                  <span className="tiny dim">
+                    {t('ai.droppedCollectionsLead')}
+                    {draft.droppedCollections.join(t('ai.listSeparator'))}
+                    {t('ai.droppedCollectionsTail')}
+                  </span>
                 </div>
               ) : null}
 

@@ -130,9 +130,14 @@ export const ai = {
   newCategoryToggleTitle:
     'This is a new category suggested by the AI. Click to toggle whether it gets created',
   fieldNote: 'Notes',
+  fieldStatus: 'Status',
+  fieldCollections: 'Collections',
   droppedAttrsLead: 'The AI also mentioned ',
   droppedAttrsTail:
     ' — but your field library has no such fields, so they were ignored. (To record them, define them on the Fields page first.)',
+  droppedCollectionsLead: 'The AI also mentioned the collection ',
+  droppedCollectionsTail:
+    ' — but you do not have it, so it was ignored. (Collections can only be made by you; create it on the Collections page and try again.)',
 
   /* ---- The page itself ---- */
   subtitle:

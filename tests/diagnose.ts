@@ -289,4 +289,14 @@ await test('快照的 at 不是字符串也不会把体检搞崩', async () => {
   eq(d.snapshots.count, 1)
   eq(d.snapshots.newestAt, null, '时间读不出来就当没有，不要编一个出来')
   eq(d.snapshots.maxItems, 3)
+
+  /*
+   * ⚠️ 必须清掉这条畸形快照再走。
+   *
+   * 它是个只可能出现在测试里的东西，但后面那些用例（aiSession）会调用
+   * restoreFromSnapshot → pruneSnapshots → listSnapshots，那里按 at 排序 ——
+   * 撞上这个 12345 就直接抛「localeCompare is not a function」。
+   * 症状离病因非常远（体检测试把会话测试搞红了），我自己就踩了一次。
+   */
+  await idbClear(STORE_SNAPSHOTS)
 })
