@@ -153,7 +153,24 @@ async function auditDict() {
     const b = placeholders(flatEn[key]).join(',')
     if (a !== b) mismatch.push({ key, zh: a, en: b })
   }
-  return { zhCount: zhKeys.size, enCount: enKeys.size, missing, extra, mismatch }
+
+  /*
+   * 词典值里不该出现 markdown 加粗。
+   *
+   * t() 只做 {变量} 插值，不认任何 markdown —— 写进去的星号会**原样显示**
+   * 在界面上，变成「数据按**网址**隔离」这种东西。
+   * 这类错误最阴的地方是：中英两边写一样的星号时，key 对得齐、占位符也对得齐，
+   * 前面几项检查全部通过。所以必须单独查一条。
+   */
+  const markdown = []
+  for (const [key, text] of Object.entries(flatZh)) {
+    if (text.includes('**')) markdown.push({ key, lang: 'zh', text })
+  }
+  for (const [key, text] of Object.entries(flatEn)) {
+    if (text.includes('**')) markdown.push({ key, lang: 'en', text })
+  }
+
+  return { zhCount: zhKeys.size, enCount: enKeys.size, missing, extra, mismatch, markdown }
 }
 
 /* ------------------------------------------------------------------ */
@@ -192,16 +209,28 @@ if (dict) {
       console.log(`    ${m.key}  zh={${m.zh}}  en={${m.en}}`)
     }
   }
+  if (dict.markdown.length > 0) {
+    console.log(`  ✗ 文案里有 markdown 星号（${dict.markdown.length} 条）—— 会原样显示：`)
+    for (const m of dict.markdown.slice(0, 10)) {
+      console.log(`    [${m.lang}] ${m.key}: ${m.text.slice(0, 60)}`)
+    }
+    console.log('    要加粗请拆成 xxxBefore / xxxStrong / xxxAfter 三段，在 JSX 里包 <strong>。')
+  }
   if (
     dict.missing.length === 0 &&
     dict.extra.length === 0 &&
-    dict.mismatch.length === 0
+    dict.mismatch.length === 0 &&
+    dict.markdown.length === 0
   ) {
-    console.log('  ✓ key 与占位符完全对齐')
+    console.log('  ✓ key、占位符、加粗写法全部对齐')
   }
 }
 
 console.log('')
 const dictBad =
-  dict !== null && (dict.missing.length > 0 || dict.extra.length > 0 || dict.mismatch.length > 0)
+  dict !== null &&
+  (dict.missing.length > 0 ||
+    dict.extra.length > 0 ||
+    dict.mismatch.length > 0 ||
+    dict.markdown.length > 0)
 process.exit(problems.length > 0 || dictBad ? 1 : 0)

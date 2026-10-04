@@ -15,6 +15,7 @@ import { useT } from '../i18n'
 import { formatBytes, readFileAsText } from '../lib/download'
 import { formatDateTime, formatRelative } from '../lib/format'
 import { estimateUsage } from '../storage/idb'
+import { diagnoseLocalData, type LocalDiagnosis } from '../storage/diagnose'
 import {
   SNAPSHOT_REASON_LABEL,
   deleteSnapshot,
@@ -28,6 +29,197 @@ interface ImportPreview {
   data: AppData
   warnings: string[]
   exportedAt: string | null
+}
+
+/* ------------------------------------------------------------------ */
+/* 数据体检                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 「我的数据去哪儿了」自助诊断。
+ *
+ * 为什么要有这个：三种完全不同的真相在界面上长得**一模一样**（都是空列表）——
+ *   1. 数据在，只是你现在站在**另一个网址**下（数据按网址隔离）
+ *   2. 主记录真没了，但**快照还在** —— 一键就能找回来
+ *   3. 这个网址下本来就没存过东西
+ * 只摆事实，让用户一眼分清自己在哪一种里，而不是让他猜。
+ *
+ * 只读：打开这个面板不会产生快照、不会写任何东西。
+ */
+function DiagnosisPanel({
+  diagnosis,
+  diagnosing,
+  onRerun,
+  onRestoreBest,
+}: {
+  diagnosis: LocalDiagnosis | null
+  diagnosing: boolean
+  onRerun: () => void
+  onRestoreBest: (snapshotId: string) => void
+}) {
+  const { t, tc } = useT()
+
+  const d = diagnosis
+
+  let verdictText = ''
+  let alert = false
+
+  if (d) {
+    if (d.verdict === 'unreadable') {
+      alert = true
+      verdictText = t('settings.diagnoseVerdictUnreadable', {
+        message: d.app.readError ?? d.snapshots.readError ?? '',
+      })
+    } else if (d.verdict === 'restorable') {
+      alert = true
+      verdictText = tc(d.snapshots.maxItems, 'settings.diagnoseVerdictRestorable', {
+        current: d.app.itemCount,
+      })
+    } else if (d.verdict === 'empty') {
+      alert = true
+      /*
+       * 「没有快照」和「快照都是空的」是两种情况，但结论都是 empty。
+       * 这里必须分开说 —— 上面那一格正列着「共 2 份」，这行却写「也没有快照」，
+       * 用户会立刻不知道该信哪一句。自相矛盾的界面比不说话的界面更糟。
+       */
+      verdictText =
+        d.snapshots.count === 0
+          ? t('settings.diagnoseVerdictEmpty')
+          : t('settings.diagnoseVerdictEmptyOnlyEmptySnapshots')
+    } else if (d.app.itemCount === 0) {
+      verdictText = t('settings.diagnoseVerdictEmptyFresh')
+    } else {
+      verdictText = tc(d.app.itemCount, 'settings.diagnoseVerdictOk', {
+        time: d.app.updatedAt ? formatRelative(d.app.updatedAt) : '—',
+      })
+    }
+  }
+
+  const dbText = !d
+    ? '—'
+    : d.dbExists === null
+      ? t('settings.diagnoseDbUnknown')
+      : d.dbExists
+        ? t('settings.diagnoseDbExists')
+        : t('settings.diagnoseDbMissing')
+
+  const appText = !d
+    ? '—'
+    : d.app.readError
+      ? t('settings.diagnoseAppReadFailed', { message: d.app.readError })
+      : !d.app.exists
+        ? t('settings.diagnoseAppMissing')
+        : [
+            d.app.updatedAt
+              ? t('settings.diagnoseAppUpdated', { time: formatRelative(d.app.updatedAt) })
+              : null,
+            d.app.schemaVersion === null
+              ? null
+              : t('settings.diagnoseAppSchema', { version: d.app.schemaVersion }),
+          ]
+            .filter(Boolean)
+            .join(' · ')
+
+  const snapshotText = !d
+    ? '—'
+    : d.snapshots.readError
+      ? t('settings.diagnoseSnapshotsReadFailed', { message: d.snapshots.readError })
+      : d.snapshots.count === 0
+        ? t('settings.diagnoseSnapshotsNone')
+        : t('settings.diagnoseSnapshotsRange', {
+            count: d.snapshots.count,
+            oldest: d.snapshots.oldestAt ? formatDateTime(d.snapshots.oldestAt) : '—',
+            newest: d.snapshots.newestAt ? formatDateTime(d.snapshots.newestAt) : '—',
+          })
+
+  /*
+   * 只列 localStorage 的**键名**。
+   * 值里面有一个是 API Key —— 体检没有理由去读它，更不能显示出来。
+   */
+  const localText = !d
+    ? '—'
+    : d.localKeys.length === 0
+      ? t('settings.diagnoseLocalNone')
+      : t('settings.diagnoseLocalValue', {
+          count: d.localKeys.length,
+          keys: d.localKeys.join(', '),
+        })
+
+  const best = d && d.verdict === 'restorable' ? d.snapshots.best : null
+
+  return (
+    <section className="section">
+      <div className="settings-block">
+        <div className="settings-block__head">
+          <div className="settings-block__title">{t('settings.diagnoseTitle')}</div>
+          <div className="settings-block__desc">{t('settings.diagnoseDesc')}</div>
+        </div>
+
+        <div className="settings-block__body">
+          <div className="storage-grid">
+            <div className="storage-item">
+              <span className="storage-item__label">{t('settings.diagnoseDbLabel')}</span>
+              <span className="storage-item__value">{dbText}</span>
+            </div>
+            <div className="storage-item">
+              <span className="storage-item__label">{t('settings.diagnoseAppLabel')}</span>
+              <span className="storage-item__value">{appText}</span>
+            </div>
+            <div className="storage-item">
+              <span className="storage-item__label">{t('settings.diagnoseSnapshotsLabel')}</span>
+              <span className="storage-item__value">{snapshotText}</span>
+            </div>
+            <div className="storage-item">
+              <span className="storage-item__label">{t('settings.diagnoseLocalLabel')}</span>
+              <span className="storage-item__value">{localText}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-block__body" style={{ paddingTop: 0 }}>
+          <div className={alert ? 'notice notice--alert' : 'notice'}>
+            {alert ? (
+              <span className="notice__icon">
+                <IconAlert />
+              </span>
+            ) : null}
+            <span className="notice__body">{verdictText}</span>
+          </div>
+
+          {best ? (
+            <div className="row-between wrap" style={{ marginTop: 'var(--gap-3)' }}>
+              <span className="tiny dim">
+                {tc(best.itemCount, 'settings.diagnoseSnapshotsBest', {
+                  time: formatDateTime(best.at),
+                })}
+              </span>
+              <Button size="sm" onClick={() => onRestoreBest(best.id)}>
+                <IconUndo size={12} />
+                {t('settings.diagnoseRestoreBestAction')}
+              </Button>
+            </div>
+          ) : null}
+
+          {/*
+            「这个网址下什么都没有」是最需要解释的一种结论 ——
+            不说清楚，用户只会得出「数据没了」这一个结论，而正确的结论往往是
+            「数据在另一个网址下，去那儿打开」。
+          */}
+          {d && d.verdict === 'empty' ? (
+            <div className="tiny dim" style={{ marginTop: 'var(--gap-3)', lineHeight: 1.7 }}>
+              {t('settings.diagnoseEmptyHint')}
+            </div>
+          ) : null}
+
+          <div className="row" style={{ marginTop: 'var(--gap-3)' }}>
+            <Button size="sm" variant="ghost" disabled={diagnosing} onClick={onRerun}>
+              {t('settings.diagnoseRerunAction')}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
 }
 
 export function Settings() {
@@ -53,8 +245,12 @@ export function Settings() {
   const notify = useAppStore((s) => s.notify)
 
   const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([])
+  const [snapshotsError, setSnapshotsError] = useState<string | null>(null)
   const [usage, setUsage] = useState<{ usage: number; quota: number } | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+
+  const [diagnosis, setDiagnosis] = useState<LocalDiagnosis | null>(null)
+  const [diagnosing, setDiagnosing] = useState(false)
 
   /**
    * 当前地址。
@@ -85,10 +281,33 @@ export function Settings() {
       const [list, estimate] = await Promise.all([listSnapshots(), estimateUsage()])
       setSnapshots(list)
       setUsage(estimate)
-    } catch {
-      // 快照列表读不出来不影响主功能，静默处理
+      setSnapshotsError(null)
+    } catch (err) {
+      /*
+       * 读失败**不能**静默吞掉。
+       * 列表空着看起来就是「一份备份都没有」—— 那会让人在真的丢了数据时
+       * 以为自己已经无路可退，然后放弃。这里必须把失败本身说出来。
+       */
+      setSnapshotsError(err instanceof Error ? err.message : String(err))
     }
   }, [])
+
+  /**
+   * 数据体检。只读，所以进页面就跑一次 ——
+   * 会点进来找数据的人，往往已经慌了，不该再指望他自己发现要点哪个按钮。
+   */
+  const runDiagnosis = useCallback(async () => {
+    setDiagnosing(true)
+    try {
+      setDiagnosis(await diagnoseLocalData())
+    } finally {
+      setDiagnosing(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void runDiagnosis()
+  }, [runDiagnosis])
 
   useEffect(() => {
     void refresh()
@@ -327,13 +546,33 @@ export function Settings() {
             {/*
               把「数据按网址隔离」这件事写在界面上。
               这条不写，用户换个地址打开就会以为数据丢了 —— 真发生过。
+
+              拆成三段拼，是因为 t() 不做 markdown：写成一条带 **星号** 的文案
+              会把星号原样显示出来。要加粗只能在 JSX 里包 <strong>。
             */}
             <div className="tiny dim" style={{ marginTop: 'var(--gap-3)', lineHeight: 1.7 }}>
-              {t('settings.storageOriginHint')}
+              {t('settings.storageOriginHintBefore')}
+              <strong>{t('settings.storageOriginHintStrong')}</strong>
+              {t('settings.storageOriginHintAfter')}
             </div>
           </div>
         </div>
       </section>
+
+      {/* ================= 数据体检 ================= */}
+      <DiagnosisPanel
+        diagnosis={diagnosis}
+        diagnosing={diagnosing}
+        onRerun={() => {
+          void runDiagnosis()
+        }}
+        onRestoreBest={(snapshotId) => {
+          void restoreFromSnapshot(snapshotId).then(() => {
+            setRefreshKey((k) => k + 1)
+            void runDiagnosis()
+          })
+        }}
+      />
 
       {/* ================= 备份提醒 ================= */}
       {backupOverdue ? (
@@ -375,7 +614,16 @@ export function Settings() {
             </div>
           </div>
 
-          {snapshots.length === 0 ? (
+          {snapshotsError !== null ? (
+            /*
+             * 读失败要单独说，不能退化成「还没有任何快照」——
+             * 那两种情况看起来一样，但一个是「没备份」，另一个只是「没读到」，
+             * 而这个区别恰好出现在用户最需要知道真相的时候。
+             */
+            <div className="settings-block__body">
+              <span className="small">{t('settings.snapshotsReadFailed', { message: snapshotsError })}</span>
+            </div>
+          ) : snapshots.length === 0 ? (
             <div className="settings-block__body">
               <span className="dim small">{t('settings.snapshotsEmpty')}</span>
             </div>

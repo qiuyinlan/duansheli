@@ -71,9 +71,15 @@ export const settings = {
   storageSnapshotsLabel: '快照份数',
   storageUpdatedLabel: '数据最后更新',
   storageOriginLabel: '当前网址',
-  storageOriginHint:
-    '数据按**网址**隔离：localhost、局域网 IP、GitHub Pages 是三个互不相通的数据仓库。所以「换个地址打开就看不到数据」是正常的，要用导出 / 导入迁移。',
+  /*
+   * ⚠️ 别在文案里写 **星号加粗**。
+   * t() 只做 {变量} 插值，不认任何 markdown —— 星号会原样显示在界面上。
+   * 要加粗就把那句话拆成两段，用 xxxStrong 那条在 JSX 里包 <strong>。
+   */
+  storageOriginHintBefore: '数据按',
   storageOriginHintStrong: '网址',
+  storageOriginHintAfter:
+    '隔离：localhost、局域网 IP、GitHub Pages 是三个互不相通的数据仓库。所以「换个地址打开就看不到数据」是正常的，要用导出 / 导入迁移。',
 
   /* 还没导出过备份时的提醒条 */
   backupOverdueNotice: '你还没有导出过备份。浏览器数据一旦被清理就无法找回，建议现在导出一次。',
@@ -93,6 +99,47 @@ export const settings = {
 
   restoreAction: '回退',
   deleteSnapshotTitle: '删除这份快照',
+  /* 读快照列表失败时**必须**说出来 —— 显示「还没有快照」是在骗人 */
+  snapshotsReadFailed: '快照列表读不出来：{message}',
+
+  /* ---------------- 数据体检 ---------------- */
+  diagnoseTitle: '数据体检',
+  diagnoseDesc:
+    '数据看着不见了、或者想确认备份还在不在，看这里就知道。只读，不会改动任何东西。',
+  diagnoseRerunAction: '重新体检',
+  diagnoseDbLabel: 'duansheli 数据库',
+  diagnoseDbExists: '存在',
+  diagnoseDbMissing: '不存在',
+  diagnoseDbUnknown: '这个浏览器查不了',
+  diagnoseAppLabel: '主数据记录',
+  diagnoseAppMissing: '没有',
+  diagnoseAppUpdated: '最后更新 {time}',
+  diagnoseAppSchema: '数据版本 {version}',
+  diagnoseAppReadFailed: '读不出来：{message}',
+  diagnoseSnapshotsLabel: '快照',
+  diagnoseSnapshotsNone: '一份都没有',
+  diagnoseSnapshotsRange: '共 {count} 份 · 最早 {oldest} · 最新 {newest}',
+  diagnoseSnapshotsBest_one: '物品最多的一份有 {count} 件（{time}）',
+  diagnoseSnapshotsBest_other: '物品最多的一份有 {count} 件（{time}）',
+  diagnoseSnapshotsReadFailed: '读不出来：{message}',
+  diagnoseLocalLabel: '本地偏好',
+  diagnoseLocalNone: '无',
+  diagnoseLocalValue: '{count} 项：{keys}',
+  diagnoseRestoreBestAction: '回退到物品最多的那一份',
+  diagnoseVerdictOk_one: '数据在：{count} 件物品，最后更新 {time}。',
+  diagnoseVerdictOk_other: '数据在：{count} 件物品，最后更新 {time}。',
+  diagnoseVerdictEmptyFresh:
+    '这个网址下是空的：0 件物品，也没有快照 —— 说明你从来没在这个地址上存过东西。',
+  diagnoseVerdictRestorable_one:
+    '当前只有 {current} 件物品，但快照里最多有 {count} 件 —— 很可能能找回来。',
+  diagnoseVerdictRestorable_other:
+    '当前只有 {current} 件物品，但快照里最多有 {count} 件 —— 很可能能找回来。',
+  diagnoseVerdictEmpty: '这个网址下没找到数据，也没有快照。',
+  /* 有快照、但每份都是空的 —— 说「也没有快照」就与上面的列表自相矛盾了 */
+  diagnoseVerdictEmptyOnlyEmptySnapshots: '这个网址下没有数据；现有的那些快照里也是空的。',
+  diagnoseVerdictUnreadable: '读取的时候出错了：{message}',
+  diagnoseEmptyHint:
+    '数据是按网址分开存的。如果你在别的地址录过东西，把那些地址也挨个打开跑一次体检：localhost、127.0.0.1、局域网 IP、GitHub Pages。找到以后用导出 / 导入搬过来。',
 
   /* ---------------- 已舍弃回收站 ---------------- */
   recycleTitle: '已舍弃回收站',

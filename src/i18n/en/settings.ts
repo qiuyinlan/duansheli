@@ -75,9 +75,16 @@ export const settings = {
   storageSnapshotsLabel: 'Snapshots',
   storageUpdatedLabel: 'Data last updated',
   storageOriginLabel: 'Current address',
-  storageOriginHint:
-    'Data is isolated per **address**: localhost, a LAN IP and GitHub Pages are three separate stores. So "I opened it at another address and my data is gone" is expected — migrate with export / import.',
+  /*
+   * ⚠️ Never write **asterisk bold** in a string value.
+   * t() only interpolates {vars}; it knows nothing about markdown, so the
+   * asterisks would show up on screen verbatim. To emphasise something, split
+   * the sentence and wrap the xxxStrong piece in <strong> at the call site.
+   */
+  storageOriginHintBefore: 'Data is isolated per',
   storageOriginHintStrong: 'address',
+  storageOriginHintAfter:
+    ': localhost, a LAN IP and GitHub Pages are three separate stores. So "I opened it at another address and my data is gone" is expected — migrate with export / import.',
 
   /* The banner shown while no backup has ever been exported */
   backupOverdueNotice:
@@ -100,6 +107,49 @@ export const settings = {
 
   restoreAction: 'Roll back',
   deleteSnapshotTitle: 'Delete this snapshot',
+  /* A failed read MUST be reported — "No snapshots yet" would be a lie */
+  snapshotsReadFailed: 'Could not read the snapshot list: {message}',
+
+  /* ---------------- Data health check ---------------- */
+  diagnoseTitle: 'Data health check',
+  diagnoseDesc:
+    'If your data seems to be gone, or you just want to confirm the backups are still there, look here. Read-only — it changes nothing.',
+  diagnoseRerunAction: 'Check again',
+  diagnoseDbLabel: 'duansheli database',
+  diagnoseDbExists: 'Present',
+  diagnoseDbMissing: 'Missing',
+  diagnoseDbUnknown: 'this browser cannot tell',
+  diagnoseAppLabel: 'Main data record',
+  diagnoseAppMissing: 'None',
+  diagnoseAppUpdated: 'last updated {time}',
+  diagnoseAppSchema: 'data version {version}',
+  diagnoseAppReadFailed: 'could not read it: {message}',
+  diagnoseSnapshotsLabel: 'Snapshots',
+  diagnoseSnapshotsNone: 'none at all',
+  diagnoseSnapshotsRange: '{count} in total · oldest {oldest} · newest {newest}',
+  diagnoseSnapshotsBest_one: 'the fullest one holds {count} item ({time})',
+  diagnoseSnapshotsBest_other: 'the fullest one holds {count} items ({time})',
+  diagnoseSnapshotsReadFailed: 'could not read them: {message}',
+  diagnoseLocalLabel: 'Local preferences',
+  diagnoseLocalNone: 'none',
+  diagnoseLocalValue: '{count}: {keys}',
+  diagnoseRestoreBestAction: 'Roll back to the fullest one',
+  diagnoseVerdictOk_one: 'Your data is here: {count} item, last updated {time}.',
+  diagnoseVerdictOk_other: 'Your data is here: {count} items, last updated {time}.',
+  diagnoseVerdictEmptyFresh:
+    'This address is empty: 0 items and no snapshots — so nothing was ever saved here.',
+  diagnoseVerdictRestorable_one:
+    'Only {current} items right now, but a snapshot holds {count} item — this is very likely recoverable.',
+  diagnoseVerdictRestorable_other:
+    'Only {current} items right now, but a snapshot holds as many as {count} items — this is very likely recoverable.',
+  diagnoseVerdictEmpty: 'No data and no snapshots were found at this address.',
+  /* Snapshots exist but every one of them is empty — saying "no snapshots"
+     would contradict the list right above it */
+  diagnoseVerdictEmptyOnlyEmptySnapshots:
+    'No data at this address, and the snapshots it does have are empty too.',
+  diagnoseVerdictUnreadable: 'Reading it failed: {message}',
+  diagnoseEmptyHint:
+    'Data is stored per address. If you entered things at another address, open each of your usual ones and run this check there too: localhost, 127.0.0.1, a LAN IP, GitHub Pages. Once you find it, move it over with export / import.',
 
   /* ---------------- Recycle bin (discarded items) ---------------- */
   recycleTitle: 'Recycle bin (discarded items)',

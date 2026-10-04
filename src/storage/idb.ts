@@ -12,7 +12,7 @@
 // 所以取词写在抛的那一刻，不能先算在模块顶层。
 import { t } from '../i18n'
 
-const DB_NAME = 'duansheli'
+export const DB_NAME = 'duansheli'
 const DB_VERSION = 1
 
 export const STORE_APP = 'app'

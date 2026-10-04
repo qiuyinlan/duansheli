@@ -17,6 +17,8 @@ import './collections'
 import './ai'
 import './i18n'
 import './render'
+// 体检会清空真实的 IndexedDB，放最后 —— 免得把前面用例依赖的数据擦掉
+import './diagnose'
 
 import { finish } from './harness'
 
