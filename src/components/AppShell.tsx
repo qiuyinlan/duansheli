@@ -20,6 +20,7 @@ import {
   IconPlus,
   IconSettings,
   IconSparkle,
+  IconSuitcase,
   IconTag,
 } from './ui/icons'
 
@@ -48,6 +49,7 @@ const PRIMARY_NAV: NavEntry[] = [
   { to: '/locations', labelKey: 'nav.locations', Icon: IconLocations },
   { to: '/idle', labelKey: 'nav.idle', Icon: IconIdle, badge: 'idle' },
   { to: '/expiry', labelKey: 'nav.expiry', Icon: IconClock, badge: 'expiry' },
+  { to: '/collections', labelKey: 'nav.collections', Icon: IconSuitcase },
   { to: '/ai', labelKey: 'nav.ai', Icon: IconSparkle },
 ]
 
@@ -77,6 +79,7 @@ const ROOT_ROUTES = new Set([
   '/locations',
   '/idle',
   '/expiry',
+  '/collections',
   '/ai',
   '/more',
   '/categories',
@@ -93,6 +96,7 @@ function titleKeyForPath(pathname: string): DictKey {
   if (pathname === '/locations') return 'nav.titleLocations'
   if (pathname === '/idle') return 'nav.titleIdle'
   if (pathname === '/expiry') return 'nav.titleExpiry'
+  if (pathname.startsWith('/collections')) return 'nav.titleCollections'
   if (pathname === '/ai') return 'nav.titleAi'
   if (pathname === '/more') return 'nav.titleMore'
   if (pathname === '/categories') return 'nav.titleCategories'

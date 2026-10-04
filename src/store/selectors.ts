@@ -3,6 +3,7 @@ import type {
   AttributeDef,
   AttrValue,
   Category,
+  Collection,
   GroupBy,
   Item,
   ItemStatus,
@@ -902,6 +903,51 @@ export function itemsInCategory(
 ): Item[] {
   const scope = scopeOf(ctx.categoryIndex, categoryId, includeDescendants)
   return items.filter((item) => item.categoryIds.some((id) => scope.has(id)))
+}
+
+/* ------------------------------------------------------------------ */
+/* 活动合集                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 某个活动里的物品。
+ *
+ * 和分类 / 位置不同，活动**没有层级**，所以没有「含子孙」这回事 ——
+ * 一件东西要么在「旅行」里，要么不在。
+ */
+export function itemsInCollection(items: Item[], collectionId: string): Item[] {
+  return items.filter((item) => item.collectionIds.includes(collectionId))
+}
+
+/** 每个活动有多少件（不含已舍弃的）。活动本身没有内容时不出现 */
+export function countByCollection(
+  data: AppData,
+  collections: readonly Collection[],
+): Array<{ collection: Collection; count: number }> {
+  const live = data.items.filter((item) => item.status !== 'discarded')
+
+  // 一个活动下有几件东西，是**整个活动页最要紧的数字**，
+  // 所以只遍历一次物品、按 id 累加，而不是每个活动各扫一遍全表
+  const counts = new Map<string, number>()
+  for (const item of live) {
+    for (const id of item.collectionIds) {
+      counts.set(id, (counts.get(id) ?? 0) + 1)
+    }
+  }
+
+  return collections.map((collection) => ({
+    collection,
+    count: counts.get(collection.id) ?? 0,
+  }))
+}
+
+/** 一件物品属于哪几个活动（用于物品行上显示小标签） */
+export function collectionsOf(item: Item, collections: readonly Collection[]): Collection[] {
+  if (item.collectionIds.length === 0) return []
+  const byId = new Map(collections.map((c) => [c.id, c]))
+  return item.collectionIds
+    .map((id) => byId.get(id))
+    .filter((c): c is Collection => c !== undefined)
 }
 
 /**

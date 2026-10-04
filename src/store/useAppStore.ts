@@ -5,6 +5,7 @@ import type {
   AttrType,
   AttrValue,
   Category,
+  Collection,
   ImportReport,
   Item,
   ItemStatus,
@@ -132,7 +133,11 @@ function normalizeShape(data: AppData): AppData {
     schemaVersion: data.schemaVersion ?? SCHEMA_VERSION,
     // parentId 统一成 null 或字符串。老数据里可能是 undefined，
     // 而 undefined 在 JSON.stringify 时会整个键消失，导出文件就不干净了。
-    items: Array.isArray(data.items) ? data.items : [],
+    items: (Array.isArray(data.items) ? data.items : []).map((item) => ({
+      ...item,
+      // v4 新增：老数据里没有这个字段，补成空数组
+      collectionIds: Array.isArray(item.collectionIds) ? item.collectionIds : [],
+    })),
     categories: (Array.isArray(data.categories) ? data.categories : []).map((c) => ({
       ...c,
       parentId: c.parentId ?? null,
@@ -143,6 +148,8 @@ function normalizeShape(data: AppData): AppData {
     })),
     attributeDefs: Array.isArray(data.attributeDefs) ? data.attributeDefs : [],
     tags: Array.isArray(data.tags) ? data.tags : [],
+    // v4 新增：老数据里没有活动合集
+    collections: Array.isArray(data.collections) ? data.collections : [],
     updatedAt: data.updatedAt ?? new Date().toISOString(),
   }
 }
@@ -232,6 +239,8 @@ export interface ItemInput {
   note?: string
   /** 有效期至（YYYY-MM-DD）；null 或 undefined 都是「没设置」 */
   expiresAt?: string | null
+  /** 所属活动合集的 id */
+  collectionIds?: string[]
 }
 
 /* ------------------------------------------------------------------ */
@@ -255,6 +264,14 @@ export interface DraftApplyItem {
   note: string
   /** 有效期至（YYYY-MM-DD）；null = 没设置 */
   expiresAt: string | null
+  /**
+   * 所属活动合集。
+   *
+   * 可选，而且**更新已有物品时不传就等于「保持原样」**（不是清空）——
+   * AI 现在还认不出活动，如果默认成空数组，那每次让 AI 改个名字
+   * 都会把物品身上的活动全抹掉。
+   */
+  collectionIds?: string[]
 }
 
 export interface ApplyDraftResult {
@@ -475,6 +492,22 @@ export interface AppState {
   renameTag: (from: string, to: string) => void
   deleteTag: (name: string) => void
 
+  /* 活动合集 */
+  /** 新建一个活动。返回它的 id（名字已存在时返回那个已有的 id） */
+  addCollection: (name: string, note?: string) => string | null
+  updateCollection: (id: string, patch: { name?: string; note?: string }) => void
+  /**
+   * 删掉一个活动。
+   *
+   * **只解除关联，绝不删物品** —— 删掉「旅行」不该把你为了旅行准备的充电宝也删了。
+   * 返回受影响的物品数，界面上如实告诉用户。
+   */
+  deleteCollection: (id: string) => number
+  /** 把一批物品加进某个活动（已在里面的自动跳过） */
+  addItemsToCollection: (itemIds: string[], collectionId: string) => number
+  /** 把一批物品从某个活动里移出 */
+  removeItemsFromCollection: (itemIds: string[], collectionId: string) => number
+
   /* 数据整体操作 */
   replaceAll: (next: AppData, reason: SnapshotReason, message?: string) => Promise<void>
   mergeAll: (incoming: AppData) => Promise<ImportReport>
@@ -611,6 +644,7 @@ export const useAppStore = create<AppState>()((set, get) => {
             attrs,
             note: entry.note ?? '',
             expiresAt,
+            collectionIds: entry.collectionIds ?? items[index].collectionIds,
             updatedAt: now,
           }
           updated++
@@ -628,6 +662,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           tags,
           attrs,
           note: entry.note ?? '',
+          collectionIds: entry.collectionIds ?? [],
           createdAt: now,
           updatedAt: now,
           idleAt: null,
@@ -727,6 +762,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         tags: uniq((input.tags ?? []).map((t) => t.trim()).filter(Boolean)),
         attrs: cleanAttrs(input.attrs),
         note: input.note ?? '',
+        collectionIds: uniq(input.collectionIds ?? []),
         createdAt: now,
         updatedAt: now,
         idleAt: status === 'idle' ? now : null,
@@ -768,6 +804,8 @@ export const useAppStore = create<AppState>()((set, get) => {
             : prev.tags,
         attrs: patch.attrs !== undefined ? cleanAttrs(patch.attrs) : prev.attrs,
         note: patch.note !== undefined ? patch.note : prev.note,
+        collectionIds:
+          patch.collectionIds !== undefined ? uniq(patch.collectionIds) : prev.collectionIds,
         expiresAt:
           patch.expiresAt !== undefined
             ? normalizeExpiryDate(patch.expiresAt)
@@ -1289,6 +1327,117 @@ export const useAppStore = create<AppState>()((set, get) => {
             : item,
         ),
       })
+    },
+
+    /* ---------------- 活动合集 ---------------- */
+
+    addCollection: (name, note = '') => {
+      const trimmed = name.trim()
+      if (trimmed === '') return null
+
+      const data = get().data
+      // 同名视为「就是它」，返回已有的 id：用户在弹框里手打一个已经存在的名字时，
+      // 期望的是「加进去」，而不是被提示重名再操作一遍
+      const existing = data.collections.find((c) => c.name === trimmed)
+      if (existing) return existing.id
+
+      const now = new Date().toISOString()
+      const collection: Collection = {
+        id: uid(),
+        name: trimmed,
+        note: note.trim(),
+        order: data.collections.length,
+        createdAt: now,
+      }
+      commit({ ...data, collections: [...data.collections, collection] })
+      return collection.id
+    },
+
+    updateCollection: (id, patch) => {
+      const data = get().data
+      const target = data.collections.find((c) => c.id === id)
+      if (!target) return
+
+      const name = patch.name === undefined ? target.name : patch.name.trim()
+      if (name === '') return // 名字不能清空 —— 一个没名字的活动在列表里没法认
+      // 重名就拒绝改名，否则列表里会出现两个「旅行」，谁也分不清
+      if (name !== target.name && data.collections.some((c) => c.name === name)) return
+
+      commit({
+        ...data,
+        collections: data.collections.map((c) =>
+          c.id === id ? { ...c, name, note: patch.note === undefined ? c.note : patch.note } : c,
+        ),
+      })
+    },
+
+    deleteCollection: (id) => {
+      const data = get().data
+      if (!data.collections.some((c) => c.id === id)) return 0
+
+      const now = new Date().toISOString()
+      let affected = 0
+      const items = data.items.map((item) => {
+        if (!item.collectionIds.includes(id)) return item
+        affected++
+        return {
+          ...item,
+          collectionIds: item.collectionIds.filter((c) => c !== id),
+          updatedAt: now,
+        }
+      })
+
+      commit({
+        ...data,
+        collections: data.collections.filter((c) => c.id !== id),
+        items,
+      })
+      return affected
+    },
+
+    addItemsToCollection: (itemIds, collectionId) => {
+      const idSet = new Set(itemIds)
+      if (idSet.size === 0) return 0
+      const data = get().data
+      if (!data.collections.some((c) => c.id === collectionId)) return 0
+
+      const now = new Date().toISOString()
+      let changed = 0
+      const items = data.items.map((item) => {
+        if (!idSet.has(item.id) || item.collectionIds.includes(collectionId)) return item
+        changed++
+        return {
+          ...item,
+          collectionIds: [...item.collectionIds, collectionId],
+          updatedAt: now,
+        }
+      })
+
+      if (changed === 0) return 0
+      commit({ ...data, items })
+      return changed
+    },
+
+    removeItemsFromCollection: (itemIds, collectionId) => {
+      const idSet = new Set(itemIds)
+      if (idSet.size === 0) return 0
+      const data = get().data
+
+      const now = new Date().toISOString()
+      let changed = 0
+      const items = data.items.map((item) => {
+        if (!idSet.has(item.id) || !item.collectionIds.includes(collectionId)) return item
+        changed++
+        return {
+          ...item,
+          collectionIds: item.collectionIds.filter((c) => c !== collectionId),
+          updatedAt: now,
+        }
+      })
+
+      if (changed === 0) return 0
+      commit({ ...data, items })
+      return changed
     },
 
     /* ---------------- 数据整体操作 ---------------- */

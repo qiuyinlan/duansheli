@@ -188,6 +188,15 @@ export const IconFolder = (p: IconProps) => (
   </Svg>
 )
 
+/** 活动合集：一只手提箱 ——「为了这件事要带上的那一箱东西」 */
+export const IconSuitcase = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="1.75" y="5.25" width="12.5" height="8.5" rx="1.5" />
+    <path d="M6 5.25V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.25" />
+    <path d="M1.75 8.75h12.5" />
+  </Svg>
+)
+
 export const IconAlert = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="8" cy="8" r="5.75" />

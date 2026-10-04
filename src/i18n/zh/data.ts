@@ -15,6 +15,7 @@ export const data = {
     location: '位置',
     category: '分类',
     attribute: '属性',
+    collection: '活动',
   },
 
   /* ---------------- 导入文件的校验 ---------------- */
@@ -26,12 +27,17 @@ export const data = {
     locationNoIdOrName: '发现一条缺少 id 或名称的位置，已跳过',
     categoryNoIdOrName: '发现一条缺少 id 或名称的分类，已跳过',
     attributeNoIdOrName: '发现一条缺少 id 或名称的属性，已跳过',
+    collectionNotObject: '发现一条不是有效对象的活动，已跳过',
+    collectionNoName: '发现一条没有名称的活动，已跳过',
+    collectionNoId: '活动「{name}」缺少 id，已跳过',
 
     duplicateId: '发现重复的{kind} id，已忽略后出现的那条',
     danglingLocation_one: '{count} 件物品指向了不存在的位置，已改为「未归位」',
     danglingLocation_other: '{count} 件物品指向了不存在的位置，已改为「未归位」',
     danglingCategory_one: '{count} 处分类引用已失效，已移除',
     danglingCategory_other: '{count} 处分类引用已失效，已移除',
+    danglingCollection_one: '{count} 处活动引用已失效，已移除',
+    danglingCollection_other: '{count} 处活动引用已失效，已移除',
     locationParentMissing: '位置「{name}」的上级位置不存在，已提升为顶层',
     categoryParentMissing: '分类「{name}」的上级分类不存在，已提升为顶层',
 

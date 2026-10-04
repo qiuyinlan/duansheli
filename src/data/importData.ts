@@ -289,13 +289,48 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
   // 兜底：物品上用到的标签也必须存在于标签表里，否则标签管理页会漏掉
   for (const item of items) for (const tag of item.tags) addTag(tag)
 
+  /* ---------------- 活动合集 ---------------- */
+  // 按 id 合并：id 相同就是同一个活动，保留现有的名字（用户自己改过的名字更可信），
+  // 只把没见过的补进来。名字相同但 id 不同时**不合并** —— 那可能是两人各自的「旅行」，
+  // 合并了会把两份清单混在一起，反而是破坏。
+  const collectionById = new Map(current.collections.map((c) => [c.id, c]))
+  const collections = current.collections.map((c) => ({ ...c }))
+  let collectionAdded = 0
+  let collectionUpdated = 0
+
+  // 先记下 id 映射，物品上的引用要跟着换
+  for (const incomingCollection of incoming.collections) {
+    const existing = collectionById.get(incomingCollection.id)
+    if (!existing) {
+      collectionById.set(incomingCollection.id, incomingCollection)
+      collections.push({ ...incomingCollection })
+      collectionAdded++
+      continue
+    }
+    // 只同步备注和排序；名字以小改大不划算，保留本地的
+    if (existing.note !== incomingCollection.note) {
+      const index = collections.findIndex((c) => c.id === existing.id)
+      if (index >= 0) {
+        collections[index] = { ...collections[index], note: incomingCollection.note }
+        collectionUpdated++
+      }
+    }
+  }
+
+  const collectionIds = new Set(collections.map((c) => c.id))
+  const itemsWithCollections = items.map((item) => {
+    const kept = item.collectionIds.filter((id) => collectionIds.has(id))
+    return kept.length === item.collectionIds.length ? item : { ...item, collectionIds: kept }
+  })
+
   const data: AppData = {
     schemaVersion: SCHEMA_VERSION,
-    items,
+    items: itemsWithCollections,
     categories,
     locations,
     attributeDefs,
     tags,
+    collections,
     updatedAt: now,
   }
 
@@ -310,6 +345,7 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
     },
     attributeDefs: { added: attrAdded, updated: attrMatched },
     tags: { added: tagAdded },
+    collections: { added: collectionAdded, updated: collectionUpdated },
     warnings,
   }
 

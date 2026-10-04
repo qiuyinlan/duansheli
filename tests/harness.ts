@@ -158,6 +158,7 @@ export function item(partial: Partial<Item> & { name: string }): Item {
     idleAt: partial.idleAt ?? null,
     discardedAt: partial.discardedAt ?? null,
     expiresAt: partial.expiresAt ?? null,
+    collectionIds: partial.collectionIds ?? [],
   }
 }
 

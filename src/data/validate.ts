@@ -4,6 +4,7 @@ import type {
   AttrValue,
   AttributeDef,
   Category,
+  Collection,
   Item,
   ItemStatus,
   Location,
@@ -107,6 +108,7 @@ function normalizeItem(raw: unknown, now: string, warn: string[], index: number)
     quantity: Math.max(1, Math.round(num(raw.quantity, 1))),
     status,
     tags: uniq(strArray(raw.tags).map((t) => t.trim()).filter(Boolean)),
+    collectionIds: uniq(strArray(raw.collectionIds)),
     attrs: normalizeAttrs(raw.attrs),
     note: str(raw.note),
     createdAt: isoDate(raw.createdAt, now),
@@ -199,6 +201,30 @@ function normalizeTag(raw: unknown, now: string): Tag | null {
   return { name, createdAt: isoDate(raw.createdAt, now) }
 }
 
+function normalizeCollection(raw: unknown, now: string, warn: string[]): Collection | null {
+  if (!isRecord(raw)) {
+    warn.push(t('data.validate.collectionNotObject'))
+    return null
+  }
+  const name = str(raw.name).trim()
+  if (name === '') {
+    warn.push(t('data.validate.collectionNoName'))
+    return null
+  }
+  const id = str(raw.id).trim()
+  if (id === '') {
+    warn.push(t('data.validate.collectionNoId', { name }))
+    return null
+  }
+  return {
+    id,
+    name,
+    note: str(raw.note),
+    order: num(raw.order, 0),
+    createdAt: isoDate(raw.createdAt, now),
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* 解析与校验                                                          */
 /* ------------------------------------------------------------------ */
@@ -275,6 +301,8 @@ export function parseExportFile(text: string): ParseOutcome {
   const rawCategories = Array.isArray(dataRaw.categories) ? dataRaw.categories : []
   const rawAttrDefs = Array.isArray(dataRaw.attributeDefs) ? dataRaw.attributeDefs : []
   const rawTags = Array.isArray(dataRaw.tags) ? dataRaw.tags : []
+  // v3 及更早的备份里没有 collections 字段 —— 读成空数组即可，不需要额外的迁移逻辑
+  const rawCollections = Array.isArray(dataRaw.collections) ? dataRaw.collections : []
 
   if (
     !Array.isArray(dataRaw.items) &&
@@ -318,6 +346,12 @@ export function parseExportFile(text: string): ParseOutcome {
     }
   }
 
+  const collections: Collection[] = []
+  for (const raw of rawCollections) {
+    const collection = normalizeCollection(raw, now, warnings)
+    if (collection) collections.push(collection)
+  }
+
   // 去重：id 重复时保留第一条，避免出现两个「同一个位置」
   const dedupe = <T extends { id: string }>(list: T[], kind: string): T[] => {
     const seen = new Set<string>()
@@ -337,14 +371,17 @@ export function parseExportFile(text: string): ParseOutcome {
   const dedupedLocations = dedupe(locations, t('data.kind.location'))
   const dedupedCategories = dedupe(categories, t('data.kind.category'))
   const dedupedAttrDefs = dedupe(attributeDefs, t('data.kind.attribute'))
+  const dedupedCollections = dedupe(collections, t('data.kind.collection'))
 
-  // 悬空引用修复：物品指向了不存在的位置/分类/属性
+  // 悬空引用修复：物品指向了不存在的位置/分类/属性/活动
   const locIds = new Set(dedupedLocations.map((l) => l.id))
   const catIds = new Set(dedupedCategories.map((c) => c.id))
   const attrIds = new Set(dedupedAttrDefs.map((a) => a.id))
+  const collectionIds = new Set(dedupedCollections.map((c) => c.id))
 
   let danglingLocations = 0
   let danglingCategories = 0
+  let danglingCollections = 0
   for (const item of dedupedItems) {
     if (item.locationId && !locIds.has(item.locationId)) {
       item.locationId = null
@@ -353,6 +390,11 @@ export function parseExportFile(text: string): ParseOutcome {
     const before = item.categoryIds.length
     item.categoryIds = item.categoryIds.filter((id) => catIds.has(id))
     danglingCategories += before - item.categoryIds.length
+
+    const beforeCollections = item.collectionIds.length
+    item.collectionIds = item.collectionIds.filter((id) => collectionIds.has(id))
+    danglingCollections += beforeCollections - item.collectionIds.length
+
     item.attrs = Object.fromEntries(
       Object.entries(item.attrs).filter(([key]) => attrIds.has(key)),
     )
@@ -362,6 +404,9 @@ export function parseExportFile(text: string): ParseOutcome {
   }
   if (danglingCategories > 0) {
     warnings.push(tc(danglingCategories, 'data.validate.danglingCategory'))
+  }
+  if (danglingCollections > 0) {
+    warnings.push(tc(danglingCollections, 'data.validate.danglingCollection'))
   }
 
   // 位置父子引用修复
@@ -389,6 +434,7 @@ export function parseExportFile(text: string): ParseOutcome {
     locations: dedupedLocations,
     attributeDefs: dedupedAttrDefs,
     tags,
+    collections: dedupedCollections,
     updatedAt: now,
   }
 

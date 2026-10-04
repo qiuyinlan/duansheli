@@ -72,6 +72,13 @@ export const SECTION_THEMES: Record<string, SectionTheme> = {
     accentText: '#6d28d9',
     accentSoft: '#f5f3ff',
   },
+  /* 活动合集 */
+  collections: {
+    key: 'collections',
+    accent: '#0284c7',
+    accentText: '#0369a1',
+    accentSoft: '#f0f9ff',
+  },
   /* 分类 */
   categories: {
     key: 'categories',
@@ -111,6 +118,7 @@ export function sectionKeyForPath(pathname: string): string {
   if (pathname.startsWith('/locations')) return 'locations'
   if (pathname.startsWith('/idle')) return 'idle'
   if (pathname.startsWith('/expiry')) return 'expiry'
+  if (pathname.startsWith('/collections')) return 'collections'
   if (pathname.startsWith('/ai')) return 'ai'
   if (pathname.startsWith('/categories')) return 'categories'
   if (pathname.startsWith('/attributes')) return 'attributes'

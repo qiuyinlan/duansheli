@@ -7,6 +7,7 @@ import {
   IconGear,
   IconSettings,
   IconSparkle,
+  IconSuitcase,
   IconTag,
 } from '../components/ui/icons'
 import { useT } from '../i18n'
@@ -43,6 +44,13 @@ export function More() {
           : t('more.expiryMetaClear'),
       Icon: IconClock,
       desc: t('more.expiryDesc'),
+    },
+    {
+      to: '/collections',
+      label: t('nav.collections'),
+      meta: t('more.count', { count: data.collections.length }),
+      Icon: IconSuitcase,
+      desc: t('more.collectionsDesc'),
     },
     {
       to: '/categories',

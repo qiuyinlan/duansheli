@@ -11,7 +11,7 @@
 import { buildExportFile } from '../src/data/exportJson'
 import { parseExportFile } from '../src/data/validate'
 import { createSeedData } from '../src/storage/seed'
-import type { AppData, AttrValue, Category, Item, ItemStatus } from '../src/types'
+import type { AppData, AttrValue, Category, Collection, Item, ItemStatus } from '../src/types'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -41,6 +41,12 @@ const EXTRA_CATEGORIES: Array<{ name: string; parent: string | null }> = [
   { name: '数据线', parent: '数码配件' },
 ]
 
+/* ------------------------------------------------------------------ */
+/* 活动合集（示例数据用）                                              */
+/* ------------------------------------------------------------------ */
+
+const SAMPLE_COLLECTIONS = ['旅行', '学习', '搬家']
+
 interface Spec {
   name: string
   quantity?: number
@@ -54,6 +60,8 @@ interface Spec {
   note?: string
   /** 有效期还有几天。负数表示已经过期了。不填 = 没设置有效期 */
   expiresInDays?: number
+  /** 所属活动合集的**名字**（SAMPLE_COLLECTIONS 里的） */
+  collections?: string[]
 }
 
 /**
@@ -95,7 +103,7 @@ const ITEMS: Spec[] = [
   { name: '台灯', categories: ['电子'], location: '书房/书桌', attrs: { 品牌: '小米', 价格: 199 } },
 
   // ---- 书籍 ----
-  { name: '《人类简史》', categories: ['书籍'], location: '书房/书架', attrs: { 购入日期: '2021-06-01' } },
+  { name: '《人类简史》', categories: ['书籍'], location: '书房/书架', attrs: { 购入日期: '2021-06-01' }, collections: ['学习'] },
   { name: '《设计中的设计》', categories: ['书籍'], location: '书房/书架' },
 
   // ---- 厨房 ----
@@ -109,7 +117,7 @@ const ITEMS: Spec[] = [
   { name: '创可贴', categories: ['药品'], status: 'idle', idleDays: 300, expiresInDays: -200 },
 
   // ---- 文具 / 工具 ----
-  { name: '中性笔', quantity: 5, categories: ['文具'], location: '书房/书桌' },
+  { name: '中性笔', quantity: 5, categories: ['文具'], location: '书房/书桌', collections: ['学习'] },
   { name: '螺丝刀套装', categories: ['工具'], location: '储物间/收纳箱', attrs: { 品牌: '博世' } },
   { name: '锤子', categories: ['工具'], location: '储物间/收纳箱' },
 
@@ -124,8 +132,8 @@ const ITEMS: Spec[] = [
   { name: '老照片', categories: ['纪念品'], location: '储物间/收纳箱', status: 'idle', idleDays: 500 },
 
   // ---- 边界情况 ----
-  { name: '折叠椅', location: '阳台', note: '还没想好归到哪一类' }, // 未分类
-  { name: '户外帐篷', categories: ['工具', '纪念品'], location: '储物间/货架', attrs: { 价格: 680 } }, // 多分类
+  { name: '折叠椅', location: '阳台', note: '还没想好归到哪一类', collections: ['旅行'] }, // 未分类 + 属于活动
+  { name: '户外帐篷', categories: ['工具', '纪念品'], location: '储物间/货架', attrs: { 价格: 680 }, collections: ['旅行'] }, // 多分类 + 活动
   { name: '旧拖鞋', categories: ['日用品'], status: 'discarded', note: '已经扔了，留个记录' }, // 进回收站
   { name: '只剩一只的手套', categories: ['衣物'], status: 'idle', idleDays: 620, tags: ['想送人'] },
 
@@ -139,7 +147,7 @@ const ITEMS: Spec[] = [
   { name: '化妆包', categories: ['化妆品'], note: '挂在中间层 —— 它算不上眼妆也算不上唇妆' },
 
   // ---- 多级分类：数码配件 › 数据线 ----
-  { name: 'USB-C 数据线', quantity: 3, categories: ['数码配件/数据线'], location: '书房/书桌', attrs: { 价格: 29 } },
+  { name: 'USB-C 数据线', quantity: 3, categories: ['数码配件/数据线'], location: '书房/书桌', attrs: { 价格: 29 }, collections: ['旅行', '学习'] },
   { name: 'Lightning 数据线', categories: ['数码配件/数据线'], location: '书房/书桌', status: 'idle', idleDays: 260 },
 ]
 
@@ -198,6 +206,21 @@ export function buildSampleBackup(): SampleBackupResult {
     })
     rebuildIndex()
   }
+
+  /*
+   * 活动合集：示例数据里给两个，好让「活动」页一导入就有东西可看。
+   *
+   * 种子数据（首次启动那套脚手架）里**故意不放**这些东西 ——
+   * 给不旅行的人塞一个「旅行」只是噪音。但示例数据是**演示用**的，
+   * 该把功能的用法直接摆出来。
+   */
+  const collections: Collection[] = SAMPLE_COLLECTIONS.map((name, index) => ({
+    id: `sample-collection-${index + 1}`,
+    name,
+    note: '',
+    order: index,
+    createdAt: now,
+  }))
 
   /* ---------------- 再解析物品里的引用 ---------------- */
 
@@ -268,6 +291,15 @@ export function buildSampleBackup(): SampleBackupResult {
     return found.id
   }
 
+  const collectionId = (name: string): string | null => {
+    const found = collections.find((c) => c.name === name)
+    if (!found) {
+      warnings.push(`活动「${name}」在示例数据里没定义，已忽略`)
+      return null
+    }
+    return found.id
+  }
+
   const items: Item[] = ITEMS.map((spec, index) => {
     const createdAt = daysAgo(ITEMS.length - index + 1)
     const status: ItemStatus = spec.status ?? 'active'
@@ -290,6 +322,9 @@ export function buildSampleBackup(): SampleBackupResult {
       tags: spec.tags ?? [],
       attrs,
       note: spec.note ?? '',
+      collectionIds: (spec.collections ?? [])
+        .map(collectionId)
+        .filter((id): id is string => id !== null),
       createdAt,
       updatedAt: createdAt,
       idleAt: status === 'idle' ? daysAgo(spec.idleDays ?? 30) : null,
@@ -299,7 +334,7 @@ export function buildSampleBackup(): SampleBackupResult {
     }
   })
 
-  const data: AppData = { ...seed, categories, items }
+  const data: AppData = { ...seed, categories, collections, items }
 
   // 生成之后立刻用真实的导入校验读回来对比 —— 不通过就说明这份示例数据是坏的，
   // 宁可当场炸掉，也不要把一个导不进去的文件交给用户。

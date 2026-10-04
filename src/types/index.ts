@@ -11,12 +11,14 @@ export const APP_ID = 'duansheli'
  *
  * v1 → v2：分类从扁平变成不限层级的树（Category 增加 parentId）。
  * v2 → v3：物品增加 expiresAt（有效期至）。
+ * v3 → v4：新增活动合集（AppData.collections + Item.collectionIds）。
  *
  * 升版本号是为了保护老程序：它拿到更高版本的备份会**明确拒绝**并提示升级，
  * 而不是静默把不认识的字段丢掉 —— 静默丢字段是最糟的，用户会以为备份是完整的。
- * 反过来老备份能正常导入新程序，缺的字段按默认值补齐（分类全是顶层、有效期为空）。
+ * 反过来老备份能正常导入新程序，缺的字段按默认值补齐
+ * （分类全是顶层、有效期为空、不属于任何活动）。
  */
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 /* ------------------------------------------------------------------ */
 /* 物品                                                                */
@@ -46,6 +48,13 @@ export interface Item {
   status: ItemStatus
   /** 自由标签 */
   tags: string[]
+  /**
+   * 所属的活动合集 id（旅行 / 学习 这类）。
+   *
+   * 和 categoryIds 一样是多对多：充电宝既在「旅行」也在「出差」很正常。
+   * 删掉一个活动只会把这里的那一项去掉，**不会删物品**。
+   */
+  collectionIds: string[]
   /** 稀疏字典：key = AttributeDef.id，只存真正填了值的属性 */
   attrs: Record<string, AttrValue>
   note: string
@@ -125,6 +134,39 @@ export interface Tag {
 }
 
 /* ------------------------------------------------------------------ */
+/* 活动合集                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 活动合集：回答「要做这件事，需要哪些东西」，如 旅行 / 学习 / 搬家。
+ *
+ * ── 为什么单独立一个实体，而不是拿标签凑合 ────────────────────────
+ * 标签是「情境标记」，回答的是「这件东西对我意味着什么」（想送人、舍不得扔），
+ * 一件东西身上挂几个都很自然。活动合集是**一份清单**，回答的是
+ * 「为了这件事我要凑齐哪些东西」，它自己是一个可以浏览、可以核对的整体。
+ *
+ * 混在一起的直接坏处：拿标签当活动的话，「旅行」会和「想送人」并排出现在
+ * 标签筛选里，两个完全不同性质的维度被压成一层，越用越乱。
+ *
+ * ── 为什么用 id 而不是名字（标签是用名字的）─────────────────────
+ * 因为活动会被改名，而且改名不该牵动物品。用 id 就只是改一个字段；
+ * 用名字的话每次改名都得全表扫一遍把旧名字换掉（标签现在就是这么做的）。
+ *
+ * ── 和分类的关系 ────────────────────────────────────────────────
+ * 一件东西可以同时属于多个活动（充电宝既在「旅行」也在「出差」），
+ * 和「一件东西可以属于多个分类」是同一个形状。
+ */
+export interface Collection {
+  id: string
+  name: string
+  /** 自由备注，例如「三天两夜，爬山」 */
+  note: string
+  /** 手动排序 */
+  order: number
+  createdAt: string
+}
+
+/* ------------------------------------------------------------------ */
 /* 属性库                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -157,6 +199,8 @@ export interface AppData {
   locations: Location[]
   attributeDefs: AttributeDef[]
   tags: Tag[]
+  /** 活动合集（旅行 / 学习 这类） */
+  collections: Collection[]
   updatedAt: string
 }
 
@@ -199,6 +243,7 @@ export interface ExportFile {
     locations: number
     attributeDefs: number
     tags: number
+    collections: number
   }
   data: {
     items: Item[]
@@ -206,6 +251,7 @@ export interface ExportFile {
     locations: Location[]
     attributeDefs: AttributeDef[]
     tags: Tag[]
+    collections: Collection[]
   }
 }
 
@@ -218,6 +264,7 @@ export interface ImportReport {
   locations: { added: number; updated: number; created: number }
   attributeDefs: { added: number; updated: number }
   tags: { added: number }
+  collections: { added: number; updated: number }
   /** 合并时因引用缺失而自动补建的位置（给人看的提示） */
   warnings: string[]
 }

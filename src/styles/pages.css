@@ -393,6 +393,47 @@
   flex-shrink: 0;
 }
 
+/* ---------------- 活动合集 ---------------- */
+
+/*
+ * 活动列表的一行。
+ *
+ * 注意 `list-row__main` 本身已经写了 text-align: left（那是「整行宽的按钮」
+ * 必须自己写的一句，见 global.css 里 button reset 的注释），所以这里不用再写。
+ */
+.collection-row {
+  gap: var(--gap-2);
+}
+
+.collection-row__icon {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-right: 6px;
+  color: var(--accent-text);
+}
+
+/* 详情页左上角的「返回全部活动」面包屑 */
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  margin-bottom: var(--gap-2);
+  text-align: left;
+}
+
+.crumb:hover {
+  color: var(--accent-text);
+}
+
+/* 列表行右侧那个箭头（分类/位置的树里也有类似的东西，这里是平铺列表用） */
+.list-row__caret {
+  display: flex;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
 /* ---------------- 分类 / 属性 / 标签管理 ---------------- */
 
 .manage-row {

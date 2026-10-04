@@ -13,6 +13,7 @@ export function createEmptyData(): AppData {
     locations: [],
     attributeDefs: [],
     tags: [],
+    collections: [],
     updatedAt: new Date().toISOString(),
   }
 }
@@ -150,6 +151,15 @@ export function createSeedData(lang: Lang = getLang()): AppData {
     locations,
     attributeDefs,
     tags,
+    /*
+     * 活动合集**故意不预置**。
+     *
+     * 分类和位置能预置，是因为「家里有哪些房间、东西分几类」几乎是共通的；
+     * 但活动完全因人而异 —— 给不旅行的人塞一个「旅行」只会是噪音，
+     * 而且空的合集比没有更让人困惑（「这个旅行是干嘛的？」）。
+     * 所以留空，让页面上的空状态去解释它能干什么。
+     */
+    collections: [],
     updatedAt: now,
   }
 }

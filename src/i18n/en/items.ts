@@ -58,6 +58,7 @@ export const items = {
   backToActive: 'Back to in use',
   moveLocation: 'Move',
   addTags: 'Add tags',
+  addToCollection: 'Add to collection',
   discard: 'Discard',
   selectAllShown: 'Select all {count} shown',
   batchStatus_one: 'Marked {count} item as “{status}”',

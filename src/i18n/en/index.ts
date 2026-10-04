@@ -16,6 +16,7 @@ import { ai } from './ai'
 import { attributes } from './attributes'
 import { categories } from './categories'
 import { chart } from './chart'
+import { collections } from './collections'
 import { common } from './common'
 import { data } from './data'
 import { expiry } from './expiry'
@@ -46,6 +47,7 @@ export const en: Dict = {
   categories,
   attributes,
   tags,
+  collections,
   tree,
   chart,
   idle,

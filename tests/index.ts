@@ -13,6 +13,7 @@ import './dom'
 
 import './smoke'
 import './expiry'
+import './collections'
 import './ai'
 import './i18n'
 import './render'

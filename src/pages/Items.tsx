@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { FilterPanel } from '../components/FilterPanel'
 import { ItemRow } from '../components/ItemRow'
+import { AddToCollectionDialog } from './Collections'
 import { LocationPicker, TagInput } from '../components/pickers'
 import { IconChevronRight, IconTrash } from '../components/ui/icons'
 import { Button, ConfirmDialog, EmptyState, Modal, SearchInput } from '../components/ui/primitives'
@@ -104,6 +105,7 @@ export function Items() {
   const batchSetStatus = useAppStore((s) => s.batchSetStatus)
   const batchMoveToLocation = useAppStore((s) => s.batchMoveToLocation)
   const batchAddTag = useAppStore((s) => s.batchAddTag)
+  const addItemsToCollection = useAppStore((s) => s.addItemsToCollection)
   const notify = useAppStore((s) => s.notify)
 
   // useT() 一方面给 t/tc，另一方面**订阅语言**：语言一换这个组件就重渲染。
@@ -121,6 +123,7 @@ export function Items() {
   const [moveOpen, setMoveOpen] = useState(false)
   const [tagOpen, setTagOpen] = useState(false)
   const [batchTagDraft, setBatchTagDraft] = useState<string[]>([])
+  const [collectionOpen, setCollectionOpen] = useState(false)
   const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false)
 
   // URL 是「从别处跳进来」时的唯一真源；之后再手动改筛选不会写回 URL，
@@ -552,6 +555,9 @@ export function Items() {
           >
             {t('items.addTags')}
           </Button>
+          <Button size="sm" onClick={() => setCollectionOpen(true)}>
+            {t('items.addToCollection')}
+          </Button>
           <Button size="sm" onClick={() => setConfirmDiscardOpen(true)}>
             {t('items.discard')}
           </Button>
@@ -641,6 +647,30 @@ export function Items() {
           suggestions={tagSuggestions}
         />
       </Modal>
+
+      <AddToCollectionDialog
+        open={collectionOpen}
+        itemCount={selectedIds.length}
+        onClose={() => setCollectionOpen(false)}
+        onPick={(collection) => {
+          const added = addItemsToCollection(selectedIds, collection.id)
+          const skipped = selectedIds.length - added
+          notify(
+            added === 0
+              ? t('collections.alreadyAll', { count: skipped, name: collection.name })
+              : skipped > 0
+                ? t('collections.addPartial', {
+                    added,
+                    skipped,
+                    name: collection.name,
+                  })
+                : t('collections.addedToast', { count: added, name: collection.name }),
+            added === 0 ? 'info' : 'success',
+          )
+          setSelected(new Set())
+          setCollectionOpen(false)
+        }}
+      />
 
       <ConfirmDialog
         open={confirmDiscardOpen}

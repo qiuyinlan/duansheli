@@ -14,6 +14,9 @@ export const more = {
   expiryMetaClear: 'Nothing due soon',
   expiryDesc: 'Sorted by expiry — the most urgent first',
 
+  /* Collections */
+  collectionsDesc: 'Trip, course, moving — the things one occasion needs',
+
   /* Manage pages */
   categoriesDesc: 'The fixed category list you maintain yourself',
   attributesDesc: 'Brand, purchase date, price… switch on the ones you need',

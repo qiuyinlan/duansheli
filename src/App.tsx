@@ -5,6 +5,7 @@ import { Button } from './components/ui/primitives'
 import { Attributes } from './pages/Attributes'
 import { Ai } from './pages/Ai'
 import { Categories } from './pages/Categories'
+import { Collections } from './pages/Collections'
 import { Expiry } from './pages/Expiry'
 import { Idle } from './pages/Idle'
 import { ItemEdit } from './pages/ItemEdit'
@@ -32,6 +33,8 @@ export function AppRoutes() {
         <Route path="locations" element={<Locations />} />
         <Route path="idle" element={<Idle />} />
         <Route path="expiry" element={<Expiry />} />
+        <Route path="collections" element={<Collections />} />
+        <Route path="collections/:id" element={<Collections />} />
         <Route path="ai" element={<Ai />} />
         <Route path="more" element={<More />} />
         <Route path="categories" element={<Categories />} />

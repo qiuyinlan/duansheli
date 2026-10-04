@@ -16,6 +16,7 @@ export const data = {
     location: 'place',
     category: 'category',
     attribute: 'attribute',
+    collection: 'collection',
   },
 
   /* ---------------- Import file validation ---------------- */
@@ -27,6 +28,9 @@ export const data = {
     locationNoIdOrName: 'A place is missing its id or name; skipped',
     categoryNoIdOrName: 'A category is missing its id or name; skipped',
     attributeNoIdOrName: 'An attribute is missing its id or name; skipped',
+    collectionNotObject: 'A collection is not a valid object; skipped',
+    collectionNoName: 'A collection has no name; skipped',
+    collectionNoId: 'Collection "{name}" is missing its id; skipped',
 
     duplicateId: 'Duplicate {kind} id found; the later one was ignored',
     danglingLocation_one: '{count} item pointed to a place that does not exist; set to "No place"',
@@ -34,6 +38,8 @@ export const data = {
       '{count} items pointed to a place that does not exist; set to "No place"',
     danglingCategory_one: '{count} stale category reference removed',
     danglingCategory_other: '{count} stale category references removed',
+    danglingCollection_one: '{count} stale collection reference removed',
+    danglingCollection_other: '{count} stale collection references removed',
     locationParentMissing:
       '"{name}" had a parent place that does not exist; moved to the top level',
     categoryParentMissing:

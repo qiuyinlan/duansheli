@@ -488,6 +488,7 @@ await test('每个页面在英文下都挂得住（漏订阅语言的组件会�
     '/locations',
     '/idle',
     '/expiry',
+    '/collections',
     '/ai',
     '/more',
     '/categories',
@@ -608,6 +609,75 @@ await test('语言开关在两种布局里各有一个，任何屏幕宽度下�
   }
 })
 
+await test('活动页：空数据时给引导，有活动时列出来', () => {
+  // 空活动
+  withPage('/collections', createEmptyData(), (_container, html) => {
+    contains(html, '还没有任何活动')
+    contains(html, '新建活动')
+  })
+
+  // 两个活动，一个有内容一个是空的
+  const data = fixture()
+  data.collections = [
+    { id: 'c1', name: '旅行', note: '', order: 0, createdAt: '2026-01-01T00:00:00.000Z' },
+    { id: 'c2', name: '学习', note: '备考', order: 1, createdAt: '2026-01-01T00:00:00.000Z' },
+  ]
+  data.items[0] = { ...must(data.items[0], 'i1'), collectionIds: ['c1'] }
+
+  withPage('/collections', data, (_container, html) => {
+    contains(html, '旅行')
+    contains(html, '学习')
+    contains(html, '备考')
+    // 空活动也要列出来，并且明说它是空的 —— 不能悄悄藏起来让用户以为没建上
+    contains(html, '空的')
+  })
+})
+
+await test('活动详情页：列出里面的东西，并给出「移出」而不是「删除」', () => {
+  const data = fixture()
+  data.collections = [
+    { id: 'c1', name: '旅行', note: '三天两夜', order: 0, createdAt: '2026-01-01T00:00:00.000Z' },
+  ]
+  data.items[0] = { ...must(data.items[0], 'i1'), collectionIds: ['c1'] }
+
+  withPage('/collections/c1', data, (_container, html) => {
+    contains(html, '旅行')
+    contains(html, '三天两夜')
+    contains(html, '灰色羊毛衫', '活动里的东西要列出来')
+    contains(html, '移出', '按钮该是「移出」，不是「删除」')
+    contains(html, '全部活动', '要有回去的路')
+  })
+})
+
+await test('活动详情页：活动不存在时给可读提示，而不是白屏', () => {
+  withPage('/collections/根本不存在的id', fixture(), (_container, html) => {
+    contains(html, '全部活动')
+  })
+})
+
+await test('活动页在英文下也挂得住', () => {
+  const data = fixture()
+  data.collections = [
+    { id: 'c1', name: '旅行', note: '', order: 0, createdAt: '2026-01-01T00:00:00.000Z' },
+  ]
+  setLang('en')
+  try {
+    withPage('/collections', data, (_container, html) => {
+      contains(html, 'Collections')
+      contains(html, 'New collection')
+      // 用户自己起的活动名不能被翻译
+      contains(html, '旅行')
+    })
+
+    // 空状态那一条换一份空数据来验
+    withPage('/collections', createEmptyData(), (_container, html) => {
+      contains(html, 'No collections yet')
+    })
+  } finally {
+    setLang('zh')
+  }
+})
+
 /* ------------------------------------------------------------------ */
 /* 本地小工具                                                          */
 /* ------------------------------------------------------------------ */
@@ -629,5 +699,6 @@ function makeItem(partial: Partial<Item> & { name: string }): Item {
     idleAt: partial.idleAt ?? null,
     discardedAt: partial.discardedAt ?? null,
     expiresAt: partial.expiresAt ?? null,
+    collectionIds: partial.collectionIds ?? [],
   }
 }
