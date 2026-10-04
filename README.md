@@ -54,7 +54,7 @@ npm run dev     # 启动开发服务器，打开提示的地址即可
 ```bash
 npm run build      # 类型检查 + 打包到 dist/
 npm run preview    # 本地预览打包结果
-npm test           # 运行测试（415 项）
+npm test           # 运行测试（417 项）
 npm run typecheck  # 只做类型检查
 npm run audit:i18n # 检查有没有漏翻的中文、两份词典是否对齐
 npm run check      # 上面三样一起跑（提交前跑这个）
@@ -694,13 +694,13 @@ UI 组件全部手写 —— 因为「极简无彩色」的风格自己写反而
 │  ├─ components/                外壳、位置树、物品行、选择器、AI 预览、语言开关、UI 基础件
 │  ├─ pages/                     15 个页面
 │  └─ styles/                    global / layout / components / pages
-└─ tests/                        415 项测试
+└─ tests/                        417 项测试
 ```
 
 ### 测试
 
 ```bash
-npm test            # 415 项
+npm test            # 417 项
 npm run audit:i18n  # 漏翻的中文与词典对齐
 npm run check       # 类型检查 + 上面两样，提交前跑这个
 ```

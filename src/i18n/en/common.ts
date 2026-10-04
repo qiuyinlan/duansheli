@@ -93,6 +93,7 @@ export const common = {
   crashHint:
     'The page could not be drawn, but your data is not lost — it stays in the browser database and a refresh usually brings it back. The line below is the exact reason; copy it to the developer.',
   crashGoHome: 'Back to overview',
+  crashWhere: 'Where it broke (component stack):',
 
   /* Small marker after a name, e.g. "Garage / Shelf (new)" */
   newSuffix: ' (new)',

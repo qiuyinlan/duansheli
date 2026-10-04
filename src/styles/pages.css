@@ -146,6 +146,13 @@
   text-align: left;
 }
 
+/* 组件栈通常有好几行，限一下高度别把按钮挤出屏幕 */
+.crash-detail--where {
+  max-height: 30vh;
+  overflow: auto;
+  color: var(--text-3);
+}
+
 /* ---------------- 左右分栏（位置页） ---------------- */
 
 .split {

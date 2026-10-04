@@ -688,6 +688,67 @@ await test('认不出来的状态值也不会让页面崩', async () => {
   }
 })
 
+suite('崩溃的根因：状态里少了个键也不能崩')
+
+await test('**saveFailure 是 undefined 时也不能崩**（用户报的那个白屏）', () => {
+  /*
+   * 这一条是照着一个真实事故写的。
+   *
+   * 当时的代码是 `saveFailure !== null ? ... saveFailure.message ...`，
+   * 而 **`undefined !== null` 是 true** —— 于是只要它是 undefined，
+   * 下一行读 `.message` 就抛
+   * 「Cannot read properties of undefined (reading 'message')」，
+   * ErrorBoundary 兜住之前，那就是一整片白屏。
+   *
+   * undefined 从哪来：开发时 Vite 热更新会留下**旧版本的 store 实例**，
+   * 新加的字段在老实例上根本不存在。这类「状态里少了个键」的情况
+   * 在生产里也可能出现（比如从旧版本的结构化存储里恢复状态）。
+   *
+   * 本来该用 `!=` 或者 `?? null` 归一化 —— 一个字符的事，
+   * 但纯靠脑子想是想不到的，所以把它钉成用例。
+   */
+  useAppStore.setState({ saveFailure: undefined as unknown as null })
+  try {
+    for (const route of ROUTES) {
+      withPage(route.path, fixture(), (_container, html) => {
+        ok(html.length > 600, `${route.label} 在 saveFailure 为 undefined 时崩了`)
+      })
+    }
+  } finally {
+    useAppStore.setState({ saveFailure: null })
+  }
+})
+
+await test('出错屏上要指出是哪个组件崩的（只有 message 不够用）', () => {
+  // 「读了 undefined 的某个属性」这种错误，光看 message 根本看不出是哪一行。
+  // 组件栈直接点名，这是复现和自己修的关键线索。
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  const originalConsoleError = console.error
+  console.error = () => {}
+
+  try {
+    act(() => {
+      root.render(
+        <ErrorBoundary>
+          <Boom />
+        </ErrorBoundary>,
+      )
+    })
+
+    const text = container.textContent ?? ''
+    contains(text, '出错的位置', '要有一个小标题说明下面这段是什么')
+    contains(text, 'Boom', '组件栈里应该点名是 Boom 崩的')
+  } finally {
+    console.error = originalConsoleError
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  }
+})
+
 suite('渲染冒烟：空数据与边界情况')
 
 await test('完全没有数据时，每个页面都能渲染（显示引导而不是崩掉）', () => {

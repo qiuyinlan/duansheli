@@ -8,6 +8,8 @@ interface Props {
 
 interface State {
   error: Error | null
+  /** React 给的组件栈 —— 出错的是**哪个组件**，这才是最有用的一条线索 */
+  where: string | null
 }
 
 /**
@@ -24,15 +26,19 @@ interface State {
  *     能画出一个像样的界面，也就能把用户引导回去）
  */
 export class ErrorBoundary extends Component<Props, State> {
-  state: State = { error: null }
+  state: State = { error: null, where: null }
 
   static getDerivedStateFromError(error: Error): State {
-    return { error }
+    return { error, where: null }
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
+    // 组件栈记下来并显示出来。只有 error.message 往往看不出是哪儿 ——
+    // 「读了 undefined 的某个属性」这种错，必须知道是哪一行读的。
+    this.setState({ where: info.componentStack ?? null })
+
     /*
-     * 留在控制台里 —— 前面那段组件栈是排查时最有用的东西。
+     * 留在控制台里 —— 那里有更完整的组件栈（带源码位置）。
      *
      * 这句**故意用英文**：它是给开发者看的，不是界面文案。
      * （而且 audit:i18n 会把 src 里的中文都当成「漏翻」，
@@ -47,12 +53,17 @@ export class ErrorBoundary extends Component<Props, State> {
 
   private goHome = () => {
     window.location.hash = '#/'
-    this.setState({ error: null })
+    this.setState({ error: null, where: null })
   }
 
   render(): ReactNode {
-    const { error } = this.state
-    if (error === null) return this.props.children
+    const { error, where } = this.state
+    /*
+     * 用 `== null` 而不是 `=== null`：这个屏幕**自己绝对不能崩**，
+     * 它崩了就是一整片白屏 —— 正是它存在的意义所在。
+     * （`undefined === null` 是 false，会走到下面去读 `error.name`。）
+     */
+    if (error == null) return this.props.children
 
     return (
       <div className="center-screen">
@@ -70,6 +81,16 @@ export class ErrorBoundary extends Component<Props, State> {
           而我唯一能据以定位的东西 —— 藏起来只会让下一次更难查。
         */}
         <pre className="crash-detail">{`${error.name}: ${error.message}`}</pre>
+        {/*
+          组件栈同样贴出来。「读了 undefined 的 message」这种错误，
+          只靠 message 本身根本看不出是哪一行 —— 而组件栈直接点名。
+        */}
+        {where !== null && where !== '' ? (
+          <>
+            <div className="tiny dim">{t('common.crashWhere')}</div>
+            <pre className="crash-detail crash-detail--where">{where.trim()}</pre>
+          </>
+        ) : null}
         <div className="row">
           <Button variant="primary" onClick={this.goHome}>
             {t('common.crashGoHome')}

@@ -132,7 +132,18 @@ export function AppShell() {
   const data = useAppStore((s) => s.data)
   const lastExportAt = useAppStore((s) => s.ui.lastExportAt)
   const expirySoonDays = useAppStore((s) => s.ui.expirySoonDays)
-  const saveFailure = useAppStore((s) => s.saveFailure)
+  /*
+   * ⚠️ 这里要 `?? null` 归一化，不能直接信 state。
+   *
+   * 原来写的是 `saveFailure !== null ? ... saveFailure.message ...`，
+   * 而 **`undefined !== null` 是 true** —— 于是只要 saveFailure 是 undefined，
+   * 下一行读 `.message` 就抛
+   * 「Cannot read properties of undefined (reading 'message')」，整个应用白屏。
+   *
+   * undefined 是真实存在的：开发时 Vite 热更新会留下**旧版本的 store 实例**
+   * （新加的字段在老实例上根本不存在）。用一个 `!=` 判断就少踩一个坑。
+   */
+  const saveFailure = useAppStore((s) => s.saveFailure ?? null)
   const retrySave = useAppStore((s) => s.retrySave)
   const setUi = useAppStore((s) => s.setUi)
   const notify = useAppStore((s) => s.notify)

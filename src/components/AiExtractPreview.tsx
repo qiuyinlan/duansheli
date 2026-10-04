@@ -254,7 +254,7 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
                 用户要能一眼看见「闲置」被当成了状态，而不是一个标签。
                 status 为 null（AI 没提）= 不动原有状态，所以不显示。
               */}
-              {draft.status !== null ? (
+              {draft.status != null ? (
                 <div className="ai-row__line">
                   <span className="ai-row__label">{t('ai.fieldStatus')}</span>
                   <span className="chip is-active">{statusLabel(draft.status)}</span>
