@@ -82,6 +82,18 @@ export const data = {
     transactionAborted: 'The database transaction was aborted',
     cloudNotReady: 'Cloud storage is coming in a later version; use local storage for now.',
     saveFailed: 'Could not save locally: {message}',
+    /*
+     * The banner that STAYS on screen after a failed write.
+     *
+     * How it differs from the toast above: the toast disappears, the banner
+     * does not. "This change was not saved" must not be forgotten three
+     * seconds later, because what you see on screen looks perfectly fine.
+     */
+    saveFailedBanner:
+      'This change could not be saved locally: {message}. The usual cause is the browser closing the database connection (another tab, cleared site data, or storage being reclaimed). What you see is still in memory, but a refresh will lose it — hit "Try saving again".',
+    saveFailedRetry: 'Try saving again',
+    saveFailedExport: 'Export a backup first',
+    saveRetryOk: 'Saved',
     fileReadFailed: 'Could not read the file',
   },
 

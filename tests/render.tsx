@@ -15,7 +15,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { App, AppRoutes } from '../src/App'
 import { createEmptyData } from '../src/storage/seed'
 import { createDerived } from '../src/store/selectors'
-import { useAppStore } from '../src/store/useAppStore'
+import { flushWrites, useAppStore } from '../src/store/useAppStore'
 import { clearAiSession, useAiSessionStore } from '../src/store/useAiSessionStore'
 import { setLang } from '../src/i18n'
 import { ConfirmDialog } from '../src/components/ui/primitives'
@@ -348,6 +348,85 @@ await test('「新对话」按钮真的能把会话清掉', () => {
   } finally {
     page.unmount()
     clearAiSession()
+  }
+})
+
+suite('落盘失败的横幅（不许悄悄丢数据）')
+
+/**
+ * 落盘失败是**最危险的静默失败**：界面已经按新数据渲染好了，
+ * 看起来一切正常，但刷新就没了。
+ *
+ * 所以这里验的是两件事：
+ *   · 失败时横幅**一直挂着**（而不是弹一条会消失的提示就算了）
+ *   · 横幅上给出两条出路：重试、以及把数据导出来带走
+ */
+const SAVE_FAILURE = { message: '数据库连接正在关闭', at: new Date().toISOString() }
+
+await test('存不进去时，横幅挂出来并给出两条出路', () => {
+  useAppStore.setState({ saveFailure: SAVE_FAILURE })
+  try {
+    withPage('/', fixture(), (_container, html) => {
+      contains(html, '没能存进本地')
+      contains(html, '数据库连接正在关闭', '要把真实原因原样写出来')
+      contains(html, '刷新就会丢', '必须说清后果 —— 否则用户不会当回事')
+      contains(html, '重试保存')
+      contains(html, '先导出备份', '导出是把数据带走的最后一条路')
+    })
+  } finally {
+    useAppStore.setState({ saveFailure: null })
+  }
+})
+
+await test('它在壳上，所以每一页都看得到', () => {
+  // 挂在某一页上是不够的：用户可能正在别的页面改东西
+  useAppStore.setState({ saveFailure: SAVE_FAILURE })
+  try {
+    for (const path of ['/', '/items', '/settings', '/spare']) {
+      withPage(path, fixture(), (_container, html) => {
+        contains(html, '没能存进本地', `${path} 上也该看得到`)
+      })
+    }
+  } finally {
+    useAppStore.setState({ saveFailure: null })
+  }
+})
+
+await test('一切正常时不显示（不能天天吓人）', () => {
+  useAppStore.setState({ saveFailure: null })
+  withPage('/', fixture(), (_container, html) => {
+    ok(!html.includes('没能存进本地'), '没出问题就不该有这条横幅')
+  })
+})
+
+await test('点「重试保存」真的能存进去，横幅随之消失', () => {
+  useAppStore.setState({
+    saveFailure: SAVE_FAILURE,
+    data: fixture(),
+    derived: createDerived(fixture()),
+  })
+
+  const page = mountForSwitch('/', fixture())
+  try {
+    ok(page.html().includes('没能存进本地'), '先得有横幅')
+
+    const retry = [...page.container.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === '重试保存',
+    )
+    ok(retry !== undefined, '应该找得到「重试保存」按钮')
+
+    return (async () => {
+      await act(async () => {
+        ;(retry as HTMLButtonElement).click()
+        await flushWrites()
+      })
+
+      eq(useAppStore.getState().saveFailure, null, '存成功之后状态要清掉')
+      ok(!page.html().includes('没能存进本地'), '横幅也该消失')
+    })()
+  } finally {
+    page.unmount()
+    useAppStore.setState({ saveFailure: null })
   }
 })
 

@@ -24,6 +24,75 @@ export const APP_DATA_KEY = 'data'
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
+/**
+ * 连接代号：每次丢掉缓存的连接就 +1。
+ *
+ * 用途是判断「这次操作期间，我手里那个连接是不是已经废了」——
+ * 光看错误名不够，见 withFreshRetry 的注释。
+ */
+let dbToken = 0
+
+/** 丢掉缓存的连接。下次 openDb() 会重新开一个。 */
+function forgetDb(): void {
+  dbPromise = null
+  dbToken += 1
+}
+
+/**
+ * 判断一个错误是不是「连接已经废了」那一类。
+ *
+ * `InvalidStateError` 就是用户报的那个：
+ * `Failed to execute 'transaction' on 'IDBDatabase':
+ *  The database connection is closing.`
+ */
+function isConnectionLost(err: unknown): boolean {
+  return err instanceof Error && err.name === 'InvalidStateError'
+}
+
+/**
+ * 跑一次操作；如果是「连接没了」导致的失败，**重开连接再试一次**。
+ *
+ * ── 为什么必须有这一层 ──────────────────────────────────────────
+ * IndexedDB 的连接不是我们能独占的东西。下面这些情况都会让它被关掉，
+ * 而它们**都不是 bug**，是浏览器的正常行为：
+ *   · 另一个标签页要升级数据库版本（会先触发 versionchange）
+ *   · 浏览器在回收存储空间
+ *   · 用户在开发者工具里点了「清除站点数据」
+ *   · 页面在后台被挂起太久
+ *
+ * 连接一关，`db.transaction()` 就会抛「connection is closing」。
+ * 用户看到的就是那句吓人的报错，而其实**重开一个连接就没事了**。
+ * 以前没有这一层，缓存里那个死连接会一直用到页面刷新为止 ——
+ * 那期间每一次改动都存不进去。
+ *
+ * ── 为什么重试是安全的 ──────────────────────────────────────────
+ * 这个模块上的写操作**全都是幂等的**：整条记录 put、按 id put 快照、
+ * 按键 delete、clear。重试一遍最多是把同样的东西再写一次。
+ * 所以「第一次其实写成功了、只是连接在完成前挂了」也不会写坏。
+ *
+ * 只试两次。第二次还失败就如实抛出去 —— 那时候多半是真出问题了，
+ * 界面会挂着「没存进去」的横幅（见 AppShell）。
+ */
+async function withFreshRetry<T>(attempt: () => Promise<T>): Promise<T> {
+  const tokenBefore = dbToken
+  try {
+    return await attempt()
+  } catch (err) {
+    /*
+     * 两种情况都算「连接没了」：
+     *   1. 报错本身就说连接正在关闭（最典型的那个）
+     *   2. 这次操作**进行期间**连接被废掉了 —— 比如写到一半连接被关，
+     *      事务 abort 抛出来的错误名不是 InvalidStateError，
+     *      光看名字会漏掉。这时 dbToken 已经变了，用它兜住。
+     */
+    const connectionGone = isConnectionLost(err) || dbToken !== tokenBefore
+    if (!connectionGone) throw err
+
+    forgetDb()
+    return attempt()
+  }
+}
+
 export function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise
 
@@ -57,10 +126,19 @@ export function openDb(): Promise<IDBDatabase> {
 
     req.onsuccess = () => {
       const db = req.result
-      // 另一个标签页要升级版本时，主动让路，避免卡住对方
+      // 另一个标签页要升级版本时，主动让路 —— 但**必须同时把缓存丢掉**，
+      // 否则后面拿到的还是这个已经关掉的连接，就是用户报的那个错。
       db.onversionchange = () => {
         db.close()
-        dbPromise = null
+        forgetDb()
+      }
+      /*
+       * 连接被**单方面**关掉时也会走到这里（存储被清、被浏览器回收）。
+       * 这个事件在部分浏览器上没有，所以它只是「多一层保险」——
+       * 真正的兜底是 withFreshRetry。
+       */
+      db.onclose = () => {
+        forgetDb()
       }
       resolve(db)
     }
@@ -174,35 +252,41 @@ function runBatch(
 }
 
 export function idbGet<T>(store: string, key: IDBValidKey): Promise<T | undefined> {
-  return run<T | undefined>(store, 'readonly', (s) => s.get(key) as Req<T | undefined>)
+  return withFreshRetry(() =>
+    run<T | undefined>(store, 'readonly', (s) => s.get(key) as Req<T | undefined>),
+  )
 }
 
 export function idbGetAll<T>(store: string): Promise<T[]> {
-  return run<T[]>(store, 'readonly', (s) => s.getAll() as Req<T[]>)
+  return withFreshRetry(() => run<T[]>(store, 'readonly', (s) => s.getAll() as Req<T[]>))
 }
 
 export async function idbPut(store: string, value: unknown, key?: IDBValidKey): Promise<void> {
   // put() 的返回值是写入的 key，这里用不上，但类型上要匹配
-  await run<IDBValidKey>(store, 'readwrite', (s) =>
-    key === undefined ? s.put(value) : s.put(value, key),
+  await withFreshRetry(() =>
+    run<IDBValidKey>(store, 'readwrite', (s) =>
+      key === undefined ? s.put(value) : s.put(value, key),
+    ),
   )
 }
 
 export function idbDelete(store: string, key: IDBValidKey): Promise<void> {
-  return run<void>(store, 'readwrite', (s) => s.delete(key) as Req<void>)
+  return withFreshRetry(() => run<void>(store, 'readwrite', (s) => s.delete(key) as Req<void>))
 }
 
 export function idbClear(store: string): Promise<void> {
-  return run<void>(store, 'readwrite', (s) => s.clear() as Req<void>)
+  return withFreshRetry(() => run<void>(store, 'readwrite', (s) => s.clear() as Req<void>))
 }
 
 export function idbCount(store: string): Promise<number> {
-  return run<number>(store, 'readonly', (s) => s.count() as Req<number>)
+  return withFreshRetry(() => run<number>(store, 'readonly', (s) => s.count() as Req<number>))
 }
 
 /** 批量删除（同一事务，比逐条快且更安全） */
 export function idbDeleteMany(store: string, keys: IDBValidKey[]): Promise<void> {
-  return runBatch(keys.map((key) => ({ store, fn: (s: IDBObjectStore) => s.delete(key) })))
+  return withFreshRetry(() =>
+    runBatch(keys.map((key) => ({ store, fn: (s: IDBObjectStore) => s.delete(key) }))),
+  )
 }
 
 /** 估计当前站点已用存储空间（部分浏览器不支持，返回 null） */

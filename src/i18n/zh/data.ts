@@ -77,6 +77,18 @@ export const data = {
     transactionAborted: '数据库事务被中止',
     cloudNotReady: '云端存储将在后续版本提供，当前版本请使用本地存储。',
     saveFailed: '保存到本地失败：{message}',
+    /*
+     * 落盘失败时**一直挂着**的横幅。
+     *
+     * 和上面那条提示的分工：提示会消失，横幅不会 ——
+     * 「这次改动没存进去」不能让用户三秒之后就忘了，
+     * 因为他看到的内容在内存里是好的，看起来一切正常。
+     */
+    saveFailedBanner:
+      '这次改动没能存进本地：{message}。原因多半是浏览器把数据库连接关掉了（另一个标签页、清了站点数据、或存储被回收）。你现在看到的内容还在内存里，但一刷新就会丢 —— 请点「重试保存」。',
+    saveFailedRetry: '重试保存',
+    saveFailedExport: '先导出备份',
+    saveRetryOk: '存进去了',
     fileReadFailed: '读取文件失败',
   },
 

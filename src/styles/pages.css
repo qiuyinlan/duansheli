@@ -108,6 +108,28 @@
   font-weight: 600;
 }
 
+/* ---------------- 落盘失败横幅 ---------------- */
+
+/*
+ * 和普通提示条的区别：它**一直挂着**，而且不能太低调 ——
+ * 用户在它消失之前必须有机会看懂并处理。
+ */
+.save-banner {
+  align-items: flex-start;
+  margin-bottom: var(--gap-5);
+  border-width: 2px;
+  line-height: 1.7;
+}
+
+.save-banner .notice__body {
+  min-width: 0;
+}
+
+.save-banner .notice__action {
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
 /* ---------------- 左右分栏（位置页） ---------------- */
 
 .split {

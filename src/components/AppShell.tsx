@@ -2,12 +2,14 @@ import { useEffect, useMemo } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { computeStats, totalUnits } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
+import { exportJson } from '../data/exportJson'
 import { applySectionTheme, themeForPath } from '../lib/sections'
 import type { DictKey } from '../i18n'
 import { useT } from '../i18n'
 import { LanguageSwitch } from './LanguageSwitch'
-import { ToastStack } from './ui/primitives'
+import { Button, ToastStack } from './ui/primitives'
 import {
+  IconAlert,
   IconArrowLeft,
   IconChecklist,
   IconClock,
@@ -130,7 +132,24 @@ export function AppShell() {
   const data = useAppStore((s) => s.data)
   const lastExportAt = useAppStore((s) => s.ui.lastExportAt)
   const expirySoonDays = useAppStore((s) => s.ui.expirySoonDays)
+  const saveFailure = useAppStore((s) => s.saveFailure)
+  const retrySave = useAppStore((s) => s.retrySave)
+  const setUi = useAppStore((s) => s.setUi)
+  const notify = useAppStore((s) => s.notify)
   const { t, lang } = useT()
+
+  /**
+   * 落盘失败时横幅上那个「先导出备份」。
+   *
+   * 这是通往「数据不丢」的**最后一条路**：如果浏览器就是不给写本地，
+   * 那份还在内存里的数据至少能导成文件带走。所以它必须出现在横幅上，
+   * 而不是让用户自己去设置页找。
+   */
+  const exportForSafety = () => {
+    const filename = exportJson(data)
+    setUi({ lastExportAt: new Date().toISOString() })
+    notify(t('settings.exportedToast', { filename }), 'success')
+  }
 
   const stats = useMemo(
     () => computeStats(data, expirySoonDays),
@@ -269,6 +288,33 @@ export function AppShell() {
         </header>
 
         <div className="main__inner">
+          {/*
+            落盘失败的横幅。
+            
+            为什么它必须**一直挂着**、而不是只弹一条会消失的提示：
+            保存失败时界面已经按新数据渲染好了，看起来一切正常 ——
+            用户完全没有理由怀疑「刚才那下没存进去」。
+            这条横幅是他唯一能知道自己处在危险中的地方。
+          */}
+          {saveFailure !== null ? (
+            <div className="notice notice--alert save-banner">
+              <span className="notice__icon">
+                <IconAlert />
+              </span>
+              <span className="notice__body small">
+                {t('data.storage.saveFailedBanner', { message: saveFailure.message })}
+              </span>
+              <span className="notice__action row">
+                <Button size="sm" onClick={() => void retrySave()}>
+                  {t('data.storage.saveFailedRetry')}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={exportForSafety}>
+                  {t('data.storage.saveFailedExport')}
+                </Button>
+              </span>
+            </div>
+          ) : null}
+
           <Outlet />
         </div>
       </div>

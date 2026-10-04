@@ -442,6 +442,23 @@ export interface DeleteLocationResult {
 export interface AppState {
   status: 'loading' | 'ready' | 'error'
   error: string | null
+  /**
+   * 上一次落盘失败。null = 一切正常。
+   *
+   * 为什么要单独留一个持久状态（而不是只弹一条提示）：
+   * 落盘失败时界面已经按新数据渲染了，**看起来完全正常**，
+   * 但刷新就没了。提示三秒后消失，用户会以为没事 ——
+   * 所以界面上要一直挂着横幅，直到真的存进去为止（见 AppShell）。
+   */
+  saveFailure: { message: string; at: string } | null
+  /**
+   * 手动重试落盘。
+   *
+   * 内存里那份数据一直是新的，所以重试就是把当前这份再写一次。
+   * 这条路的用处：自动重试也失败时（比如浏览器就是不给写），
+   * 用户至少还有个能按的按钮，而不是只剩「刷新就丢」。
+   */
+  retrySave: () => Promise<void>
   data: AppData
   derived: DerivedContext
   ui: UiPrefs
@@ -627,9 +644,19 @@ export const useAppStore = create<AppState>()((set, get) => {
       try {
         if (reason) await createSnapshot(previous, reason)
         await getRepository().save(stamped)
+        // 存成功就把「上次没存进去」的横幅撤掉
+        if (get().saveFailure !== null) set({ saveFailure: null, error: null })
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
-        set({ error: message })
+        /*
+         * 落盘失败是最危险的**静默失败**：界面已经按新数据渲染了，
+         * 看起来一切正常，但刷新就没了。
+         *
+         * 所以除了弹一条会消失的提示，还要留下一个**持久的状态**，
+         * 让界面上一直挂着横幅（见 AppShell）——「没存进去」这件事
+         * 不能让用户三秒之后就忘了。
+         */
+        set({ error: message, saveFailure: { message, at: new Date().toISOString() } })
         get().notify(t('data.storage.saveFailed', { message }), 'error')
       }
     })
@@ -669,6 +696,7 @@ export const useAppStore = create<AppState>()((set, get) => {
   return {
     status: 'loading',
     error: null,
+    saveFailure: null,
     data: initialData,
     derived: createDerived(initialData),
     ui: { ...DEFAULT_UI_PREFS },
@@ -1861,6 +1889,21 @@ export const useAppStore = create<AppState>()((set, get) => {
     backupNow: async () => {
       await createSnapshot(get().data, 'manual')
       get().notify(t('data.store.manualSnapshotCreated'), 'success')
+    },
+
+    retrySave: async () => {
+      const data = get().data
+      await enqueueWrite(async () => {
+        try {
+          await getRepository().save(data)
+          set({ saveFailure: null, error: null })
+          get().notify(t('data.storage.saveRetryOk'), 'success')
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          set({ error: message, saveFailure: { message, at: new Date().toISOString() } })
+          get().notify(t('data.storage.saveFailed', { message }), 'error')
+        }
+      })
     },
 
     restoreFromSnapshot: async (snapshotId) => {
