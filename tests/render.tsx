@@ -15,6 +15,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { App, AppRoutes } from '../src/App'
 import { createEmptyData } from '../src/storage/seed'
 import { APP_DATA_KEY, STORE_APP, idbPut } from '../src/storage/idb'
+import { ErrorBoundary } from '../src/components/ErrorBoundary'
+import { resetBootGuardForTest, showBootError } from '../src/lib/bootGuard'
 import { createDerived } from '../src/store/selectors'
 import { flushWrites, useAppStore } from '../src/store/useAppStore'
 import { clearAiSession, useAiSessionStore } from '../src/store/useAiSessionStore'
@@ -428,6 +430,165 @@ await test('点「重试保存」真的能存进去，横幅随之消失', () =>
   } finally {
     page.unmount()
     useAppStore.setState({ saveFailure: null })
+  }
+})
+
+suite('白屏和死转圈：必须有出路，而且要说出原因')
+
+/**
+ * 这一组守的是用户报的「打不开了」。
+ *
+ * 白屏和无限转圈是**最难查**的两种失败：屏幕上什么都没有，
+ * 用户既不知道能不能自救，我也拿不到任何信息。
+ * 所以这里验的不是「不会出错」，而是「出错了要说人话」。
+ */
+
+/** 一个一定会抛错的组件 —— 用来验 ErrorBoundary 真的兜得住 */
+function Boom(): JSX.Element {
+  throw new Error('故意炸一下：分类树少了一层')
+}
+
+await test('渲染出错时画出一段能读的说明，而不是白屏', () => {
+  // React 18 里渲染期异常会卸载整棵树 —— 没有 ErrorBoundary 就是一片空白
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  const originalConsoleError = console.error
+  // 这次错误是**故意**的，别让它把测试输出弄脏
+  console.error = () => {}
+
+  try {
+    act(() => {
+      root.render(
+        <ErrorBoundary>
+          <Boom />
+        </ErrorBoundary>,
+      )
+    })
+
+    const text = container.textContent ?? ''
+    contains(text, '这一页出错了', '要有一个人话标题')
+    contains(text, '故意炸一下', '要把原始错误贴出来 —— 那是唯一能定位的东西')
+    contains(text, '数据没有丢', '要安抚：数据还在本地库里')
+    contains(text, '回概览', '要给出回到正常状态的入口')
+    ok(container.querySelector('.crash-detail') !== null, '原始错误要单独成块，方便复制')
+  } finally {
+    console.error = originalConsoleError
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  }
+})
+
+await test('启动兜底：模块级错误也能画出说明（不依赖 React 和 i18n）', () => {
+  // 这是「白屏」的另一种成因：模块加载就抛，React 根本还没开始跑
+  const root = document.getElementById('root')
+  ok(root !== null, '应该有 #root')
+
+  try {
+    showBootError('TypeError: Cannot read properties of undefined (reading map)')
+
+    const text = root?.textContent ?? ''
+    contains(text, '启动失败', '要有标题')
+    contains(text, 'reading map', '要把原始错误原样贴出来')
+    ok(
+      text.includes('Failed to start'),
+      '双语都要有 —— 这时候无从知道用户选了哪门语言',
+    )
+    ok(
+      (root?.querySelector('#dsh-boot-fallback') as HTMLElement | null) !== null,
+      '面板要挂在 #root 里',
+    )
+  } finally {
+    // 收拾干净，别影响后面的用例
+    if (root !== null) root.textContent = ''
+  }
+})
+
+await test('启动兜底是**自己装上**的 —— 没人调用它也已经就位', () => {
+  /*
+   * 这条守的是一个很容易写错、而且写错了就白干的地方。
+   *
+   * ES 模块的求值顺序是「先把所有 import 求值完，再跑本模块正文」。
+   * 所以如果兜底只在 main.tsx 的正文里被调用，而 `./App` 那条依赖链
+   * 在求值期间就抛错，main.tsx 的正文根本不会执行 —— 兜底没装上，
+   * 用户看到的还是白屏。而「模块加载期就抛」正是白屏最常见的成因。
+   *
+   * 所以这里**故意不调用 installBootGuard()**：只 import 过它，
+   * 然后直接派发一个 error 事件。装上了才应该画得出面板。
+   */
+  const root = document.getElementById('root')
+  ok(root !== null, '应该有 #root')
+
+  // 重新武装：这条用例必须在「还没挂载过」的状态下跑，
+  // 而不是靠「它恰好排在别的渲染用例前面」
+  resetBootGuardForTest()
+
+  try {
+    window.dispatchEvent(
+      new ErrorEvent('error', {
+        error: new Error('模拟：模块求值期间就抛了'),
+        message: '模拟：模块求值期间就抛了',
+      }),
+    )
+
+    const text = root?.textContent ?? ''
+    contains(text, '启动失败', '光 import 过它就该已经装好了')
+    contains(text, '模块求值期间就抛了', '要把原始错误贴出来')
+  } finally {
+    if (root !== null) root.textContent = ''
+  }
+})
+
+await test('启动兜底不会重复画（一次启动可能连报好几个错）', () => {
+  const root = document.getElementById('root')
+  showBootError('第一个错误')
+  showBootError('第二个错误')
+  const panels = root?.querySelectorAll('#dsh-boot-fallback')
+  eq(panels?.length, 1, '只该有一块面板')
+  contains(root?.textContent ?? '', '第一个错误', '保留最开始那个 —— 通常它才是因')
+  if (root !== null) root.textContent = ''
+})
+
+await test('打开本地数据卡住时给出说明和重试，而不是永远转圈', async () => {
+  // 把超时调成 0，这样不用真的等 10 秒
+  const originalInit = useAppStore.getState().init
+  useAppStore.setState({ status: 'loading', init: async () => {} })
+
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+
+  try {
+    await act(async () => {
+      root.render(
+        <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <App initSlowMs={0} />
+        </MemoryRouter>,
+      )
+    })
+
+    // 超时是个 setTimeout，得让那个宏任务真的跑起来才会有下一步渲染
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+
+    const text = container.textContent ?? ''
+    contains(text, '正在打开本地数据', '正常情况下还是那个进度提示')
+    contains(text, '卡住了', '超时之后要说明状况')
+    contains(text, '另一个标签页', '要点出常见原因，用户才好自救')
+    contains(text, '数据不会因此丢失', '要安抚')
+    contains(text, '重试')
+
+    const buttons = [...container.querySelectorAll('button')].map((b) => b.textContent?.trim())
+    ok(buttons.includes('重新加载'), `要有「重新加载」，实际按钮：${buttons.join('/')}`)
+  } finally {
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+    useAppStore.setState({ init: originalInit })
   }
 })
 

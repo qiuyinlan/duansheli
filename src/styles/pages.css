@@ -130,6 +130,22 @@
   gap: var(--gap-2);
 }
 
+/* 渲染出错兜底屏里那段原始错误 —— 难看的，但它是唯一能复制给开发者的东西 */
+.crash-detail {
+  max-width: 40em;
+  margin: 0;
+  padding: var(--gap-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-sub);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+}
+
 /* ---------------- 左右分栏（位置页） ---------------- */
 
 .split {

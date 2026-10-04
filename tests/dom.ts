@@ -36,6 +36,8 @@ define('Node', dom.window.Node)
 define('Event', dom.window.Event)
 define('MouseEvent', dom.window.MouseEvent)
 define('KeyboardEvent', dom.window.KeyboardEvent)
+// 启动兜底那组用例要派发一个 error 事件来验证它真的装上了
+define('ErrorEvent', dom.window.ErrorEvent)
 define('MutationObserver', dom.window.MutationObserver)
 define('getComputedStyle', dom.window.getComputedStyle.bind(dom.window))
 
