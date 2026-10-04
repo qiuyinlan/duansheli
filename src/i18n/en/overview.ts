@@ -11,6 +11,11 @@ export const overview = {
   emptyHintFirst: 'Add one to try it — a name is all it takes, everything else is optional.',
   emptyHintSecond:
     'Categories, locations and attributes already come with a starter set you can change any time.',
+  /* For "my data disappeared": browser data is isolated per address, and this
+     project has several addresses in use. Without this line, opening another
+     address looks like data loss. */
+  emptyOriginNote:
+    'There really is nothing at this address. If you entered things at another address (localhost, a LAN IP and GitHub Pages are three separate stores), they live there and do not follow you — migrate with Settings → Export / Import.',
   emptyAction: 'Add your first item',
 
   /* Backup notice */

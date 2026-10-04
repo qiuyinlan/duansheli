@@ -53,6 +53,13 @@ export const settings = {
   importReplaceDone_other: '已覆盖导入：{count} 件物品',
   importFailedToast: '导入失败',
 
+  /* ---------------- 显示偏好 ---------------- */
+  displayTitle: '显示偏好',
+  displayDesc: '只改变「怎么看」，不动任何数据。',
+  hideIdleTitle: '物品列表里默认不显示闲置的东西',
+  hideIdleDesc:
+    '很多闲置其实是「备用」—— 特意留着的替换品。打开后它们从日常清单里收起来，只在「闲置」页看得到。只影响物品列表，概览和位置页照常统计。',
+
   /* ---------------- 存储状态 ---------------- */
   storageTitle: '存储状态',
   storageDesc: '数据存在浏览器提供的 IndexedDB 里，数据库名固定为 duansheli。',
@@ -63,6 +70,10 @@ export const settings = {
   storageItemsLabel: '物品总数',
   storageSnapshotsLabel: '快照份数',
   storageUpdatedLabel: '数据最后更新',
+  storageOriginLabel: '当前网址',
+  storageOriginHint:
+    '数据按**网址**隔离：localhost、局域网 IP、GitHub Pages 是三个互不相通的数据仓库。所以「换个地址打开就看不到数据」是正常的，要用导出 / 导入迁移。',
+  storageOriginHintStrong: '网址',
 
   /* 还没导出过备份时的提醒条 */
   backupOverdueNotice: '你还没有导出过备份。浏览器数据一旦被清理就无法找回，建议现在导出一次。',

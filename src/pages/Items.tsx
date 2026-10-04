@@ -5,7 +5,7 @@ import { ItemRow } from '../components/ItemRow'
 import { AddToCollectionDialog } from './Collections'
 import { CreateChecklistDialog } from './Checklists'
 import { LocationPicker, TagInput } from '../components/pickers'
-import { IconChevronRight, IconTrash } from '../components/ui/icons'
+import { IconChevronRight, IconIdle, IconTrash } from '../components/ui/icons'
 import { Button, ConfirmDialog, EmptyState, Modal, SearchInput } from '../components/ui/primitives'
 import {
   EMPTY_FILTER,
@@ -147,9 +147,33 @@ export function Items() {
     [data, filter.statuses],
   )
 
+  /*
+   * 「闲置」默认不展示（设置里可关，默认开）。
+   *
+   * 很多人把闲置当成「备用」在用 —— 特意留着的替换品，统一收在一个盒子里，
+   * 平时不想在日常清单里看到。所以这里把它们摘掉。
+   *
+   * 三条边界：
+   *   · **用户主动按状态筛选时不摘**。他点了「闲置」那个筛选，就是想看，
+   *     这时候再藏就是跟他对着干
+   *   · 只影响这一页。概览和位置页照常统计 ——
+   *     否则「列表 30 件、概览 34 件」，他会开始怀疑哪个数字是真的
+   *   · 摘掉多少必须显示出来（下面那条 hiddenIdleCount 的提示）
+   */
+  const idleHidden = ui.hideIdle && !filter.statuses.includes('idle')
+
+  const visible = useMemo(
+    () => (idleHidden ? source.filter((item) => item.status !== 'idle') : source),
+    [source, idleHidden],
+  )
+
+  const hiddenIdleCount = idleHidden
+    ? source.filter((item) => item.status === 'idle').length
+    : 0
+
   const filtered = useMemo(
-    () => filterItems(source, filter, derived),
-    [source, filter, derived],
+    () => filterItems(visible, filter, derived),
+    [visible, filter, derived],
   )
 
   const groups = useMemo(
@@ -377,6 +401,31 @@ export function Items() {
           </Button>
         </div>
       </div>
+
+      {/*
+        隐藏提示条。
+        只要有一件闲置被摘掉了就必须显示 —— 悄悄藏数据是最糟的结果：
+        用户会以为「我明明录过那个，怎么不见了」，然后开始怀疑数据丢了。
+        所以这里不只说藏了几件，还给一个直接去看的入口。
+      */}
+      {hiddenIdleCount > 0 ? (
+        <div className="hidden-notice">
+          <span className="hidden-notice__icon">
+            <IconIdle size={14} />
+          </span>
+          <span className="grow small">{tc(hiddenIdleCount, 'items.idleHidden')}</span>
+          <Button size="sm" variant="ghost" onClick={() => navigate('/idle')}>
+            {t('items.idleHiddenGo')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setFilter((prev) => ({ ...prev, statuses: ['idle'] }))}
+          >
+            {t('items.idleHiddenShow')}
+          </Button>
+        </div>
+      ) : null}
 
       {/* ---------------- 工具条 ---------------- */}
       <div className="toolbar">

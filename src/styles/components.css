@@ -937,9 +937,43 @@
   color: #fff;
 }
 
+/* 设置页里显示网址用的等宽小字 */
+.storage-item__code {
+  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', Consolas, monospace);
+  font-size: var(--fs-xs);
+  word-break: break-all;
+}
+
+/* ---------------- 隐藏提示条 ---------------- */
+
+/*
+ * 「有些东西被收起来了」的提示。
+ *
+ * 做得很显眼是刻意的：悄悄藏数据是最糟的结果 ——
+ * 用户会以为「我明明录过那个，怎么不见了」，然后开始怀疑数据丢了。
+ * 所以藏了多少、去哪看，必须一眼看得到。
+ */
+.hidden-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+  padding: var(--gap-2) var(--gap-3);
+  margin-bottom: var(--gap-3);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-sub);
+  color: var(--text-2);
+}
+
+.hidden-notice__icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+
 /* 已选条件的汇总条 */
-.selection-bar {
-  position: sticky;
+.selection-bar {  position: sticky;
   bottom: calc(var(--bottomnav-h) + var(--safe-bottom) + var(--gap-2));
   z-index: 15;
   display: flex;

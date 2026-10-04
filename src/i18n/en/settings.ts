@@ -57,6 +57,13 @@ export const settings = {
   importReplaceDone_other: 'Replaced your data with the backup: {count} items',
   importFailedToast: 'Import failed',
 
+  /* ---------------- Display preferences ---------------- */
+  displayTitle: 'Display preferences',
+  displayDesc: 'Changes how things are shown, never the data itself.',
+  hideIdleTitle: 'Hide idle items from the item list by default',
+  hideIdleDesc:
+    'A lot of "idle" is really "spare" — replacements kept on purpose. Switch this on and they step out of the everyday list, visible on the Idle page. Affects the item list only; the overview and place pages still count them.',
+
   /* ---------------- Storage status ---------------- */
   storageTitle: 'Storage status',
   storageDesc: 'Your data sits in IndexedDB, which the browser provides. The database name is always duansheli.',
@@ -67,6 +74,10 @@ export const settings = {
   storageItemsLabel: 'Total items',
   storageSnapshotsLabel: 'Snapshots',
   storageUpdatedLabel: 'Data last updated',
+  storageOriginLabel: 'Current address',
+  storageOriginHint:
+    'Data is isolated per **address**: localhost, a LAN IP and GitHub Pages are three separate stores. So "I opened it at another address and my data is gone" is expected — migrate with export / import.',
+  storageOriginHintStrong: 'address',
 
   /* The banner shown while no backup has ever been exported */
   backupOverdueNotice:

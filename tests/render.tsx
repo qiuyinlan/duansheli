@@ -765,6 +765,47 @@ await test('清单页在英文下也挂得住', () => {
   }
 })
 
+await test('闲置默认从物品列表里收起来，但必须显示「收了几件、去哪看」', () => {
+  // 夹具里的 i3（旧手机）是闲置的
+  const data = fixture()
+  const idle = data.items.filter((i) => i.status === 'idle')
+  eq(idle.length, 1, '夹具里应该刚好有一件闲置')
+
+  // 默认（hideIdle 默认开）：列表里看不到它，但提示条必须出现
+  withPage('/items', data, (_container, html) => {
+    ok(!html.includes('旧手机'), '闲置的东西默认不该出现在物品列表里')
+    contains(html, '这里默认不显示闲置的东西', '必须明确告诉用户东西被收起来了')
+    contains(html, '去闲置页', '要给出去哪看的入口')
+    contains(html, '就在这看', '也要能就地显示出来')
+  })
+
+  // 把设置关掉 → 照常显示
+  const original = useAppStore.getState().ui
+  useAppStore.setState({ ui: { ...original, hideIdle: false } })
+  try {
+    withPage('/items', data, (_container, html) => {
+      contains(html, '旧手机', '关掉设置后该照常显示')
+      ok(!html.includes('这里默认不显示闲置的东西'), '没藏东西就不该有那条提示')
+    })
+  } finally {
+    useAppStore.setState({ ui: original })
+  }
+})
+
+await test('闲置页照常显示 —— 那里正是它们的家', () => {
+  withPage('/idle', fixture(), (_container, html) => {
+    contains(html, '旧手机')
+  })
+})
+
+await test('设置页有「默认隐藏闲置」开关，并显示当前网址', () => {
+  withPage('/settings', fixture(), (_container, html) => {
+    contains(html, '物品列表里默认不显示闲置的东西')
+    contains(html, '当前网址', '要让用户看得出自己在哪个地址上')
+    contains(html, '互不相通的数据仓库', '这句话是给「数据好像丢了」准备的')
+  })
+})
+
 /* ------------------------------------------------------------------ */
 /* 本地小工具                                                          */
 /* ------------------------------------------------------------------ */

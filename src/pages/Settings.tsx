@@ -7,7 +7,7 @@ import {
   IconUndo,
   IconUpload,
 } from '../components/ui/icons'
-import { Button, ConfirmDialog, Modal } from '../components/ui/primitives'
+import { Button, ConfirmDialog, Modal, Switch } from '../components/ui/primitives'
 import { exportCsv } from '../data/exportCsv'
 import { exportJson } from '../data/exportJson'
 import { parseExportFile } from '../data/validate'
@@ -55,6 +55,16 @@ export function Settings() {
   const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([])
   const [usage, setUsage] = useState<{ usage: number; quota: number } | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+
+  /**
+   * 当前地址。
+   *
+   * 浏览器把数据按**网址**隔离，而这个项目你会有好几个常用地址
+   * （localhost / 局域网 IP / GitHub Pages）—— 它们是互不相通的数据仓库。
+   * 把地址摆出来，「我的数据怎么不见了」这类问题才好判断。
+   * 只在浏览器里取，服务端渲染 / 测试环境下取不到就是空字符串。
+   */
+  const origin = typeof window === 'undefined' ? '' : window.location.origin
 
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null)
   const [importStrategy, setImportStrategy] = useState<ImportStrategy>('replace')
@@ -242,6 +252,26 @@ export function Settings() {
       <section className="section">
         <div className="settings-block">
           <div className="settings-block__head">
+            <div className="settings-block__title">{t('settings.displayTitle')}</div>
+            <div className="settings-block__desc">{t('settings.displayDesc')}</div>
+          </div>
+          <div className="settings-block__body">
+            <div className="action-row">
+              <div>
+                <div className="action-row__title">{t('settings.hideIdleTitle')}</div>
+                <div className="muted small">{t('settings.hideIdleDesc')}</div>
+              </div>
+              <Switch
+                checked={ui.hideIdle}
+                onChange={(checked) => setUi({ hideIdle: checked })}
+                label={ui.hideIdle ? t('common.on') : t('common.off')}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-block">
+          <div className="settings-block__head">
             <div className="settings-block__title">{t('settings.storageTitle')}</div>
             <div className="settings-block__desc">{t('settings.storageDesc')}</div>
           </div>
@@ -280,6 +310,26 @@ export function Settings() {
                 <span className="storage-item__label">{t('settings.storageUpdatedLabel')}</span>
                 <span className="storage-item__value">{formatRelative(data.updatedAt)}</span>
               </div>
+              {/*
+                这一行是给「我的数据怎么不见了」准备的。
+                浏览器的数据按**网址**隔离，而这个项目你会有好几个常用地址
+                （localhost / 局域网 IP / GitHub Pages），它们是互不相通的数据仓库。
+                把当前地址摆出来，才能一眼看出「原来我现在在另一个仓库里」。
+              */}
+              <div className="storage-item">
+                <span className="storage-item__label">{t('settings.storageOriginLabel')}</span>
+                <span className="storage-item__value">
+                  <code className="storage-item__code">{origin}</code>
+                </span>
+              </div>
+            </div>
+
+            {/*
+              把「数据按网址隔离」这件事写在界面上。
+              这条不写，用户换个地址打开就会以为数据丢了 —— 真发生过。
+            */}
+            <div className="tiny dim" style={{ marginTop: 'var(--gap-3)', lineHeight: 1.7 }}>
+              {t('settings.storageOriginHint')}
             </div>
           </div>
         </div>

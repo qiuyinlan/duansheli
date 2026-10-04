@@ -56,6 +56,11 @@ export const items = {
   addTags: '加标签',
   addToCollection: '加入活动',
   makeChecklist: '新建清单',
+  /* 默认隐藏闲置时的那条提示。只说「藏了几件」不够，要给出去哪看的入口 */
+  idleHidden_one: '这里默认不显示闲置的东西 —— 有 {count} 件被收起来了（都在「闲置」页）',
+  idleHidden_other: '这里默认不显示闲置的东西 —— 有 {count} 件被收起来了（都在「闲置」页）',
+  idleHiddenGo: '去闲置页',
+  idleHiddenShow: '就在这看',
   discard: '舍弃',
   selectAllShown: '全选当前 {count} 件',
   batchStatus_one: '已把 {count} 件物品标记为「{status}」',

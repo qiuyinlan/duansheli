@@ -80,6 +80,10 @@ export function Overview() {
               {t('overview.emptyHintFirst')}
               <br />
               {t('overview.emptyHintSecond')}
+              <br />
+              <br />
+              {/* 换个网址打开也会看到这一页 —— 这句就是给那种情况准备的 */}
+              <span className="dim">{t('overview.emptyOriginNote')}</span>
             </>
           }
           action={

@@ -368,6 +368,19 @@ export interface UiPrefs {
   expirySoonDays: number
   /** 有效期页：是否把「还没到期、也不紧急」的也列出来 */
   expiryShowLater: boolean
+  /**
+   * 物品列表里默认不展示「闲置」的东西，默认 **开**。
+   *
+   * 为什么默认开：很多人把闲置当成「备用」在用 —— 特意留着的替换品，
+   * 统一收在一个盒子里，平时不想在日常清单里看到它们。
+   *
+   * 三个边界，都是刻意的：
+   *   · **只影响物品列表**。概览和位置页照常统计 ——
+   *     否则「列表 30 件、概览 34 件」，你会开始怀疑哪个数字是真的
+   *   · **用户主动按状态筛选时不藏**。他点了「闲置」那个筛选，就是想看
+   *   · **必须有提示条**。悄悄藏数据是最糟的结果，藏了多少、去哪看要一眼看得到
+   */
+  hideIdle: boolean
 }
 
 export const EXPIRY_SOON_DEFAULT_DAYS = 30
@@ -386,4 +399,5 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
   lastExportAt: null,
   expirySoonDays: EXPIRY_SOON_DEFAULT_DAYS,
   expiryShowLater: false,
+  hideIdle: true,
 }

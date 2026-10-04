@@ -60,6 +60,14 @@ export const items = {
   addTags: 'Add tags',
   addToCollection: 'Add to collection',
   makeChecklist: 'New list',
+  /* The notice shown while idle items are hidden. Saying "N hidden" is not
+     enough — it has to say where they went. */
+  idleHidden_one:
+    'Idle items are hidden here by default — {count} is put away (all on the Idle page)',
+  idleHidden_other:
+    'Idle items are hidden here by default — {count} are put away (all on the Idle page)',
+  idleHiddenGo: 'Idle page',
+  idleHiddenShow: 'Show here',
   discard: 'Discard',
   selectAllShown: 'Select all {count} shown',
   batchStatus_one: 'Marked {count} item as “{status}”',
