@@ -14,6 +14,7 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { App, AppRoutes } from '../src/App'
 import { createEmptyData } from '../src/storage/seed'
+import { APP_DATA_KEY, STORE_APP, idbPut } from '../src/storage/idb'
 import { createDerived } from '../src/store/selectors'
 import { flushWrites, useAppStore } from '../src/store/useAppStore'
 import { clearAiSession, useAiSessionStore } from '../src/store/useAiSessionStore'
@@ -427,6 +428,102 @@ await test('点「重试保存」真的能存进去，横幅随之消失', () =>
   } finally {
     page.unmount()
     useAppStore.setState({ saveFailure: null })
+  }
+})
+
+suite('升级路径：浏览器里那份老数据也得能打开')
+
+/**
+ * 这一组守的是一件**只会在真实用户那里发生**的事。
+ *
+ * 所有别的用例用的都是刚造出来的完整夹具 —— 什么字段都有。
+ * 但用户浏览器里躺着的是**几个版本之前写进去的数据**：
+ * 没有 collections（v4 才有）、没有 checklists（v5 才有）、
+ * 甚至可能有当时不存在、现在已经认不出来的状态值。
+ *
+ * `init()` 会把这类数据过一遍 normalizeShape 再放进 store，
+ * 所以这里走**完整的那条路**：塞进 IndexedDB → init() → 渲染每一页。
+ * 这是「升级之后打不开」最直接的复现方式。
+ */
+const LEGACY_DATA = {
+  schemaVersion: 3,
+  items: [
+    {
+      id: 'old1',
+      name: '老版本录的东西',
+      categoryIds: [],
+      locationId: null,
+      quantity: 1,
+      status: 'active',
+      tags: [],
+      attrs: {},
+      note: '',
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+      idleAt: null,
+      discardedAt: null,
+      expiresAt: null,
+      // 注意：没有 collectionIds（v4 才加的）
+    },
+    {
+      id: 'old2',
+      name: '躺在备份里的备用',
+      categoryIds: [],
+      locationId: null,
+      quantity: 2,
+      status: 'spare',
+      tags: [],
+      attrs: {},
+      note: '',
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+      idleAt: null,
+      discardedAt: null,
+      expiresAt: null,
+    },
+  ],
+  categories: [],
+  locations: [],
+  attributeDefs: [],
+  tags: [],
+  updatedAt: '2024-01-01T00:00:00.000Z',
+  // 注意：没有 collections、没有 checklists
+}
+
+await test('老数据经过 init() 之后，每一页都能渲染（升级路径不能崩）', async () => {
+  await idbPut(STORE_APP, LEGACY_DATA, APP_DATA_KEY)
+  await useAppStore.getState().init()
+
+  eq(useAppStore.getState().status, 'ready', '不该卡在加载中，也不该进错误态')
+
+  const loaded = useAppStore.getState().data
+  ok(Array.isArray(loaded.collections), 'collections 要被补成数组，不能是 undefined')
+  ok(Array.isArray(loaded.checklists), 'checklists 同理')
+
+  for (const route of ROUTES) {
+    withPage(route.path, loaded, (_container, html) => {
+      ok(html.length > 600, `${route.label}（${route.path}）在老数据下渲染失败`)
+    })
+  }
+})
+
+await test('认不出来的状态值也不会让页面崩', async () => {
+  // 最坏的情况：备份是别人手改过的，或者来自一个我们没见过的版本
+  await idbPut(
+    STORE_APP,
+    {
+      ...LEGACY_DATA,
+      items: [{ ...LEGACY_DATA.items[0], status: '这个状态不存在' }],
+    },
+    APP_DATA_KEY,
+  )
+  await useAppStore.getState().init()
+
+  const data = useAppStore.getState().data
+  for (const route of ROUTES) {
+    withPage(route.path, data, (_container, html) => {
+      ok(html.length > 600, `${route.label} 在未知状态下渲染失败`)
+    })
   }
 })
 
