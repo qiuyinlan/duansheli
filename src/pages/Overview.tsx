@@ -4,6 +4,7 @@ import { BarChart } from '../components/ui/BarChart'
 import { IconAlert, IconChevronRight } from '../components/ui/icons'
 import { Button, EmptyState } from '../components/ui/primitives'
 import { daysSince, formatRelative, percent } from '../lib/format'
+import { colorForKey, topLevelColorMap } from '../lib/palette'
 import { useT } from '../i18n'
 import { UNASSIGNED_ID, UNCATEGORIZED_ID, UNTAGGED_ID } from '../types'
 import {
@@ -33,6 +34,27 @@ export function Overview() {
   const byLocation = useMemo(() => countByTopLocation(live, derived), [live, derived])
   const byTag = useMemo(() => countByTag(live, derived), [live, derived])
   const byStatus = useMemo(() => countByStatus(data.items), [data.items])
+
+  /*
+   * 图表用的取色表。
+   *
+   * ⚠️ key 列表必须是**完整的顶层节点**（含没有物品的），而且顺序用
+   * 「分类 / 位置在树里的显示顺序」—— 和物品列表页算的是同一份。
+   * 理由是配色的避让规则依赖整个 key 列表：图表只画有数量的分类、
+   * 列表只渲染有内容的组，两边各算一遍就会算出不同颜色，
+   * 于是出现「列表里化妆品是蓝的、图表里是绿的」。
+   */
+  const categoryColorOf = useMemo(() => {
+    const keys = derived.categoryFlat.filter((n) => n.depth === 0).map((n) => n.node.id)
+    const map = topLevelColorMap(keys)
+    return (key: string) => map.get(key) ?? colorForKey(key)
+  }, [derived])
+
+  const locationColorOf = useMemo(() => {
+    const keys = derived.flat.filter((n) => n.depth === 0).map((n) => n.node.id)
+    const map = topLevelColorMap(keys)
+    return (key: string) => map.get(key) ?? colorForKey(key)
+  }, [derived])
 
   const idlePercent = percent(stats.idleCount, stats.totalItems)
   const backupOverdue =
@@ -192,6 +214,7 @@ export function Overview() {
         <BarChart
           data={byCategory}
           limit={8}
+          colorOf={categoryColorOf}
           emptyText={t('overview.emptyCategories')}
           onSelect={(d) => {
             if (d.target?.kind === 'category') {
@@ -212,6 +235,7 @@ export function Overview() {
         <BarChart
           data={byLocation}
           limit={8}
+          colorOf={locationColorOf}
           emptyText={t('overview.emptyLocations')}
           onSelect={(d) => {
             if (d.target?.kind === 'location') {

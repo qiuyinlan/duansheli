@@ -1,6 +1,7 @@
 import type { BarDatum } from '../../store/selectors'
-import { t, useT } from '../../i18n'
+import type { GroupColor } from '../../lib/palette'
 import { colorForKey } from '../../lib/palette'
+import { t, useT } from '../../i18n'
 
 interface BarChartProps {
   data: BarDatum[]
@@ -9,6 +10,15 @@ interface BarChartProps {
   emptyText?: string
   /** 最多显示多少条，超出部分合并为「其他」 */
   limit?: number
+  /**
+   * 取色函数。不传就按 key 哈希取。
+   *
+   * 为什么需要它：分组列表那边顶层用的是「哈希 + 相邻不撞色」，
+   * 而「相邻不撞色」让结果**跟顺序有关**。图表按数量倒序、列表按树的显示顺序，
+   * 两边各算一遍就会出现「列表里化妆品是蓝的、图表里是绿的」。
+   * 所以调用方把**按列表那个顺序算好的表**传进来，两边就必然是同一套颜色。
+   */
+  colorOf?: (key: string) => GroupColor
 }
 
 /**
@@ -18,7 +28,7 @@ interface BarChartProps {
  * 图表里看到「化妆品」是蓝的，列表里那一组也是蓝的，一眼能连起来。
  * 颜色由 key 哈希决定，所以是稳定的，不会每刷新一次就换个色。
  */
-export function BarChart({ data, onSelect, emptyText, limit }: BarChartProps) {
+export function BarChart({ data, onSelect, emptyText, limit, colorOf }: BarChartProps) {
   // 订阅语言：图里的字（「其他 N 项」、可点击条形的提示）要跟着切
   useT()
 
@@ -49,7 +59,7 @@ export function BarChart({ data, onSelect, emptyText, limit }: BarChartProps) {
       {rows.map((datum) => {
         const width = Math.max(1.5, (datum.value / max) * 100)
         const clickable = Boolean(onSelect && datum.target)
-        const color = colorForKey(datum.key)
+        const color = colorOf ? colorOf(datum.key) : colorForKey(datum.key)
 
         const inner = (
           <>

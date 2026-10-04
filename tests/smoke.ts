@@ -18,7 +18,7 @@ import { mergeAppData } from '../src/data/importData'
 import { parseExportFile } from '../src/data/validate'
 import { buildTree, canReparent, createTreeIndex, flattenTree } from '../src/lib/tree'
 import { SECTION_THEMES, themeForPath } from '../src/lib/sections'
-import { NEUTRAL_GROUP_COLOR, assignGroupColors, colorForKey } from '../src/lib/palette'
+import { NEUTRAL_GROUP_COLOR, assignGroupColors, assignTreeColors, colorForKey, mixWithWhite, topLevelColorMap } from '../src/lib/palette'
 import { LocalRepository } from '../src/storage/localRepository'
 import { getRepository } from '../src/storage/repository'
 import { createSeedData } from '../src/storage/seed'
@@ -757,6 +757,34 @@ suite('分组配色')
 
 const HEX = /^#[0-9a-f]{6}$/i
 
+/* 给「色相」「明度」两个断言用的小工具：不想为了几个数引一整套颜色库 */
+
+/** 粗略的 HSV 色相（0–360）。只是用来判断「是不是同一个色系」，不需要多精确 */
+function hexHue(hex: string): number {
+  const n = Number.parseInt(hex.slice(1), 16)
+  const r = ((n >> 16) & 0xff) / 255
+  const g = ((n >> 8) & 0xff) / 255
+  const b = (n & 0xff) / 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const d = max - min
+  if (d === 0) return 0
+  let h: number
+  if (max === r) h = ((g - b) / d) % 6
+  else if (max === g) h = (b - r) / d + 2
+  else h = (r - g) / d + 4
+  return ((h * 60) % 360 + 360) % 360
+}
+
+/** 感知亮度（0–255），只用来比大小：越大越浅 */
+function hexLuma(hex: string): number {
+  const n = Number.parseInt(hex.slice(1), 16)
+  const r = (n >> 16) & 0xff
+  const g = (n >> 8) & 0xff
+  const b = n & 0xff
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
 await test('同一个 key 的基础颜色是稳定的（刷新、换筛选都不变）', () => {
   eq(colorForKey('cat-clothing').bar, colorForKey('cat-clothing').bar)
   eq(colorForKey('家 / 卧室 / 衣柜').bar, colorForKey('家 / 卧室 / 衣柜').bar)
@@ -815,4 +843,146 @@ await test('示例数据的分类分下来，相邻不撞色且大部分互不�
     ok(bars[i] !== bars[i - 1], `${names[i]} 和 ${names[i - 1]} 撞色了`)
   }
   ok(new Set(bars).size >= 8, `10 个分类只分出了 ${new Set(bars).size} 种颜色，太少了`)
+})
+
+await test('相邻两组不只是色值不同，色相也要拉开（色板里有三个绿）', () => {
+  // 色板 12 个色里有三个绿（#059669 绿 / #65a30d 黄绿 / #0d9488 青绿）、
+  // 两个橙、两个红。只挡「色值完全相同」不够 —— 挨着的两组一个是绿一个是青绿，
+  // 看起来照样像同一组。所以相邻要按**色相距离**判断。
+  const keys = Array.from({ length: 30 }, (_, i) => `k-${i}`)
+  const colors = assignGroupColors(keys)
+
+  for (let i = 1; i < keys.length; i++) {
+    const current = must(colors.get(keys[i]), `${keys[i]} 没颜色`).bar
+    const previous = must(colors.get(keys[i - 1]), `${keys[i - 1]} 没颜色`).bar
+    const d = Math.abs(hexHue(current) - hexHue(previous))
+    const gap = Math.min(d, 360 - d)
+    ok(gap >= 28, `第 ${i} 组和上一组色相只差 ${gap.toFixed(1)}°，看起来会像同一组`)
+  }
+})
+
+await test('灰色虚拟分组夹在中间，不该把后面的颜色带偏', () => {
+  // 虚拟分组是中性灰（没有色相），拿它当「上一组」去比色相毫无意义，
+  // 所以比较只发生在有色分组之间
+  const colors = assignGroupColors(['cat-a', '__uncategorized__', 'cat-b'])
+  ok(
+    must(colors.get('cat-a'), 'a').bar !== must(colors.get('cat-b'), 'b').bar ||
+      hexHue(must(colors.get('cat-a'), 'a').bar) !== 0,
+    '两个真实分类不该因为是灰色隔开就随便同色',
+  )
+  eq(must(colors.get('__uncategorized__'), 'x').bar, NEUTRAL_GROUP_COLOR.bar, '灰色的还是灰的')
+})
+
+await test('撞色兜底不会死循环（色板绕完一圈就认了）', () => {
+  // 极端情况：如果色板里根本找不到满足距离的颜色，也得能返回
+  const keys = Array.from({ length: 200 }, (_, i) => `many-${i}`)
+  const colors = assignGroupColors(keys)
+  eq(colors.size, 200, '200 个 key 都要拿到颜色，不能卡住')
+  for (const key of keys) match(must(colors.get(key), key).bar, HEX, `${key} 的颜色不是合法色值`)
+})
+
+/* ---- 树形配色：只有顶层拿独立色相，子级继承并变淡 ---- */
+
+await test('往白里混：0 是原色、1 是纯白、输出仍是合法十六进制', () => {
+  eq(mixWithWhite('#2563eb', 0), '#2563eb')
+  eq(mixWithWhite('#2563eb', 1), '#ffffff')
+  // 一半：#2563eb 的分量是 37 / 99 / 235，各加 (255-x)*0.5 → 146 / 177 / 245
+  eq(mixWithWhite('#2563eb', 0.5), '#92b1f5')
+  match(mixWithWhite('#000000', 0.3), HEX, '黑色混出来也要是合法色值')
+  // 认不出来的输入原样返回，不抛错
+  eq(mixWithWhite('not-a-color', 0.5), 'not-a-color')
+})
+
+await test('同一棵一级标题下的子分组，颜色跟父级同一个色相（不再是彩虹）', () => {
+  // 这是这次改动的核心：以前每个节点各自哈希，一个一级标题下面五颜六色
+  const tree = [
+    {
+      key: 'cat-cosmetics',
+      children: [
+        { key: 'cat-eye', children: [] },
+        { key: 'cat-lip', children: [] },
+        { key: 'cat-skin', children: [] },
+      ],
+    },
+  ]
+  const colors = assignTreeColors(tree)
+  const parent = must(colors.get('cat-cosmetics'), '父级没拿到颜色')
+  const parentHue = hexHue(parent.bar)
+
+  for (const childKey of ['cat-eye', 'cat-lip', 'cat-skin']) {
+    const child = must(colors.get(childKey), `${childKey} 没拿到颜色`)
+    const hue = hexHue(child.bar)
+    // 混白不改变色相（rgb 等比插值到白，色相基本不变，允许一点取整误差）
+    ok(
+      Math.abs(hue - parentHue) <= 3,
+      `${childKey} 的色相 ${hue} 和父级 ${parentHue} 差太多，说明没继承父级颜色`,
+    )
+    // 但要比父级浅 —— 否则层级看不出来
+    ok(
+      hexLuma(child.bar) > hexLuma(parent.bar),
+      `${childKey} 的竖条没有比父级浅，层级表达不出来`,
+    )
+  }
+})
+
+await test('子级的标题文字保持父级颜色 —— 小字号再变浅就看不清了', () => {
+  const tree = [{ key: 'cat-a', children: [{ key: 'cat-b', children: [{ key: 'cat-c', children: [] }] }] }]
+  const colors = assignTreeColors(tree)
+  const parentText = must(colors.get('cat-a'), 'a').text
+
+  eq(must(colors.get('cat-b'), 'b').text, parentText, '第二层文字色不该变')
+  eq(must(colors.get('cat-c'), 'c').text, parentText, '第三层也是')
+})
+
+await test('最深的那一刀只切两档：第三层不会淡到看不见', () => {
+  const tree = [
+    { key: 'r', children: [{ key: 'd1', children: [{ key: 'd2', children: [{ key: 'd3', children: [] }] }] }] },
+  ]
+  const colors = assignTreeColors(tree)
+  // 第二层和第三层用同一档，否则第四层几乎只剩白色
+  deepEq(must(colors.get('d2'), 'd2').bar, must(colors.get('d3'), 'd3').bar)
+  ok(
+    must(colors.get('d1'), 'd1').bar !== must(colors.get('d2'), 'd2').bar,
+    '第一层和第二层要分得开',
+  )
+})
+
+await test('顶层之间仍然互不相同（相邻不撞色这条规则只作用在顶层）', () => {
+  const tree = Array.from({ length: 10 }, (_, i) => ({
+    key: `top-${i}`,
+    children: [{ key: `sub-${i}`, children: [] }],
+  }))
+  const colors = assignTreeColors(tree)
+  const bars = tree.map((n) => must(colors.get(n.key), n.key).bar)
+  for (let i = 1; i < bars.length; i++) {
+    ok(bars[i] !== bars[i - 1], `第 ${i} 个顶层分组和上一个撞色了`)
+  }
+})
+
+await test('虚拟分组下的子级从灰色出发，不会突然出现彩色', () => {
+  const tree = [{ key: '__uncategorized__', children: [{ key: 'child', children: [] }] }]
+  const colors = assignTreeColors(tree)
+  eq(must(colors.get('__uncategorized__'), 'x').bar, NEUTRAL_GROUP_COLOR.bar)
+  eq(
+    hexHue(must(colors.get('child'), 'child').bar),
+    hexHue(NEUTRAL_GROUP_COLOR.bar),
+    '中性灰的子级也该是灰的',
+  )
+})
+
+await test('图表和列表用同一张顶层色表 —— 同一个分类两处必须一个色', () => {
+  // 分组列表按树的显示顺序算，图表也必须按同一个顺序算，
+  // 否则「相邻不撞色」会让两边算出不同的结果，
+  // 出现「列表里化妆品是蓝的、图表里是绿的」这种对不上的事。
+  const keys = ['cat-a', 'cat-b', 'cat-c', 'cat-d']
+  const listSide = assignTreeColors(keys.map((k) => ({ key: k, children: [] })))
+  const chartSide = topLevelColorMap(keys)
+
+  for (const key of keys) {
+    deepEq(
+      must(chartSide.get(key), `${key} 图表侧没颜色`),
+      must(listSide.get(key), `${key} 列表侧没颜色`),
+      `${key} 在图表和列表里颜色不一致`,
+    )
+  }
 })

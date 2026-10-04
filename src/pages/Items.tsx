@@ -9,7 +9,6 @@ import {
   EMPTY_FILTER,
   countByLocationIncludingDescendants,
   filterItems,
-  flattenGroupNodes,
   groupAndSort,
   isGroupExpanded,
   labelForExpiryState,
@@ -19,7 +18,7 @@ import {
   type ItemGroupNode,
 } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
-import { assignGroupColors, NEUTRAL_GROUP_COLOR } from '../lib/palette'
+import { assignTreeColors, topLevelColorMap, NEUTRAL_GROUP_COLOR } from '../lib/palette'
 import type { GroupBy, ItemStatus, SortBy, SortDir } from '../types'
 import { UNASSIGNED_ID } from '../types'
 import type { DictKey } from '../i18n'
@@ -157,12 +156,36 @@ export function Items() {
     [data, derived],
   )
 
-  // 每个分组一种颜色，方便一眼区分；同一个分类的颜色是稳定的（由 key 哈希决定）。
-  // 要给整棵树都分上色，所以先拍平。
-  const groupColors = useMemo(() => {
-    const all = flattenGroupNodes(groups)
-    return assignGroupColors(all.map((node) => node.key))
-  }, [groups])
+  /*
+   * 顶层分组的配色表。
+   *
+   * key 列表刻意取**完整的顶层节点**（含没有内容的），而不是「这次渲染出来的那些组」——
+   * 因为避让规则依赖整个 key 列表，而概览图表只画有数量的分类。
+   * 两边都按这份完整规范列表算，颜色才必然一致
+   * （否则列表里只显示 3 个分类、图表显示 5 个，同一批 key 会算出不同结果）。
+   */
+  const topColors = useMemo(() => {
+    if (groupBy === 'category') {
+      return topLevelColorMap(
+        derived.categoryFlat.filter((n) => n.depth === 0).map((n) => n.node.id),
+      )
+    }
+    if (groupBy === 'location') {
+      return topLevelColorMap(derived.flat.filter((n) => n.depth === 0).map((n) => n.node.id))
+    }
+    return undefined
+  }, [groupBy, derived])
+
+  // 分组配色：**只有顶层拿独立色相，子级继承所属顶层并逐层变淡**。
+  //
+  // 以前是给每个节点各自哈希，结果一个一级标题下面子分类各是各的颜色，
+  // 一块里五彩斑斓 —— 颜色的作用本来是「把大块分开」，
+  // 用在同一块的内部只会添乱。现在缩进表达层级、深浅表达远近、
+  // 颜色只回答「这是哪一大块」。
+  const groupColors = useMemo(
+    () => assignTreeColors(groups, topColors),
+    [groups, topColors],
+  )
 
   const activeConditionCount =
     filter.categoryIds.length +
