@@ -114,6 +114,19 @@ a {
   text-decoration: none;
 }
 
+/*
+ * 注意这里**故意没有**重置 text-align。
+ *
+ * `<button>` 的浏览器默认样式里带 `text-align: center`，所以凡是
+ * 「整行宽的按钮」（.bar-row / .list-row__main / .group-head /
+ * .tree-node__label / .more-item / .chat-starter）都必须自己写一句
+ * `text-align: left`，否则整行文字会被居中，长短不一的标签左边缘对不齐，
+ * 看起来一歪一扭。「更多」页就因为漏了这一句而踩过。
+ *
+ * 没有在这里统一改成 `text-align: inherit` 的原因是：那些本来就是「文字居中」
+ * 的胶囊按钮（.btn 之类）依赖这个默认值，全局一改要挨个回去核对。
+ * 所以维持现状，但记住这条规矩。
+ */
 button {
   font: inherit;
   color: inherit;

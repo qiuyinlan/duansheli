@@ -94,8 +94,8 @@ export function More() {
               <entry.Icon size={18} />
             </span>
             <span className="more-item__label">
-              <span style={{ display: 'block' }}>{entry.label}</span>
-              <span className="tiny dim">{entry.desc}</span>
+              <span className="more-item__name">{entry.label}</span>
+              <span className="more-item__desc">{entry.desc}</span>
             </span>
             <span className="more-item__meta">{entry.meta}</span>
             <span className="more-item__caret">

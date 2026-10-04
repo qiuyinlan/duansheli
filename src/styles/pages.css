@@ -330,6 +330,18 @@
   padding: var(--gap-4);
   border-bottom: 1px solid var(--line);
   transition: background 0.12s ease;
+  /*
+   * 必须有这一行。
+   *
+   * `<button>` 的浏览器默认样式里带 `text-align: center`，而全局 reset 只重置了
+   * font / color / background / border / padding，**没管 text-align** ——
+   * 于是它会继承到整行内容上，长短不一的标签左边缘就对不齐了，看起来一歪一扭。
+   *
+   * 全站凡是「整行宽的按钮」（这一行，还有 .bar-row / .list-row__main /
+   * .group-head / .tree-node__label / .chat-starter）都得自己写一句，
+   * 那几个也都写了，这里是漏掉的那个。
+   */
+  text-align: left;
 }
 
 .more-item:last-child {
@@ -346,21 +358,39 @@
   flex-shrink: 0;
 }
 
+/* 两行文字用 flex 竖排，保证「名字在上、说明在下」且都从同一条左边缘开始 */
 .more-item__label {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.more-item__name {
   font-size: var(--fs-body);
+  line-height: 1.35;
+}
+
+.more-item__desc {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  line-height: 1.4;
 }
 
 .more-item__meta {
   font-size: var(--fs-xs);
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .more-item__caret {
   color: var(--text-3);
   display: flex;
+  flex-shrink: 0;
 }
 
 /* ---------------- 分类 / 属性 / 标签管理 ---------------- */
