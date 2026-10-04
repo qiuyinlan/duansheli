@@ -131,6 +131,7 @@ const ROUTES: Array<{ path: string; label: string }> = [
   { path: '/items/i1', label: '物品详情' },
   { path: '/locations', label: '位置' },
   { path: '/idle', label: '闲置' },
+  { path: '/spare', label: '备用' },
   { path: '/ai', label: 'AI 助手' },
   { path: '/more', label: '更多' },
   { path: '/categories', label: '分类管理' },
@@ -898,6 +899,142 @@ await test('闲置默认从物品列表里收起来，但必须显示「收了�
 await test('闲置页照常显示 —— 那里正是它们的家', () => {
   withPage('/idle', fixture(), (_container, html) => {
     contains(html, '旧手机')
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 备用                                                                */
+/* ------------------------------------------------------------------ */
+
+suite('备用：一个新栏目，和闲置分开')
+
+/** 夹具里塞一条备用：牙膏 ×2，收在衣柜 */
+function withSpare(base: AppData = fixture()): AppData {
+  const wardrobe = must(
+    base.locations.find((l) => l.name === '衣柜'),
+    '夹具缺少位置 衣柜',
+  ).id
+  return {
+    ...base,
+    items: [
+      ...base.items,
+      makeItem({
+        id: 'spare1',
+        name: '备用牙膏',
+        quantity: 2,
+        status: 'spare',
+        locationId: wardrobe,
+      }),
+    ],
+  }
+}
+
+await test('备用页按位置分组，每条都给出「取用一件」和件数', () => {
+  withPage('/spare', withSpare(), (_container, html) => {
+    contains(html, '备用牙膏')
+    contains(html, '取用一件', '每一行都要能取用')
+    contains(html, '衣柜', '应该按位置分组 —— 备用是收在盒子里的')
+    contains(html, '备用 2 件', '要显示这条囤了几件，不是只有「一条」')
+  })
+})
+
+await test('备用页**不**说闲置那一套话（两页的情绪正好相反）', () => {
+  // 闲置页在推动你处理（「闲置越久越说明它不该留在这里」「能扔的就点已处理」），
+  // 备用是你特意留的。这些话要是漏到备用页上，就是在劝你扔掉自己囤的东西。
+  //
+  // 注意这里查的是闲置页**那几句具体的推动性文案**，不是「闲置」两个字 ——
+  // 备用页的说明里本来就要提一句「不算闲置」，那是澄清，不是同一件事。
+  withPage('/spare', withSpare(), (_container, html) => {
+    ok(!html.includes('件闲置'), '备用页不该有「N 件闲置」那个汇总')
+    ok(!html.includes('能扔的就点'), '不该出现闲置页的推动语')
+    ok(!html.includes('占全部物品的'), '不该有闲置占比那句话')
+    contains(html, '不算闲置', '要明确说清备用不算闲置')
+  })
+})
+
+await test('备用页空的时候给引导，并说清东西怎么放进来', () => {
+  withPage('/spare', fixture(), (_container, html) => {
+    contains(html, '备用区是空的')
+    contains(html, '标记备用', '要告诉用户整条搬进来的入口')
+    contains(html, '拆出备用', '也要告诉「买多了」那个入口')
+  })
+})
+
+await test('物品列表默认收起备用，并显示「收了几件、去哪看」', () => {
+  withPage('/items', withSpare(), (_container, html) => {
+    ok(!html.includes('备用牙膏'), '备用默认不该混进日常清单')
+    contains(html, '这里默认不显示备用的东西', '必须明说东西被收起来了')
+    contains(html, '去备用页', '要给出去哪看的入口')
+    contains(html, '就在这看', '也要能就地显示出来')
+  })
+
+  // 关掉开关 → 照常显示
+  const original = useAppStore.getState().ui
+  useAppStore.setState({ ui: { ...original, hideSpare: false } })
+  try {
+    withPage('/items', withSpare(), (_container, html) => {
+      contains(html, '备用牙膏', '关掉开关后该照常显示')
+      ok(!html.includes('这里默认不显示备用的东西'), '没藏东西就不该有那条提示')
+    })
+  } finally {
+    useAppStore.setState({ ui: original })
+  }
+})
+
+await test('物品列表选中东西后，批量条里有「标记备用」和「拆出备用」', () => {
+  const page = mountForSwitch('/items', withSpare())
+  try {
+    ok(!page.html().includes('标记备用'), '没选中时不显示批量条')
+
+    const selectAll = must(
+      page.container.querySelector('.checkbox input'),
+      '物品列表上方应该有全选勾选框',
+    )
+    act(() => {
+      ;(selectAll as HTMLInputElement).click()
+    })
+
+    contains(page.html(), '标记备用', '整条搬进备用区的入口')
+    contains(page.html(), '拆出备用', '「买多了」那个入口')
+  } finally {
+    page.unmount()
+  }
+})
+
+await test('设置页有独立的「隐藏备用」开关，和闲置那个是两回事', () => {
+  withPage('/settings', withSpare(), (_container, html) => {
+    contains(html, '物品列表里默认不显示备用的东西')
+    contains(html, '物品列表里默认不显示闲置的东西', '两个开关都要在')
+  })
+})
+
+await test('英文下备用页也挂得住，而且不叫 idle', () => {
+  // 这是这一整组里最要紧的一条翻译边界：
+  // 备用一旦被翻成 idle，英文用户看到的就是「该处理的东西」，
+  // 而那正是中文版刻意避开的意思。
+  setLang('en')
+  try {
+    withPage('/spare', withSpare(), (_container, html) => {
+      contains(html, 'Spares')
+      contains(html, 'Take one')
+      contains(html, '备用牙膏', '用户自己起的名字不该被翻译')
+      ok(!html.includes('idle items'), '备用页不该出现闲置页的说法')
+      ok(!html.includes('of everything you own'), '也不该有闲置占比那句话')
+      contains(html, 'not counted as idle', '要明确说清备用不算闲置')
+    })
+  } finally {
+    setLang('zh')
+  }
+})
+
+await test('物品详情页的状态是三选一，不是开关', () => {
+  // 开关只能表达「是 / 不是」，而备用是第三条支线。
+  // 而「已舍弃」不在三选一里 —— 它是流程出口，不是随手可选的档位。
+  withPage('/items/i1', withSpare(), (_container, html) => {
+    contains(html, '在用')
+    contains(html, '闲置')
+    contains(html, '备用')
+    ok(!html.includes('标记为闲置 ——'), '旧的二选一开关文案该没了')
   })
 })
 

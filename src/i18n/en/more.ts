@@ -14,6 +14,10 @@ export const more = {
   expiryMetaClear: 'Nothing due soon',
   expiryDesc: 'Sorted by expiry — the most urgent first',
 
+  /* Spares */
+  spareMetaEmpty: 'Nothing spare yet',
+  spareDesc: 'Stocked up and held for later — take one when you run out',
+
   /* Collections */
   collectionsDesc: 'Trip, course, moving — the things one occasion needs',
   checklistsDesc: 'A throwaway to-do: tick it off, then bin it',

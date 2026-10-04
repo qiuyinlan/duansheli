@@ -51,6 +51,8 @@ export const items = {
   /* 批量操作条 */
   selectedCount: '已选 {count} 件',
   markIdleBatch: '标记闲置',
+  markSpareBatch: '标记备用',
+  splitToSpare: '拆出备用',
   backToActive: '改回在用',
   moveLocation: '移动位置',
   addTags: '加标签',
@@ -61,6 +63,11 @@ export const items = {
   idleHidden_other: '这里默认不显示闲置的东西 —— 有 {count} 件被收起来了（都在「闲置」页）',
   idleHiddenGo: '去闲置页',
   idleHiddenShow: '就在这看',
+  /* 备用同理，但入口指向备用页 */
+  spareHidden_one: '这里默认不显示备用的东西 —— 有 {count} 件被收起来了（都在「备用」页）',
+  spareHidden_other: '这里默认不显示备用的东西 —— 有 {count} 件被收起来了（都在「备用」页）',
+  spareHiddenGo: '去备用页',
+  spareHiddenShow: '就在这看',
   discard: '舍弃',
   selectAllShown: '全选当前 {count} 件',
   batchStatus_one: '已把 {count} 件物品标记为「{status}」',

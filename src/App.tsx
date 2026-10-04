@@ -15,6 +15,7 @@ import { Locations } from './pages/Locations'
 import { More } from './pages/More'
 import { Overview } from './pages/Overview'
 import { Settings } from './pages/Settings'
+import { Spare } from './pages/Spare'
 import { Tags } from './pages/Tags'
 import { useAppStore } from './store/useAppStore'
 import { useT } from './i18n'
@@ -33,6 +34,7 @@ export function AppRoutes() {
         <Route path="items/:id" element={<ItemEdit />} />
         <Route path="locations" element={<Locations />} />
         <Route path="idle" element={<Idle />} />
+        <Route path="spare" element={<Spare />} />
         <Route path="expiry" element={<Expiry />} />
         <Route path="collections" element={<Collections />} />
         <Route path="collections/:id" element={<Collections />} />

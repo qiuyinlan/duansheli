@@ -65,6 +65,15 @@ export const SECTION_THEMES: Record<string, SectionTheme> = {
     accentText: '#be123c',
     accentSoft: '#fff1f2',
   },
+  /* 备用：和闲置的橙彻底分开。
+     这两页在情绪上正好相反（一个劝你处理、一个是你特意留的），
+     配色要是也撞在一起，扫一眼就更分不清自己在哪一页了。 */
+  spare: {
+    key: 'spare',
+    accent: '#0369a1',
+    accentText: '#075985',
+    accentSoft: '#f0f9ff',
+  },
   /* AI 助手 */
   ai: {
     key: 'ai',
@@ -124,6 +133,7 @@ export function sectionKeyForPath(pathname: string): string {
   if (pathname.startsWith('/items')) return 'items'
   if (pathname.startsWith('/locations')) return 'locations'
   if (pathname.startsWith('/idle')) return 'idle'
+  if (pathname.startsWith('/spare')) return 'spare'
   if (pathname.startsWith('/expiry')) return 'expiry'
   if (pathname.startsWith('/collections')) return 'collections'
   if (pathname.startsWith('/checklists')) return 'checklists'

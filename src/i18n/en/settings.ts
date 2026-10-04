@@ -64,6 +64,12 @@ export const settings = {
   hideIdleDesc:
     'A lot of "idle" is really "spare" — replacements kept on purpose. Switch this on and they step out of the everyday list, visible on the Idle page. Affects the item list only; the overview and place pages still count them.',
 
+  /* A separate switch from idle on purpose: "keep idle out of my way" and
+     "keep spares out of my way" are two different judgements */
+  hideSpareTitle: 'Hide spares from the item list by default',
+  hideSpareDesc:
+    'Spares are stocked up on purpose, so you do not want them in your everyday list. Switch this on and they step out of the item list, visible on the Spares page. Affects the item list only; the overview and place pages still count them.',
+
   /* ---------------- Storage status ---------------- */
   storageTitle: 'Storage status',
   storageDesc: 'Your data sits in IndexedDB, which the browser provides. The database name is always duansheli.',

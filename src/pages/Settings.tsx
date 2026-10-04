@@ -486,6 +486,23 @@ export function Settings() {
                 label={ui.hideIdle ? t('common.on') : t('common.off')}
               />
             </div>
+
+            {/*
+              备用单独一个开关，不和闲置合并 ——
+              「闲置别碍事」和「备用别碍事」是两种不同的判断，
+              合并成一个的话，想只关其中一个就做不到了。
+            */}
+            <div className="action-row">
+              <div>
+                <div className="action-row__title">{t('settings.hideSpareTitle')}</div>
+                <div className="muted small">{t('settings.hideSpareDesc')}</div>
+              </div>
+              <Switch
+                checked={ui.hideSpare}
+                onChange={(checked) => setUi({ hideSpare: checked })}
+                label={ui.hideSpare ? t('common.on') : t('common.off')}
+              />
+            </div>
           </div>
         </div>
 

@@ -55,6 +55,8 @@ export const items = {
   /* Bulk action bar */
   selectedCount: '{count} selected',
   markIdleBatch: 'Mark idle',
+  markSpareBatch: 'Mark spare',
+  splitToSpare: 'Split off spares',
   backToActive: 'Back to in use',
   moveLocation: 'Move',
   addTags: 'Add tags',
@@ -68,6 +70,13 @@ export const items = {
     'Idle items are hidden here by default — {count} are put away (all on the Idle page)',
   idleHiddenGo: 'Idle page',
   idleHiddenShow: 'Show here',
+  /* Same idea for spares, but pointing at the Spares page */
+  spareHidden_one:
+    'Spares are hidden here by default — {count} is put away (all on the Spares page)',
+  spareHidden_other:
+    'Spares are hidden here by default — {count} are put away (all on the Spares page)',
+  spareHiddenGo: 'Spares page',
+  spareHiddenShow: 'Show here',
   discard: 'Discard',
   selectAllShown: 'Select all {count} shown',
   batchStatus_one: 'Marked {count} item as “{status}”',

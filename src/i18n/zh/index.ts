@@ -33,6 +33,7 @@ import { nav } from './nav'
 import { overview } from './overview'
 import { seed } from './seed'
 import { settings } from './settings'
+import { spare } from './spare'
 import { status } from './status'
 import { tags } from './tags'
 import { tree } from './tree'
@@ -55,6 +56,7 @@ export const zh = {
   tree,
   chart,
   idle,
+  spare,
   expiry,
   settings,
   more,

@@ -316,8 +316,12 @@ await test('合并导入：id 相同视为同一个活动，名字保留本地�
   eq(must(merged.data.collections[0], '第一个').name, '旅行', '本地改过的名字更可信，保留它')
 })
 
-await test('数据版本已经升到 5，老版本号仍能导入', () => {
-  eq(SCHEMA_VERSION, 5, '加了新实体就该升版本，好让老程序明确拒绝而不是静默丢字段')
+await test('数据版本已经升到 6，老版本号仍能导入', () => {
+  // 硬编码版本号是**故意的**：每次升版本都得来这里改一次，
+  // 那一下就是提醒「你刚才改的是数据结构，确认过老备份还能导入吗」。
+  // v5 → v6 的改动是物品状态多了 spare(备用)——那是**校验规则**变了，
+  // 老程序读到 'spare' 会认不出来，所以必须让它整份拒绝而不是丢掉那件物品。
+  eq(SCHEMA_VERSION, 6, '加了新状态就该升版本，好让老程序明确拒绝而不是静默丢字段')
 
   const raw = JSON.parse(JSON.stringify(buildExportFile(fixture()))) as Record<string, unknown>
   raw.schemaVersion = SCHEMA_VERSION - 1

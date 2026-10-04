@@ -42,8 +42,17 @@ export const itemEdit = {
   /* 数量、状态 */
   fieldQuantity: '数量',
   fieldStatus: '状态',
-  idleOn: '标记为闲置 —— 会出现在「闲置」页面里，等着被处理',
-  idleOff: '在用（打开开关可以标记为闲置）',
+  /*
+   * 状态从两档（闲置开关）改成三档。
+   * 因为开关只能表达「是 / 不是」，而备用是**第三条支线**，不是闲置的一种。
+   */
+  statusActive: '在用',
+  statusIdle: '闲置',
+  statusSpare: '备用',
+  statusActiveHint: '在用 —— 平时就在手边用的东西',
+  statusIdleHint: '闲置 —— 会出现在「闲置」页面里，等着被处理',
+  statusSpareHint: '备用 —— 特意留着等用的，收在「备用」页里，不会被催着处理',
+  statusDiscardedHint: '这条目前是「已舍弃」，在设置页的回收站里可以恢复。',
 
   /* 更多（标签、备注） */
   moreToggle: '更多（标签、活动、备注）',

@@ -42,8 +42,18 @@ export const itemEdit = {
   /* Quantity and status */
   fieldQuantity: 'Quantity',
   fieldStatus: 'Status',
-  idleOn: 'Marked as idle — it shows up on the Idle page, waiting to be dealt with',
-  idleOff: 'In use (switch it on to mark it idle)',
+  /*
+   * Status went from a two-way switch to three options: a switch can only say
+   * "yes / no", and a spare is a *third branch*, not a kind of idle.
+   */
+  statusActive: 'In use',
+  statusIdle: 'Idle',
+  statusSpare: 'Spare',
+  statusActiveHint: 'In use — the one you actually use day to day',
+  statusIdleHint: 'Idle — it shows up on the Idle page, waiting to be dealt with',
+  statusSpareHint: 'Spare — kept on purpose, filed on the Spares page, never nagged about',
+  statusDiscardedHint:
+    'This one is currently "Discarded". Restore it from the recycle bin on the Settings page.',
 
   /* More (tags, notes) */
   moreToggle: 'More (tags, collections, notes)',

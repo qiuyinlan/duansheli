@@ -88,6 +88,26 @@
   line-height: 1.6;
 }
 
+/* ---------------- 拆出备用：弹窗里那几行 ---------------- */
+
+.split-row {
+  gap: var(--gap-3);
+  padding: var(--gap-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.split-row:last-child {
+  border-bottom: none;
+}
+
+/* 数字用等宽数位，点 − / + 的时候宽度不会跳 */
+.split-row__count {
+  min-width: 2.5em;
+  text-align: center;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
 /* ---------------- 左右分栏（位置页） ---------------- */
 
 .split {

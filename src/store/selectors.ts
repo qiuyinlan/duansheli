@@ -108,6 +108,8 @@ export interface Stats {
   totalItems: number
   activeCount: number
   idleCount: number
+  /** 备用（另一条支线，见 ItemStatus 的注释） */
+  spareCount: number
   discardedCount: number
   unassignedCount: number
   uncategorizedCount: number
@@ -132,6 +134,7 @@ export function computeStats(
 ): Stats {
   let activeCount = 0
   let idleCount = 0
+  let spareCount = 0
   let discardedCount = 0
   let unassignedCount = 0
   let uncategorizedCount = 0
@@ -145,6 +148,7 @@ export function computeStats(
       continue
     }
     if (item.status === 'idle') idleCount++
+    else if (item.status === 'spare') spareCount++
     else activeCount++
 
     if (!item.locationId) unassignedCount++
@@ -159,9 +163,20 @@ export function computeStats(
   }
 
   return {
-    totalItems: activeCount + idleCount,
+    /*
+     * 「我的东西」= 在用 + 闲置 + 备用。
+     *
+     * 备用算进来：它是你**实实在在拥有的东西**，只是存在盒子里等用 ——
+     * 不算进去的话，概览首屏那个大数字会比你实际拥有的少，那是在骗自己。
+     *
+     * 副作用要如实说：「闲置占比」的分母因此变大了，也就是说备用越多，
+     * 那个比例显示得越小。方向是**安全**的 —— 它只是让提醒更温和，
+     * 不会跑去劝你处理你特意囤的东西。
+     */
+    totalItems: activeCount + idleCount + spareCount,
     activeCount,
     idleCount,
+    spareCount,
     discardedCount,
     unassignedCount,
     uncategorizedCount,
@@ -318,6 +333,8 @@ export function statusLabel(status: ItemStatus): string {
   switch (status) {
     case 'idle':
       return t('status.idle')
+    case 'spare':
+      return t('status.spare')
     case 'discarded':
       return t('status.discarded')
     case 'active':
@@ -326,7 +343,7 @@ export function statusLabel(status: ItemStatus): string {
   }
 }
 
-export const STATUS_ORDER: ItemStatus[] = ['active', 'idle', 'discarded']
+export const STATUS_ORDER: ItemStatus[] = ['active', 'spare', 'idle', 'discarded']
 
 /* ------------------------------------------------------------------ */
 /* 有效期的分组与标签                                                   */
@@ -364,7 +381,7 @@ export function labelForExpiryState(state: ExpiryState, _soonDays: number): stri
 }
 
 export function countByStatus(items: Item[]): BarDatum[] {
-  const counts: Record<ItemStatus, number> = { active: 0, idle: 0, discarded: 0 }
+  const counts: Record<ItemStatus, number> = { active: 0, spare: 0, idle: 0, discarded: 0 }
   for (const item of items) counts[item.status]++
   return STATUS_ORDER.filter((s) => counts[s] > 0).map((s) => ({
     key: s,
@@ -372,6 +389,27 @@ export function countByStatus(items: Item[]): BarDatum[] {
     value: counts[s],
     target: { kind: 'status' as const, id: s },
   }))
+}
+
+/* ------------------------------------------------------------------ */
+/* 备用                                                                */
+/* ------------------------------------------------------------------ */
+
+/** 备用物品（不含已舍弃的） */
+export function spareItems(data: AppData): Item[] {
+  return data.items.filter((item) => item.status === 'spare')
+}
+
+/**
+ * 一批物品一共有几「件」—— 数量求和，不是条数。
+ *
+ * 备用页要同时说清两个数，因为它们回答的是不同问题：
+ *   「3 种」（条数）→ 我囤了几样东西
+ *   「7 件」（件数）→ 盒子里到底塞了多少
+ * 囤纸巾的人要的是后者。
+ */
+export function totalUnits(items: readonly Item[]): number {
+  return items.reduce((sum, item) => sum + item.quantity, 0)
 }
 
 /* ------------------------------------------------------------------ */

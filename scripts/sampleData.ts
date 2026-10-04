@@ -124,6 +124,38 @@ const ITEMS: Spec[] = [
   { name: '感冒药', categories: ['药品'], attrs: { 购入日期: '2024-12-01' }, expiresInDays: 45 },
   { name: '创可贴', categories: ['药品'], status: 'idle', idleDays: 300, expiresInDays: -200 },
 
+  // ---- 备用：多买的那些东西，统一收在一个盒子里 ----
+  //
+  // 这几条专门用来验收「备用」这个栏目：它和「闲置」是两回事 ——
+  // 闲置是「该处理了」，备用是「特意留着的」。所以这里**两种都有**，
+  // 导入之后一眼就能看出界面有没有把它们混起来。
+  {
+    name: '备用牙膏',
+    quantity: 2,
+    categories: ['日用品'],
+    location: '储物间/收纳箱',
+    status: 'spare',
+    note: '上次一买三管，多的两管收这儿',
+    expiresInDays: 700,
+  },
+  {
+    name: '备用数据线',
+    quantity: 3,
+    categories: ['数码配件/数据线'],
+    location: '储物间/收纳箱',
+    status: 'spare',
+    attrs: { 价格: 29 },
+  },
+  {
+    name: '备用洗衣液',
+    quantity: 1,
+    categories: ['日用品'],
+    location: '储物间/货架',
+    status: 'spare',
+    // 只有 1 件 —— 用来验收「取用最后一件会让整条变成『在用』」
+    expiresInDays: 1200,
+  },
+
   // ---- 文具 / 工具 ----
   { name: '中性笔', quantity: 5, categories: ['文具'], location: '书房/书桌', collections: ['学习'] },
   { name: '螺丝刀套装', categories: ['工具'], location: '储物间/收纳箱', attrs: { 品牌: '博世' } },

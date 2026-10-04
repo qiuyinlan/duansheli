@@ -14,25 +14,40 @@ export const APP_ID = 'duansheli'
  * v3 → v4：新增活动合集（AppData.collections + Item.collectionIds）。
  * v4 → v5：新增清单（AppData.checklists）—— 活动是一次性的实例，
  *          和作为模板的「活动合集」分开存。
+ * v5 → v6：物品状态增加 spare(备用)。这是**校验规则**变了：
+ *          老程序读到 `status: 'spare'` 会认不出来，所以让它明确拒绝
+ *          整份备份比让它默默把那件物品的备用属性丢掉要好。
  *
  * 升版本号是为了保护老程序：它拿到更高版本的备份会**明确拒绝**并提示升级，
  * 而不是静默把不认识的字段丢掉 —— 静默丢字段是最糟的，用户会以为备份是完整的。
  * 反过来老备份能正常导入新程序，缺的字段按默认值补齐
  * （分类全是顶层、有效期为空、不属于任何活动、没有清单）。
  */
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6
 
 /* ------------------------------------------------------------------ */
 /* 物品                                                                */
 /* ------------------------------------------------------------------ */
 
 /**
- * 物品状态机：
+ * 物品状态。
+ *
  *   active(在用) ──标记闲置──> idle(闲置) ──舍弃──> discarded(已舍弃)
  *        ↑                        │                      │
- *        └────────改回在用─────────┘      恢复 ←──────────┘
+ *        └───────改回在用─────────┘       恢复 ←─────────┘
+ *
+ *   spare(备用) 是**另一条支线**，不在这条链上：
+ *      active/spare 之间可以互相来回（取用 ⇄ 标记备用），
+ *      两边都能被舍弃，舍弃后也都能恢复。
+ *
+ * ── 为什么备用不复用闲置 ──────────────────────────────────────────
+ * 两者都是「现在没在用」，但**意思正好相反**：
+ *   · 闲置 = 「留着也没用」，闲置页的框架就是「越久越说明它不该留在这里」
+ *   · 备用 = 「特意留着的」，放两年也完全正常
+ * 合成一个的话，闲置页会跑去劝你扔掉自己特意囤的东西；
+ * 而且「闲置占比」是断舍离的核心指标，把备用算进去会把这个数字弄脏。
  */
-export type ItemStatus = 'active' | 'idle' | 'discarded'
+export type ItemStatus = 'active' | 'idle' | 'spare' | 'discarded'
 
 export type AttrType = 'text' | 'number' | 'date' | 'select' | 'bool'
 
@@ -381,6 +396,25 @@ export interface UiPrefs {
    *   · **必须有提示条**。悄悄藏数据是最糟的结果，藏了多少、去哪看要一眼看得到
    */
   hideIdle: boolean
+  /**
+   * 物品列表里默认不展示「备用」的东西，默认 **开**。
+   *
+   * 和 hideIdle 是同一个道理，但**必须分开两个开关**：
+   * 「闲置不该出现在日常清单里」和「备用不该出现在日常清单里」
+   * 是两种不同的判断，有人只想要其中一个。
+   *
+   * 边界和 hideIdle 完全一致：只影响物品列表、主动筛选时不藏、必须有提示条。
+   */
+  hideSpare: boolean
+  /**
+   * 拆出备用时，新那条备用默认放进哪个位置，默认 null（未归位）。
+   *
+   * 为什么值得单独记一个偏好：备用基本都是**收在一个盒子里的**
+   * （用户原话：「我一般就把备用的统一放在一个盒子里」）。
+   * 每拆一次都要重新选一遍那个盒子，纯属白费事 ——
+   * 所以第一次选完就记住，下次自动填上，但**每次都还能改**。
+   */
+  spareLocationId: string | null
 }
 
 export const EXPIRY_SOON_DEFAULT_DAYS = 30
@@ -400,4 +434,6 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
   expirySoonDays: EXPIRY_SOON_DEFAULT_DAYS,
   expiryShowLater: false,
   hideIdle: true,
+  hideSpare: true,
+  spareLocationId: null,
 }

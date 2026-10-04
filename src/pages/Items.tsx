@@ -4,8 +4,9 @@ import { FilterPanel } from '../components/FilterPanel'
 import { ItemRow } from '../components/ItemRow'
 import { AddToCollectionDialog } from './Collections'
 import { CreateChecklistDialog } from './Checklists'
+import { SplitToSpareDialog } from './Spare'
 import { LocationPicker, TagInput } from '../components/pickers'
-import { IconChevronRight, IconIdle, IconTrash } from '../components/ui/icons'
+import { IconChevronRight, IconIdle, IconSpare, IconTrash } from '../components/ui/icons'
 import { Button, ConfirmDialog, EmptyState, Modal, SearchInput } from '../components/ui/primitives'
 import {
   EMPTY_FILTER,
@@ -127,6 +128,7 @@ export function Items() {
   const [batchTagDraft, setBatchTagDraft] = useState<string[]>([])
   const [collectionOpen, setCollectionOpen] = useState(false)
   const [checklistOpen, setChecklistOpen] = useState(false)
+  const [splitOpen, setSplitOpen] = useState(false)
   const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false)
 
   // URL 是「从别处跳进来」时的唯一真源；之后再手动改筛选不会写回 URL，
@@ -161,14 +163,29 @@ export function Items() {
    *   · 摘掉多少必须显示出来（下面那条 hiddenIdleCount 的提示）
    */
   const idleHidden = ui.hideIdle && !filter.statuses.includes('idle')
+  /*
+   * 备用同理，但它是**独立的一个开关和一条提示**。
+   * 「闲置别碍事」和「备用别碍事」是两种不同的判断，有人只想要其中一个；
+   * 合成一条的话，关掉其中一个就没法只留另一个。
+   */
+  const spareHidden = ui.hideSpare && !filter.statuses.includes('spare')
 
   const visible = useMemo(
-    () => (idleHidden ? source.filter((item) => item.status !== 'idle') : source),
-    [source, idleHidden],
+    () =>
+      source.filter((item) => {
+        if (idleHidden && item.status === 'idle') return false
+        if (spareHidden && item.status === 'spare') return false
+        return true
+      }),
+    [source, idleHidden, spareHidden],
   )
 
   const hiddenIdleCount = idleHidden
     ? source.filter((item) => item.status === 'idle').length
+    : 0
+
+  const hiddenSpareCount = spareHidden
+    ? source.filter((item) => item.status === 'spare').length
     : 0
 
   const filtered = useMemo(
@@ -427,6 +444,30 @@ export function Items() {
         </div>
       ) : null}
 
+      {/*
+        备用被收起时的提示。理由和上面闲置那条完全一样：
+        光说「收了几件」不够，必须给出去哪看的入口 ——
+        否则用户会以为「我明明录过那个，怎么不见了」。
+      */}
+      {hiddenSpareCount > 0 ? (
+        <div className="hidden-notice">
+          <span className="hidden-notice__icon">
+            <IconSpare size={14} />
+          </span>
+          <span className="grow small">{tc(hiddenSpareCount, 'items.spareHidden')}</span>
+          <Button size="sm" variant="ghost" onClick={() => navigate('/spare')}>
+            {t('items.spareHiddenGo')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setFilter((prev) => ({ ...prev, statuses: ['spare'] }))}
+          >
+            {t('items.spareHiddenShow')}
+          </Button>
+        </div>
+      ) : null}
+
       {/* ---------------- 工具条 ---------------- */}
       <div className="toolbar">
         <SearchInput
@@ -592,6 +633,12 @@ export function Items() {
           <Button size="sm" onClick={() => runBatchStatus('idle')}>
             {t('items.markIdleBatch')}
           </Button>
+          <Button size="sm" onClick={() => runBatchStatus('spare')}>
+            {t('items.markSpareBatch')}
+          </Button>
+          <Button size="sm" onClick={() => setSplitOpen(true)}>
+            {t('items.splitToSpare')}
+          </Button>
           <Button size="sm" onClick={() => runBatchStatus('active')}>
             {t('items.backToActive')}
           </Button>
@@ -743,6 +790,17 @@ export function Items() {
           setSelected(new Set())
           // 直接进新清单 —— 建它就是为了马上打钩
           navigate(`/checklists/${created}`)
+        }}
+      />
+
+      <SplitToSpareDialog
+        open={splitOpen}
+        itemIds={selectedIds}
+        locationCounts={locationCounts}
+        onClose={() => {
+          setSplitOpen(false)
+          // 拆完这些物品的数量/状态都变了，选中态留着只会让人误操作下一次
+          setSelected(new Set())
         }}
       />
 

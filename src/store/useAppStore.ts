@@ -296,6 +296,24 @@ export interface DeleteCategoryResult {
   itemCount: number
 }
 
+/** 取用一件备用的结果 */
+export interface TakeSpareResult {
+  /** 这次取用是否让整条记录变成了「在用」 */
+  becameActive: boolean
+  /** 这条记录还剩几件备用（变成在用之后是 0，已经不属于备用区了） */
+  remaining: number
+}
+
+/**
+ * 拆出备用的结果。
+ *
+ * 失败时给的是**机器码**而不是一句话：调用方才知道该怎么措辞，
+ * 而且分类 / 位置那两处已经踩过这个坑（见 `canReparent`）。
+ */
+export type SplitToSpareResult =
+  | { ok: true; spareId: string; movedCount: number; leftCount: number }
+  | { ok: false; reason: 'notFound' | 'discarded' | 'tooFew' }
+
 /**
  * 名称解析器：把「分类名 / 位置名称路径」解析成 id，不存在就顺手创建。
  *
@@ -463,6 +481,32 @@ export interface AppState {
   restoreItem: (id: string) => void
   purgeItem: (id: string) => void
   batchSetStatus: (ids: string[], status: ItemStatus) => void
+  /**
+   * 取用一件备用。
+   *
+   * 两种情况其实是**同一件事**：刚好一件从备用区出来、进入使用。
+   *   · 还有存货（数量 > 1）→ 少一件，剩下的继续待在备用区
+   *   · 这是最后一件 → 整条记录改成「在用」
+   * 所以这不是特例，是同一条规则的两个结果。
+   */
+  takeSpareOne: (id: string) => TakeSpareResult
+  /**
+   * 从一条物品里拆出 n 件，新建一条**备用**记录。
+   *
+   * 「一个东西买多了」就靠这个：牙膏 ×3 → 拆出 2 件 →
+   * 新建「牙膏（备用）×2」进备用区，原来那条变成 ×1。
+   *
+   * `spareLocationId`：
+   *   · `undefined` = 用记住的那个备用位置（`ui.spareLocationId`）
+   *   · `null`      = 明确放「未归位」
+   * 之所以要区分这两者：备用基本都是收在**同一个盒子**里的，
+   * 但「我没设置过」和「我就是要未归位」是两回事。
+   */
+  splitToSpare: (
+    id: string,
+    count: number,
+    spareLocationId?: string | null,
+  ) => SplitToSpareResult
   /** 批量设/清有效期。传 null 就是清掉。 */
   setExpiry: (ids: string[], expiresAt: string | null) => void
   batchMoveToLocation: (ids: string[], locationId: string | null) => void
@@ -922,6 +966,83 @@ export const useAppStore = create<AppState>()((set, get) => {
         }
       })
       replaceItems(items, 'auto')
+    },
+
+    takeSpareOne: (id) => {
+      const data = get().data
+      const index = data.items.findIndex((i) => i.id === id)
+      const item = index >= 0 ? data.items[index] : undefined
+      if (item === undefined || item.status !== 'spare') {
+        return { becameActive: false, remaining: 0 }
+      }
+
+      const now = new Date().toISOString()
+      const items = [...data.items]
+
+      if (item.quantity > 1) {
+        items[index] = { ...item, quantity: item.quantity - 1, updatedAt: now }
+        commit({ ...data, items }, 'auto')
+        return { becameActive: false, remaining: item.quantity - 1 }
+      }
+
+      // 最后一件：整条离开备用区，变成在用
+      items[index] = {
+        ...item,
+        status: 'active',
+        idleAt: null,
+        discardedAt: null,
+        updatedAt: now,
+      }
+      commit({ ...data, items }, 'auto')
+      return { becameActive: true, remaining: 0 }
+    },
+
+    splitToSpare: (id, count, spareLocationId) => {
+      const data = get().data
+      const item = data.items.find((i) => i.id === id)
+      if (item === undefined) return { ok: false, reason: 'notFound' }
+      if (item.status === 'discarded') return { ok: false, reason: 'discarded' }
+
+      /*
+       * 原处必须**至少留一件**。
+       *
+       * 要是允许全拆走，那就不叫「拆出备用」了 —— 那叫「这一整条都变成备用」，
+       * 是「标记备用」那个按钮干的事。两个动作用两条路，语义才不含糊。
+       * 数量只有 1 时就是这种情况，如实告诉用户该用哪个动作。
+       */
+      if (item.quantity <= 1) return { ok: false, reason: 'tooFew' }
+
+      const moved = Math.max(1, Math.min(Math.round(count), item.quantity - 1))
+      const left = item.quantity - moved
+      const now = new Date().toISOString()
+
+      /*
+       * 新那条是**同款的一个副本**：名字、分类、标签、属性、备注、有效期、
+       * 所属活动全部照抄，只有 id / 数量 / 状态 / 位置不同。
+       *
+       * 抄备注是有意的，虽然备注有时是「还剩半瓶」这种和单件绑定的说法 ——
+       * 但「拆出来的和原来那条一样，只是状态和数量不同」这条规则更好预测，
+       * 而且抄错了看得见、改得掉；反过来悄悄丢掉才会让人莫名其妙。
+       */
+      const spare: Item = {
+        ...item,
+        id: uid(),
+        quantity: moved,
+        status: 'spare',
+        locationId: spareLocationId === undefined ? get().ui.spareLocationId : spareLocationId,
+        createdAt: now,
+        updatedAt: now,
+        idleAt: null,
+        discardedAt: null,
+      }
+
+      const items = data.items.map((existing) =>
+        existing.id === id ? { ...existing, quantity: left, updatedAt: now } : existing,
+      )
+      items.push(spare)
+
+      commit({ ...data, items }, 'auto')
+      return { ok: true, spareId: spare.id, movedCount: moved, leftCount: left }
     },
 
     /**

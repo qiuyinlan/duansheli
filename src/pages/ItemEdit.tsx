@@ -34,6 +34,23 @@ const EXPIRY_QUICK_CHOICES: Array<{ days: number; labelKey: DictKey }> = [
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
 /**
+ * 表单里能选的三个状态。
+ *
+ * 只有三个 —— 「已舍弃」不在这里：它是流程的出口（顶部那个舍弃按钮），
+ * 不是一种你可以随手选中的状态。让用户直接选「已舍弃」等于把
+ * 「扔东西」变成一个下拉选项，那太轻率了。
+ */
+const STATUS_OPTIONS: Array<{
+  status: Exclude<ItemStatus, 'discarded'>
+  labelKey: DictKey
+  hintKey: DictKey
+}> = [
+  { status: 'active', labelKey: 'itemEdit.statusActive', hintKey: 'itemEdit.statusActiveHint' },
+  { status: 'idle', labelKey: 'itemEdit.statusIdle', hintKey: 'itemEdit.statusIdleHint' },
+  { status: 'spare', labelKey: 'itemEdit.statusSpare', hintKey: 'itemEdit.statusSpareHint' },
+]
+
+/**
  * 在 `YYYY-MM-DD` 上加减天数，返回同样格式的串。
  *
  * 用**本地日期**算术（`new Date(y, m, d)`）：绝不能走 `toISOString()`，
@@ -441,14 +458,40 @@ export function ItemEdit() {
           />
         </div>
 
-        {/* ---------------- 闲置 ---------------- */}
+        {/* ---------------- 状态 ---------------- */}
+        {/*
+          三档，不是开关：开关只能表达「是 / 不是」，
+          而备用是**第三条支线**（特意留着的），不是闲置的一种。
+          合成一档会让「闲置占比」和闲置页的提醒都被弄脏。
+
+          已舍弃不在这三档里 —— 它是出口，由顶部那个「舍弃」按钮负责，
+          恢复在设置页的回收站。所以这里单独说一句，免得用户以为
+          「一个都没选中」是界面坏了。（以前用开关时，已舍弃的物品
+          会被显示成「在用」，那是个实打实的错。）
+        */}
         <div className="field">
           <span className="field__label">{t('itemEdit.fieldStatus')}</span>
-          <Switch
-            checked={status === 'idle'}
-            onChange={(checked) => setStatus(checked ? 'idle' : 'active')}
-            label={status === 'idle' ? t('itemEdit.idleOn') : t('itemEdit.idleOff')}
-          />
+          {status === 'discarded' ? (
+            <div className="dim small">{t('itemEdit.statusDiscardedHint')}</div>
+          ) : (
+            <>
+              <div className="segmented">
+                {STATUS_OPTIONS.map((option) => (
+                  <button
+                    key={option.status}
+                    type="button"
+                    className={`segmented__item${status === option.status ? ' is-active' : ''}`}
+                    onClick={() => setStatus(option.status)}
+                  >
+                    {t(option.labelKey)}
+                  </button>
+                ))}
+              </div>
+              <div className="dim small" style={{ marginTop: 'var(--gap-2)' }}>
+                {t(STATUS_OPTIONS.find((o) => o.status === status)?.hintKey ?? 'itemEdit.statusActiveHint')}
+              </div>
+            </>
+          )}
         </div>
 
         {/* ---------------- 有效期 ---------------- */}

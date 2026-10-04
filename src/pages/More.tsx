@@ -7,12 +7,13 @@ import {
   IconFolder,
   IconGear,
   IconSettings,
+  IconSpare,
   IconSparkle,
   IconSuitcase,
   IconTag,
 } from '../components/ui/icons'
 import { useT } from '../i18n'
-import { computeStats } from '../store/selectors'
+import { computeStats, spareItems, totalUnits } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
 
 /** 手机端的「更多」入口页。桌面端这些入口已经在侧栏里，不会走到这里。 */
@@ -27,6 +28,8 @@ export function More() {
 
   const stats = useMemo(() => computeStats(data, soonDays), [data, soonDays])
   const urgentCount = stats.expiredCount + stats.expiringSoonCount
+  // 徽标和侧栏一样显示**件数**：囤东西的人关心的是「还剩几件」
+  const spareUnits = useMemo(() => totalUnits(spareItems(data)), [data])
 
   const entries = [
     {
@@ -59,6 +62,16 @@ export function More() {
       meta: t('more.count', { count: data.checklists.length }),
       Icon: IconChecklist,
       desc: t('more.checklistsDesc'),
+    },
+    {
+      to: '/spare',
+      label: t('nav.spare'),
+      meta:
+        spareUnits > 0
+          ? t('spare.highlightUnits', { count: spareUnits })
+          : t('more.spareMetaEmpty'),
+      Icon: IconSpare,
+      desc: t('more.spareDesc'),
     },
     {
       to: '/categories',

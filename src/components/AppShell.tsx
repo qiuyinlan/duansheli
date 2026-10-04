@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { computeStats } from '../store/selectors'
+import { computeStats, totalUnits } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
 import { applySectionTheme, themeForPath } from '../lib/sections'
 import type { DictKey } from '../i18n'
@@ -20,6 +20,7 @@ import {
   IconOverview,
   IconPlus,
   IconSettings,
+  IconSpare,
   IconSparkle,
   IconSuitcase,
   IconTag,
@@ -41,7 +42,7 @@ interface NavEntry {
   labelKey: DictKey
   Icon: (props: { size?: number }) => JSX.Element
   /** 用计数做徽标 */
-  badge?: 'idle' | 'expiry'
+  badge?: 'idle' | 'spare' | 'expiry'
 }
 
 const PRIMARY_NAV: NavEntry[] = [
@@ -49,6 +50,7 @@ const PRIMARY_NAV: NavEntry[] = [
   { to: '/items', labelKey: 'nav.items', Icon: IconItems },
   { to: '/locations', labelKey: 'nav.locations', Icon: IconLocations },
   { to: '/idle', labelKey: 'nav.idle', Icon: IconIdle, badge: 'idle' },
+  { to: '/spare', labelKey: 'nav.spare', Icon: IconSpare, badge: 'spare' },
   { to: '/expiry', labelKey: 'nav.expiry', Icon: IconClock, badge: 'expiry' },
   { to: '/collections', labelKey: 'nav.collections', Icon: IconSuitcase },
   { to: '/checklists', labelKey: 'nav.checklists', Icon: IconChecklist },
@@ -80,6 +82,7 @@ const ROOT_ROUTES = new Set([
   '/items',
   '/locations',
   '/idle',
+  '/spare',
   '/expiry',
   '/collections',
   '/checklists',
@@ -98,6 +101,7 @@ function titleKeyForPath(pathname: string): DictKey {
   if (/^\/items\/[^/]+$/.test(pathname)) return 'nav.titleItemDetail'
   if (pathname === '/locations') return 'nav.titleLocations'
   if (pathname === '/idle') return 'nav.titleIdle'
+  if (pathname === '/spare') return 'nav.titleSpare'
   if (pathname === '/expiry') return 'nav.titleExpiry'
   if (pathname.startsWith('/collections')) return 'nav.titleCollections'
   if (pathname.startsWith('/checklists')) return 'nav.titleChecklists'
@@ -154,6 +158,11 @@ export function AppShell() {
 
   const badgeValue = (entry: NavEntry): number | null => {
     if (entry.badge === 'idle') return stats.idleCount > 0 ? stats.idleCount : null
+    /*
+     * 备用徽标显示的是**件数**不是条数 —— 徽标的用处是「我囤了多少」，
+     * 而囤纸巾的人关心的显然是「还有 7 件」而不是「还有 3 种」。
+     */
+    if (entry.badge === 'spare') return spareUnits > 0 ? spareUnits : null
     if (entry.badge === 'expiry') {
       const urgent = stats.expiredCount + stats.expiringSoonCount
       return urgent > 0 ? urgent : null
@@ -166,6 +175,8 @@ export function AppShell() {
   const showBack = !ROOT_ROUTES.has(pathname)
 
   const backupHint = stats.totalItems > 0 && lastExportAt === null ? t('nav.neverBackedUp') : null
+
+  const spareUnits = totalUnits(data.items.filter((i) => i.status === 'spare'))
 
   return (
     <div className="app-shell">

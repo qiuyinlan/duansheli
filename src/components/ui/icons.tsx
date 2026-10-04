@@ -56,6 +56,20 @@ export const IconIdle = (p: IconProps) => (
   </Svg>
 )
 
+/**
+ * 备用：一大一小两个方块叠着。
+ *
+ * 和 IconIdle 那个「带盖的托盘」刻意画得不一样 ——
+ * 这两页在情绪上正好相反（闲置是「该处理了」，备用是「特意留的」），
+ * 图标要是也长得像，扫一眼就更分不清在哪一页。
+ */
+export const IconSpare = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4.75 2.25h6.5v4h-6.5z" />
+    <path d="M2.25 9h11.5v4.75H2.25z" />
+  </Svg>
+)
+
 export const IconMore = (p: IconProps) => (
   <Svg {...p}>
     <path d="M3 3.5h10M3 8h10M3 12.5h10" />

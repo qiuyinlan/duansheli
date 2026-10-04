@@ -50,7 +50,7 @@ function isoDate(v: unknown, fallback: string): string {
 }
 
 const ATTR_TYPES: AttrType[] = ['text', 'number', 'date', 'select', 'bool']
-const ITEM_STATUSES: ItemStatus[] = ['active', 'idle', 'discarded']
+const ITEM_STATUSES: ItemStatus[] = ['active', 'idle', 'spare', 'discarded']
 
 function uniq(values: string[]): string[] {
   return [...new Set(values)]

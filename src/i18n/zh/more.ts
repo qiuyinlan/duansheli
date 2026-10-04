@@ -14,6 +14,10 @@ export const more = {
   expiryMetaClear: '最近没有到期的',
   expiryDesc: '按到期时间排，先处理最急的',
 
+  /* 备用 */
+  spareMetaEmpty: '还没有备用',
+  spareDesc: '囤着等用的东西，用完了来这儿取',
+
   /* 活动合集 */
   collectionsDesc: '旅行、学习这类，一份要用的清单',
   checklistsDesc: '临时待办，边办边打钩，办完删掉',
