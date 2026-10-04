@@ -156,6 +156,31 @@ export const data = {
     csvUpdatedAt: 'Last updated',
   },
 
+  /* ---------------- Recovering from a CSV item list ---------------- */
+  /*
+   * CSV was meant to be view-only. Now that it can be recovered from,
+   * this copy has an extra duty: **it must say what cannot come back.**
+   * Looking like a complete restore is far more dangerous than admitting
+   * it is partial.
+   */
+  csv: {
+    empty: 'This file has no rows at all.',
+    noNameColumn: 'Could not find a "Name" column — this does not look like an item list exported from here.',
+    noItems: 'No items could be read (every row was missing a name).',
+
+    warnNotABackup:
+      'This was recovered from a CSV list, not from a real backup. Everything that could be saved is here, but the items below cannot be recovered.',
+    warnCollections:
+      'Collection membership (Trip / Course / …) cannot be recovered — the CSV has no such column.',
+    warnLists: 'Lists cannot be recovered — the CSV has no such column.',
+    warnCategoryTree:
+      'The category hierarchy cannot be recovered: the CSV only stored category names, so the parent/child structure was lost when it was exported. They are all top-level categories now; tidy them up on the Categories page if you want.',
+    warnAttrTypes:
+      'Field types cannot be recovered: everything is created as plain text, and units are taken from the parentheses in the header. Change them on the Fields page if needed.',
+    warnSkipped_one: '{count} row had no name and was skipped.',
+    warnSkipped_other: '{count} rows had no name and were skipped.',
+  },
+
   /* ---------------- AI client error mapping ---------------- */
   ai: {
     noKey: 'No DeepSeek API Key yet.',

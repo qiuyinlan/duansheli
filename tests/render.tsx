@@ -1447,6 +1447,26 @@ await test('设置页有「默认隐藏闲置」开关，并显示当前网址',
   })
 })
 
+await test('设置页的导入能选 CSV（用户就是卡在这一步）', () => {
+  /*
+   * 用户报的「我这个 CSV 为什么不能导入」，直接原因是文件选择器：
+   * 原来写的是 accept=".json,application/json" —— **.csv 根本不显示**，
+   * 连选都选不上。
+   *
+   * 所以这条断言的是那个 accept 属性本身。看着像在测实现细节，
+   * 但它恰恰是用户实际撞到的那道门。
+   */
+  withPage('/settings', fixture(), (container, _html) => {
+    const input = must(
+      container.querySelector<HTMLInputElement>('input[type=file]'),
+      '设置页应该有一个文件选择框',
+    )
+    const accept = input.getAttribute('accept') ?? ''
+    ok(accept.includes('.csv'), `accept 里必须包含 .csv，实际：${accept}`)
+    ok(accept.includes('.json'), '也不能把 JSON 弄丢')
+  })
+})
+
 await test('设置页有数据体检，文案里没有漏到界面上的加粗星号', () => {
   // t() 只做 {变量} 插值，不认 markdown。
   // 文案里写 `**网址**` 是把「加粗」误当成了渲染语法 ——

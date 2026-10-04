@@ -10,6 +10,8 @@ import { AiError } from './deepseek'
 import { fill } from './promptText'
 import { t } from '../i18n'
 import { normalizeExpiryDate } from '../lib/expiry'
+import { statusFromWords } from '../lib/statusWords'
+import type { ItemStatus } from '../types'
 
 /* ------------------------------------------------------------------ */
 /* 从文本里抠出 JSON                                                   */
@@ -159,55 +161,22 @@ function uniq(values: string[]): string[] {
  * 让模型在一个数组元素里顺手说出「已舍弃」，等于把「扔东西」变成一个
  * 可以随口带出来的副作用，那太轻率了。
  */
-export type AiStatus = 'active' | 'idle' | 'spare'
+export type AiStatus = Exclude<ItemStatus, 'discarded'>
 
 /**
  * 解析出来的状态：`'discarded'` 是**单独一档**，因为它要被转成一次删除请求，
  * 不是被塞进物品的字段。
  */
-export type RawStatus = AiStatus | 'discarded' | null
+export type RawStatus = ItemStatus | null
 
 /**
- * 状态词的别名表。
+ * 状态词的别名表搬到了 `lib/statusWords.ts`。
  *
- * 为什么要认这么多写法：模型有时给代码值，有时给界面上的中文，切到英文界面
- * 又给英文词。这几种都是「同一个意思」，认不出来就会退化成「AI 没提状态」，
- * 而用户明明说了 —— 那正是这次要修的那个 bug。
+ * 因为 CSV 导入那边也要认同一批词（导出时写的就是**界面上的词**），
+ * 各写一份迟早会漂 —— 而「认不出来」的表现是状态悄悄没了，不是报错。
  */
-const STATUS_ALIASES: Record<string, RawStatus> = {
-  active: 'active',
-  在用: 'active',
-  使用中: 'active',
-  正常: 'active',
-  'in use': 'active',
-  'in-use': 'active',
-  inuse: 'active',
-  using: 'active',
-
-  idle: 'idle',
-  闲置: 'idle',
-  闲置中: 'idle',
-
-  spare: 'spare',
-  备用: 'spare',
-  备份: 'spare',
-  囤货: 'spare',
-
-  discarded: 'discarded',
-  已舍弃: 'discarded',
-  舍弃: 'discarded',
-  丢弃: 'discarded',
-  扔掉: 'discarded',
-  扔了: 'discarded',
-  discard: 'discarded',
-  deleted: 'discarded',
-  removed: 'discarded',
-}
-
 function asAiStatus(value: unknown): RawStatus {
-  const text = asString(value).toLowerCase().replace(/\s+/g, ' ').trim()
-  if (text === '') return null
-  return STATUS_ALIASES[text] ?? null
+  return statusFromWords(value)
 }
 
 /**

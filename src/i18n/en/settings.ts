@@ -56,6 +56,9 @@ export const settings = {
   importReplaceDone_one: 'Replaced your data with the backup: {count} item',
   importReplaceDone_other: 'Replaced your data with the backup: {count} items',
   importFailedToast: 'Import failed',
+  /* Shown when a .csv was picked but could not be read — more useful than the generic JSON error */
+  importCsvFailed:
+    'This CSV could not be read. It needs at least a "Name" column (or 名称) and comma separators — that is what an item list exported from here looks like.',
 
   /* ---------------- Display preferences ---------------- */
   displayTitle: 'Display preferences',

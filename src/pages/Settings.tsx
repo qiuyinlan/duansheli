@@ -11,6 +11,7 @@ import { Button, ConfirmDialog, Modal, Switch } from '../components/ui/primitive
 import { exportCsv } from '../data/exportCsv'
 import { exportJson } from '../data/exportJson'
 import { parseExportFile } from '../data/validate'
+import { looksLikeCsv, parseCsvToAppData } from '../data/csvImport'
 import { useT } from '../i18n'
 import { formatBytes, readFileAsText } from '../lib/download'
 import { formatDateTime, formatRelative } from '../lib/format'
@@ -29,6 +30,8 @@ interface ImportPreview {
   data: AppData
   warnings: string[]
   exportedAt: string | null
+  /** 从 CSV 清单恢复的（不完整）—— 预览里要额外提醒一句 */
+  fromCsv?: boolean
 }
 
 /* ------------------------------------------------------------------ */
@@ -333,9 +336,41 @@ export function Settings() {
   const handleFile = async (file: File) => {
     try {
       const text = await readFileAsText(file)
+
+      /*
+       * CSV 也走这里。
+       *
+       * 不是按扩展名分叉，而是先看内容像不像 JSON ——
+       * 文件名不可信（有人会把 csv 改名成 json，也有人反过来），
+       * 而内容骗不了人。CSV 那条路会被转成一份标准 AppData，
+       * 于是下面的预览、覆盖/合并、快照、报告全都照旧复用。
+       */
+      if (looksLikeCsv(text)) {
+        const csv = parseCsvToAppData(text)
+        if (!csv.ok) {
+          setImportError(csv.error)
+          return
+        }
+        setImportStrategy('replace')
+        setImportPreview({
+          fileName: file.name,
+          data: csv.data,
+          warnings: csv.warnings,
+          exportedAt: csv.exportedAt,
+          // 让预览里能明确写出「这是从 CSV 恢复的、不完整」
+          fromCsv: true,
+        })
+        return
+      }
+
       const result = parseExportFile(text)
       if (!result.ok) {
-        setImportError(result.error)
+        // JSON 没解析成功、但看着像 CSV 时，给一句更对症的话
+        setImportError(
+          file.name.toLowerCase().endsWith('.csv')
+            ? t('settings.importCsvFailed')
+            : result.error,
+        )
         return
       }
       setImportStrategy('replace')
@@ -452,7 +487,7 @@ export function Settings() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".json,application/json"
+                  accept=".json,.csv,application/json,text/csv"
                   className="sr-only"
                   onChange={(e) => {
                     const file = e.target.files?.[0]
@@ -808,6 +843,20 @@ export function Settings() {
       >
         {importPreview ? (
           <div className="stack">
+            {/*
+              从 CSV 恢复时，最上面必须有一句「这是不完整的」。
+              藏在小字里不够 —— 用户会以为这是完整恢复，然后放心地
+              覆盖掉现有数据。这条横幅就是防止那件事的。
+            */}
+            {importPreview.fromCsv ? (
+              <div className="notice notice--alert">
+                <span className="notice__icon">
+                  <IconAlert />
+                </span>
+                <span className="notice__body small">{t('data.csv.warnNotABackup')}</span>
+              </div>
+            ) : null}
+
             <div className="report">
               <div className="report__row">
                 <span>{t('settings.previewFileLabel')}</span>

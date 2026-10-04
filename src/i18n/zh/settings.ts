@@ -52,6 +52,9 @@ export const settings = {
   importReplaceDone_one: '已覆盖导入：{count} 件物品',
   importReplaceDone_other: '已覆盖导入：{count} 件物品',
   importFailedToast: '导入失败',
+  /* 选了 .csv 但内容读不出来时，比 JSON 那句通用报错更对症 */
+  importCsvFailed:
+    '这个 CSV 认不出来。需要至少有一列「名称」（或 Name），并且是逗号分隔 —— 本程序导出的物品清单就长这样。',
 
   /* ---------------- 显示偏好 ---------------- */
   displayTitle: '显示偏好',
