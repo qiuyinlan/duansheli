@@ -30,6 +30,24 @@ export function createRepository(kind: RepositoryKind = 'local'): Repository {
 }
 
 export function getRepository(): Repository {
+  // 测试可以临时插一个假的进来（见下面的说明）—— 生产路径永远是本地仓库
+  if (override !== null) return override
   if (!instance) instance = createRepository('local')
   return instance
+}
+
+/**
+ * 仅供测试：临时换掉仓储实现。
+ *
+ * 为什么需要它：有几件事只有在**写盘失败**时才看得出来
+ * （最要紧的一条是「写不进去时不能拿盘上的旧数据覆盖内存」，见 useAppStore.init）。
+ * 而 ESM 的模块命名空间是只读的 —— 测试里没法直接 `module.getRepository = ...`，
+ * 所以留一个显式的口子，而不是为了让测试能打桩去改生产代码的形状。
+ *
+ * 传 null 恢复。**生产代码里没有任何地方调用它。**
+ */
+let override: Repository | null = null
+
+export function __setRepositoryForTest(repo: Repository | null): void {
+  override = repo
 }

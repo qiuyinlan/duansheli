@@ -24,7 +24,11 @@ import { getRepository } from '../storage/repository'
 import { createEmptyData, createSeedData } from '../storage/seed'
 import { t } from '../i18n'
 import type { ReparentBlock } from '../lib/tree'
-import { createSnapshot, getSnapshot } from '../storage/snapshots'
+import { createSnapshot, getSnapshot, listSnapshots } from '../storage/snapshots'
+import {
+  applyCategoryPlan as applyCategoryPlanPure,
+  type CategoryPlanEntry,
+} from '../ai/categoryEdit'
 import type { DerivedContext } from './selectors'
 import { createDerived } from './selectors'
 import { clearAiSession, useAiSessionStore } from './useAiSessionStore'
@@ -43,6 +47,18 @@ function enqueueWrite(task: () => Promise<void>): Promise<void> {
   writeChain = writeChain.then(task, task)
   return writeChain
 }
+
+/**
+ * 内存里有没有**还没落盘**的改动。
+ *
+ * 存在的唯一理由是挡住 `init()` 的覆盖：`init` 会从 IndexedDB 重新读一遍，
+ * 而排队没写完的改动不在盘上 —— 读回来的就是旧数据，覆盖之后
+ * 用户刚刚新建的东西会在眼前消失（issue 10）。
+ *
+ * 不放进 store 是因为它**不需要触发重渲染**：界面上没有任何东西依赖它，
+ * 它只用来做一个判断（和 `setAiCancel` 同一个道理）。
+ */
+let dirtySinceFlush = false
 
 /* ------------------------------------------------------------------ */
 /* 界面偏好（存 localStorage —— 丢了完全不影响数据）                     */
@@ -293,8 +309,23 @@ export interface ApplyDraftResult {
   updated: number
   /** 被移入回收站的已有物品数 */
   discarded: number
+  /**
+   * 要求删、但数据库里找不到的那些 id 的条数。
+   *
+   * 以前这是**静默跳过**的：点完采纳、提示说「移入回收站 3」，
+   * 其实一件都没动。所以数出来，让界面如实说一句。
+   */
+  missingDiscards: number
   createdCategories: number
   createdLocations: number
+  /**
+   * 计划里第 i 条最终落到了哪件物品上（`null` = 这一条被跳过了）。
+   *
+   * 采纳之后要靠它把「已落库」这件事写回对应的草稿：新建的条目从此有了
+   * 自己的物品 id，下一次 AI 碰到它才是**更新**而不是又新建一条。
+   * 没有这份对应关系，用户就会看到「采纳完 AI 再改一次，库里多出第二件」。
+   */
+  appliedIds: Array<string | null>
 }
 
 export interface DeleteCategoryResult {
@@ -303,6 +334,18 @@ export interface DeleteCategoryResult {
   childCount: number
   /** 直接挂在这个分类上的物品数（不含子分类里的） */
   itemCount: number
+}
+
+/** 一批分类改动落库之后的结果（给界面报数用） */
+export interface CategoryApplyStats {
+  created: number
+  renamed: number
+  moved: number
+  deleted: number
+  /** 被挂到父级去的子分类数（删分类的连带） */
+  reparentedChildren: number
+  /** 失去了这个分类归属的物品数（删分类的连带，物品本身一件不少） */
+  affectedItems: number
 }
 
 /** 取用一件备用的结果 */
@@ -491,8 +534,35 @@ export interface AppState {
   /**
    * 把草稿落库：带 existingId 的更新、不带的创建、discardIds 的移入回收站，
    * **一次提交**。AI 对话的「采纳」走这条路。
+   *
+   * `duplicates`：名字撞上已有物品、且**用户明确选了「就是那一条」**的条目。
+   * 键是 `DraftApplyItem` 在前面的顺序号，值是那件已有物品的 id。
+   * 顺序号而不是名字：同名的两条草稿指向不同物品时，按名字查会全部落到同一条上。
    */
-  applyDraftItems: (plan: { items: DraftApplyItem[]; discardIds?: string[] }) => ApplyDraftResult
+  applyDraftItems: (plan: {
+    items: DraftApplyItem[]
+    discardIds?: string[]
+    duplicates?: ReadonlyMap<number, string>
+  }) => ApplyDraftResult
+
+  /* ---------------- AI 分类改动落库 ---------------- */
+
+  /**
+   * 把 AI 提议的**分类改动**落到数据上：新建 / 改名 / 移动 / 删除，**一次提交**。
+   *
+   * 用户要的能力：「我希望 ai 可以编辑分类，我可以让它帮我整理已有的分类。」
+   *
+   * 传进来的是**已经算好的计划**（`planCategoryChanges` 的产物）——
+   * 每条的 id、能不能做都已经定好了。这一层只负责：
+   *   1. 用计划里的路径和 id 去改那棵树（真正的算法在
+   *      `ai/categoryEdit.ts` 的 `applyCategoryPlan`，纯函数、被用例钉死）
+   *   2. commit 一次（所以只留一份快照、只写一次盘）
+   *
+   * 为什么把算法放在 `ai/` 那一层的纯函数里，而不是写在这儿：
+   * 分类是结构，改错了没法用眼睛验（你只知道树变了样子），
+   * 所以「算」必须能被逐条测试。这里只做搬运。
+   */
+  applyCategoryPlan: (entries: CategoryPlanEntry[]) => CategoryApplyStats
 
   setUi: (patch: Partial<UiPrefs>) => void
   /** 展开 / 收起某个分组。展开和折叠分别记录，因为默认值会随分组维度变化。 */
@@ -639,11 +709,29 @@ export const useAppStore = create<AppState>()((set, get) => {
     const previous = get().data
     const stamped: AppData = { ...next, updatedAt: new Date().toISOString() }
     set({ data: stamped, derived: createDerived(stamped) })
+    /*
+     * 记下「内存里这份还没落盘」。
+     *
+     * 为什么非记不可：`init()` 会从 IndexedDB **重新读一遍并覆盖内存里的数据**。
+     * 如果那一刻还有排队没写完的改动，那次读取拿到的就是**旧**数据 ——
+     * 覆盖之后，用户刚刚新建的那件东西就在眼前消失了（issue 10：
+     * 「就我刚刚才新建的东西，过了一会他就不见了」）。
+     * 这个标记就是给 init 看的闸门，见下面 init 里的判断。
+     */
+    dirtySinceFlush = true
 
     void enqueueWrite(async () => {
       try {
         if (reason) await createSnapshot(previous, reason)
         await getRepository().save(stamped)
+        /*
+         * 存成功才清掉「脏」标记。
+         *
+         * 注意：这里清的是「当前这一笔已落盘」，而**不能**简单地在读的时候
+         * 再比一次 —— 写入是串行的，一笔一笔来，所以到这一步时内存里
+         * 那份一定等于刚存下去的这份。
+         */
+        dirtySinceFlush = false
         // 存成功就把「上次没存进去」的横幅撤掉
         if (get().saveFailure !== null) set({ saveFailure: null, error: null })
       } catch (err) {
@@ -670,6 +758,57 @@ export const useAppStore = create<AppState>()((set, get) => {
   }
 
   /**
+   * 页面要走了 —— 把内存里还没落盘的改动**立刻写完**。
+   *
+   * ── 为什么非做不可 ──────────────────────────────────────────────
+   * `commit` 是「先改内存、再把写盘排进队列」，而写盘是异步的
+   * （IndexedDB 事务要跨几个微任务/宏任务）。于是有一个真实存在的窗口：
+   *
+   *   1. 用户刚录完一件东西（或者刚点完采纳）
+   *   2. 写盘还排在队列里
+   *   3. **页面被卸载**——用户自己刷新、或者开发时 Vite 因为改了 i18n
+   *      之类的模块触发了一次整页重载
+   *   4. 那笔写永远不会执行 → 数据没了
+   *
+   * 这是一个「用户会归因于我」的 bug：他只知道「我刚弄完的东西，
+   * 你更新一下就没了」。而它跟更新本身其实只是**撞上了**。
+   *
+   * `pagehide` 和 `beforeunload` 都挂上：前者在移动端和 bfcache 场景更可靠，
+   * 后者在桌面浏览器更常见。两个都挂不冲突 —— 这个函数是幂等的。
+   *
+   * ⚠️ 只在还有没落盘的东西时才动手（`dirtySinceFlush`）。
+   * 否则每次关页面都白写一遍整份数据，白白磨损存储。
+   */
+  const flushPendingWrites = (): void => {
+    if (!dirtySinceFlush) return
+    const snapshot = get().data
+    /*
+     * 不走 `enqueueWrite`，**直接写**。
+     *
+     * 走队列的话，前面可能还排着好几笔快照 + 写盘，等它们跑完页面早没了。
+     * 这里要的是「无论如何尽快把最新那份数据写进去」—— 后面那些排队里的
+     * 写入内容都是旧的，跳过它们反而更安全。
+     *
+     * 不 await、也不 catch 到界面上：`pagehide` 之后没有界面可言了，
+     * 抛错也没人看。写失败的话下次打开时那件东西就是不在 —— 这是这个
+     * 方案固有的极限，能在卸载前抢到的就抢到了。
+     */
+    void getRepository()
+      .save(snapshot)
+      .then(() => {
+        dirtySinceFlush = false
+      })
+      .catch(() => {
+        // 卸载途中，没地方报告，也不该阻塞
+      })
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', flushPendingWrites)
+    window.addEventListener('beforeunload', flushPendingWrites)
+  }
+
+  /**
    * 数据被**整体替换**之后，把 AI 会话作废。
    *
    * 为什么非做不可：AI 会话现在能跨页面存活了，而**草稿是「针对某一份数据」
@@ -693,6 +832,54 @@ export const useAppStore = create<AppState>()((set, get) => {
     if (hadWork) get().notify(t('ai.sessionClearedByDataReset'), 'info')
   }
 
+  /**
+   * 醒来发现盘上的数据比最新快照还少 → 用那份快照救回来。
+   *
+   * 返回 `null` = 不用救（盘上是完好的）。
+   *
+   * ── 判断依据 ──────────────────────────────────────────────────
+   *
+   * 快照有两类：
+   *   · **自动快照**（reason 'auto'）—— 每次修改**之前**存的，也就是
+   *     「上一次写完时的完整数据」。所以数据没丢的话，盘上那份的物品数
+   *     一定 **≥** 最新的自动快照。反过来说：比它**严格更少**，
+   *     就一定是丢东西了。
+   *   · 手动 / 导入 / 破坏性快照 —— 用户主动动作留下的，不能用它们判断
+   *     （比如「清空所有数据」会留一份装满东西的 destructive 快照，
+   *     而盘上确实是空的，那是用户要的）。
+   *
+   * 只看**最新那一份自动快照**，不往前找。因为「刚清空」「刚批量清理」
+   * 这些主动操作之后，第一笔写入就会存下一份新的自动快照（数量很小）——
+   * 它成了新的基线，于是往前找的冲动就没有了。
+   * 只认最新那份，等于把判断完全交给「最近一次修改」，误判面最小。
+   *
+   * ⚠️ 只在**严格更少**时动手。宁可漏救，不可误改。
+   */
+  async function rescueFromNewestSnapshot(
+    onDisk: AppData,
+  ): Promise<{ data: AppData; missing: number } | null> {
+    const metas = await listSnapshots()
+    const newestAuto = metas.find((meta) => meta.reason === 'auto')
+    if (!newestAuto) return null
+
+    const onDiskCount = onDisk.items.length
+    if (newestAuto.itemCount <= onDiskCount) return null
+
+    const snapshot = await getSnapshot(newestAuto.id)
+    if (!snapshot) return null
+
+    const restored = normalizeShape(snapshot.data)
+
+    /*
+     * 再确认一遍：物品数**更少或者一样**的快照绝不用来覆盖。
+     * 那就不是「救」，而是拿一份更旧的东西把盘上那份换掉 ——
+     * 正是这个项目最该避免的那种「偷偷改变用户数据」。
+     */
+    if (restored.items.length <= onDiskCount) return null
+
+    return { data: restored, missing: restored.items.length - onDiskCount }
+  }
+
   return {
     status: 'loading',
     error: null,
@@ -706,8 +893,35 @@ export const useAppStore = create<AppState>()((set, get) => {
     /* ---------------- 生命周期 ---------------- */
 
     init: async () => {
+      /*
+       * 先把排队中的写入等完，再读盘。
+       *
+       * 不等的话会出现这件事（issue 10 的真凶）：
+       *   1. 用户新建了一件东西 → commit 立刻改了内存、把写盘排进队列
+       *   2. 写盘还没轮到（IndexedDB 是异步的，中间可能隔好几毫秒）
+       *   3. init() 被再次调用（组件重新挂载 / 用户点了「重试」）
+       *   4. init 从盘上读回来的是**没有那件东西的旧数据**，然后把内存覆盖掉
+       *      → 用户眼睁睁看着刚录的东西消失了
+       *
+       * `writeChain` 是串行的，所以 `await writeChain` 之后就一定读得到最新的。
+       */
       set({ status: 'loading', error: null, ui: loadUiPrefs(), aiApiKey: loadAiKey() })
       try {
+        await writeChain
+        /*
+         * 再挡一道。
+         *
+         * 等待之后理论上盘上已是最新，但「上一次写盘**失败**了」的情况
+         * 也走这条链：那时内存里那份才是用户看到的东西，**绝不能拿盘上的旧数据覆盖它**
+         * —— 覆盖就等于把「界面上还看得见、还有机会导出/重试」的东西真的弄丢。
+         * 失败时 saveFailure 已经挂着横幅（见 AppShell），用户知情。
+         */
+        const pendingFailure = get().saveFailure !== null
+        if (dirtySinceFlush && pendingFailure) {
+          set({ status: 'ready' })
+          return
+        }
+
         const repo = getRepository()
         let data = await repo.load()
         if (!data) {
@@ -716,6 +930,43 @@ export const useAppStore = create<AppState>()((set, get) => {
           await repo.save(data)
         }
         const normalized = normalizeShape(data)
+
+        /*
+         * ── 醒来发现盘上的东西比上一份快照还少 → 自动救回来 ──────────
+         *
+         * 这是给「数据莫名其妙没了」准备的**最后一道**，而且是唯一一道
+         * 主动把东西放回去的：
+         *
+         * 快照是在每次修改**之前**存的，所以「上一份快照」里一定含有
+         * 「上一次写完时的完整数据」。于是只要盘上的物品数**少于**
+         * 最新一份快照，就说明盘上那份是**残缺的** —— 不是用户主动删的
+         * （主动删会留下新的快照，而且删完的那份自己就是新的基线）。
+         *
+         * 一个真实会走到这里的场景：写完还没落盘就被页面卸载了
+         * （自己刷新、或者开发时改代码触发的整页重载）。
+         *
+         * ⚠️ 只在**严格更少**时动手，等于的情况不碰 ——
+         * 「用户刚删掉几件」是再正常不过的操作，那种时候盘上会有一份
+         * 数量相等或更多的新快照，不会误判。宁可漏救，不可误改。
+         */
+        const rescue = await rescueFromNewestSnapshot(normalized)
+        if (rescue) {
+          set({
+            data: rescue.data,
+            derived: createDerived(rescue.data),
+            status: 'ready',
+            error: null,
+          })
+          get().notify(
+            t('data.store.restoredFromSnapshot', {
+              count: rescue.data.items.length,
+              missing: rescue.missing,
+            }),
+            'success',
+          )
+          return
+        }
+
         set({
           data: normalized,
           derived: createDerived(normalized),
@@ -746,7 +997,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ aiApiKey: trimmed })
     },
 
-    applyDraftItems: ({ items: plan, discardIds = [] }) => {
+    applyDraftItems: ({ items: plan, discardIds = [], duplicates }) => {
       const data = get().data
       const now = new Date().toISOString()
       const resolvers = createNameResolvers(data, now)
@@ -756,8 +1007,10 @@ export const useAppStore = create<AppState>()((set, get) => {
       let added = 0
       let updated = 0
       let discarded = 0
+      /** 计划里每条最终落到哪件物品上 —— 采纳流程靠它把草稿绑到真实 id */
+      const appliedIds: Array<string | null> = plan.map(() => null)
 
-      for (const entry of plan) {
+      for (const [planIndex, entry] of plan.entries()) {
         const categoryIds = resolvers.resolveCategoryPaths(entry.categoryPaths)
         const locationId = resolvers.resolveLocation(entry.locationPath)
 
@@ -772,7 +1025,14 @@ export const useAppStore = create<AppState>()((set, get) => {
         const quantity = Math.max(1, Math.round(entry.quantity || 1))
         const expiresAt = normalizeExpiryDate(entry.expiresAt)
 
-        const index = entry.existingId ? indexById.get(entry.existingId) : undefined
+        /*
+         * 更新哪一条：先看调用方明确给的 existingId（计划里已经定好的），
+         * 再看用户在这一轮确认过的「名字撞上的就是它」。
+         * 后者是 issue 2 的兜底 —— 用户说「我仓库里有」，而 AI 给的是一条
+         * 要新建的草稿，那份确认就是在这里生效的。
+         */
+        const targetId = entry.existingId ?? duplicates?.get(planIndex)
+        const index = targetId ? indexById.get(targetId) : undefined
 
         /*
          * 状态。
@@ -811,12 +1071,14 @@ export const useAppStore = create<AppState>()((set, get) => {
             updatedAt: now,
           }
           updated++
+          appliedIds[planIndex] = prev.id
           continue
         }
 
         if (name === '') continue
+        const createdId = uid()
         items.push({
-          id: uid(),
+          id: createdId,
           name,
           quantity,
           categoryIds,
@@ -834,12 +1096,25 @@ export const useAppStore = create<AppState>()((set, get) => {
           expiresAt,
         })
         added++
+        appliedIds[planIndex] = createdId
       }
 
       // 被移出草稿的已有物品 → 软删除进回收站，不是硬删
+      /*
+       * 被移出草稿的已有物品 → 软删除进回收站，不是硬删。
+       *
+       * 同时数出「要求删、但数据库里找不到」的那些 —— 那是静默丢失的入口：
+       * 以前它们被一声不响地跳过，用户点完采纳、提示说「移入回收站 3」，
+       * 其实一件都没动。**说做了、没做、还不说**是这个项目最该避免的一种失败，
+       * 所以交给调用方去如实报。
+       */
+      let missingDiscards = 0
       for (const id of discardIds) {
         const index = indexById.get(id)
-        if (index === undefined) continue
+        if (index === undefined) {
+          missingDiscards++
+          continue
+        }
         const prev = items[index]
         if (prev.status === 'discarded') continue
         items[index] = { ...prev, status: 'discarded', discardedAt: now, updatedAt: now }
@@ -847,7 +1122,15 @@ export const useAppStore = create<AppState>()((set, get) => {
       }
 
       if (added + updated + discarded === 0) {
-        return { added: 0, updated: 0, discarded: 0, createdCategories: 0, createdLocations: 0 }
+        return {
+          added: 0,
+          updated: 0,
+          discarded: 0,
+          missingDiscards,
+          createdCategories: 0,
+          createdLocations: 0,
+          appliedIds,
+        }
       }
 
       const { createdCategories, createdLocations } = resolvers.stats()
@@ -867,7 +1150,55 @@ export const useAppStore = create<AppState>()((set, get) => {
         'auto',
       )
 
-      return { added, updated, discarded, createdCategories, createdLocations }
+      return {
+        added,
+        updated,
+        discarded,
+        missingDiscards,
+        createdCategories,
+        createdLocations,
+        appliedIds,
+      }
+    },
+
+    applyCategoryPlan: (entries) => {
+      const data = get().data
+      const result = applyCategoryPlanPure(data, entries)
+
+      /*
+       * 一条都没改成 → 不 commit。
+       * 不然会白白留下一份快照、白写一次盘，还刷了 updatedAt。
+       */
+      if (
+        result.created + result.renamed + result.moved + result.deleted ===
+        0
+      ) {
+        return {
+          created: 0,
+          renamed: 0,
+          moved: 0,
+          deleted: 0,
+          reparentedChildren: 0,
+          affectedItems: 0,
+        }
+      }
+
+      /*
+       * `auto` 快照 —— 和别的结构性改动一个待遇。
+       * （`deleteCategory` 用的是 `destructive`，但那是因为它只删、
+       * 用户看不到「删了什么」；这里改完界面上有明确的报告，
+       * 而且新建/改名/移动占大多数，用 auto 更合适。）
+       */
+      commit(result.data, 'auto')
+
+      return {
+        created: result.created,
+        renamed: result.renamed,
+        moved: result.moved,
+        deleted: result.deleted,
+        reparentedChildren: result.reparentedChildren,
+        affectedItems: result.affectedItems,
+      }
     },
 
     /* ---------------- 界面偏好 ---------------- */
@@ -1912,13 +2243,43 @@ export const useAppStore = create<AppState>()((set, get) => {
         get().notify(t('data.store.snapshotNotFound'), 'error')
         return false
       }
+      /*
+       * 回退之前先记下现在有几件 —— 回退之后要如实说出差别（issue 16）。
+       *
+       * 为什么非说不可：用户的原话是「我点击回退后发现物品数量跟上面
+       * 显示的不一样」。快照里那个数字现在保证和内容一致了
+       * （见 storage/snapshots.ts），但**回退这个动作本身就会改变物品数量** ——
+       * 那是它的作用，不该让人毫无准备地发现「怎么少了几件」。
+       */
+      const before = get().data
+      const beforeCount = before.items.length
+
       // 回退之前再存一份当前状态 —— 所以「回退」这个动作本身也可以回退
-      await createSnapshot(get().data, 'manual')
+      await createSnapshot(before, 'manual')
       const restored = normalizeShape(snapshot.data)
       set({ data: restored, derived: createDerived(restored) })
       await enqueueWrite(() => getRepository().save(restored))
       invalidateAiSession()
-      get().notify(t('data.store.snapshotRestored'), 'success')
+
+      const afterCount = restored.items.length
+      const delta = afterCount - beforeCount
+      get().notify(
+        delta === 0
+          ? t('data.store.snapshotRestored', { count: afterCount })
+          : delta > 0
+            ? t('data.store.snapshotRestoredMore', {
+                before: beforeCount,
+                after: afterCount,
+                delta,
+              })
+            : t('data.store.snapshotRestoredFewer', {
+                before: beforeCount,
+                after: afterCount,
+                delta: -delta,
+              }),
+        // 变少了用警示色 —— 那正是需要他立刻看一眼的情况
+        delta < 0 ? 'error' : 'success',
+      )
       return true
     },
   }
@@ -1934,6 +2295,18 @@ export const useAppStore = create<AppState>()((set, get) => {
  */
 export function flushWrites(): Promise<void> {
   return writeChain
+}
+
+/**
+ * 导出给测试用：手动触发一次「页面要走了」的抢救写盘。
+ *
+ * 生产路径上它是挂在 `pagehide` / `beforeunload` 上的（见 store 内部），
+ * 但 jsdom 里派发 unload 事件比较绕，所以把它暴露出来让用例直接调 ——
+ * 走的完全是同一条路，验的就是「待落盘的东西能不能在卸载前写下去」。
+ */
+export function flushBeforeUnload(): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event('pagehide'))
 }
 
 /**
