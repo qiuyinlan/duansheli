@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { DiscardPickerDialog } from '../components/DiscardPickerDialog'
 import { FilterPanel } from '../components/FilterPanel'
 import { ItemRow } from '../components/ItemRow'
 import { AddToCollectionDialog } from './Collections'
@@ -7,7 +8,7 @@ import { CreateChecklistDialog } from './Checklists'
 import { SplitToSpareDialog } from './Spare'
 import { LocationPicker, TagInput } from '../components/pickers'
 import { IconChevronRight, IconIdle, IconSpare, IconTrash } from '../components/ui/icons'
-import { Button, ConfirmDialog, EmptyState, Modal, SearchInput } from '../components/ui/primitives'
+import { Button, EmptyState, Modal, SearchInput } from '../components/ui/primitives'
 import {
   EMPTY_FILTER,
   countByLocationIncludingDescendants,
@@ -129,7 +130,15 @@ export function Items() {
   const [collectionOpen, setCollectionOpen] = useState(false)
   const [checklistOpen, setChecklistOpen] = useState(false)
   const [splitOpen, setSplitOpen] = useState(false)
-  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false)
+  /*
+   * 「要删什么」的勾选列表（issue 3）。
+   *
+   * 以前那个小垃圾桶图标是**一点就走**，点错一下东西就从眼前消失了。
+   * 现在几条删除路径（行内图标、批量删除）都先弹这个框让人勾一遍：
+   *   · `null` = 没开着
+   *   · `{ preselect: [] }` = 开着、且预先勾上这些 id（批量删除时把已选带上）
+   */
+  const [discardPick, setDiscardPick] = useState<{ preselect: string[] } | null>(null)
 
   // URL 是「从别处跳进来」时的唯一真源；之后再手动改筛选不会写回 URL，
   // 所以这里不会和用户的输入互相打架。
@@ -380,6 +389,20 @@ export function Items() {
                           size="sm"
                           variant="ghost"
                           title={t('items.discardTitle')}
+                          /*
+                           * **这一下就是决定**，直接丢进回收站，不再弹选择框。
+                           *
+                           * 用户的原话：「点击右边选项，删除，跳出的是所有物品，
+                           * 让我再次选择放啥进回收站。但是明明只需要点击一下删除键，
+                           * 直接丢到回收站的。」
+                           *
+                           * 我第一版把行内这个图标也接到了勾选列表上 —— 那是把
+                           * 「小心」用错了地方。勾选列表是给**批量**删除用的
+                           * （那里才有「这几个到底选对没有」的问题）。单条上的
+                           * 垃圾桶，用户指的就是**这一件**，意图没有歧义；再让他
+                           * 去一张全库清单里把同一件东西找出来重勾一遍，纯属折腾。
+                           * 而且丢进去的本来就能从回收站恢复。
+                           */
                           onClick={() => {
                             markDiscarded(item.id)
                             notify(t('items.discardedToast'), 'success')
@@ -660,7 +683,7 @@ export function Items() {
           <Button size="sm" onClick={() => setChecklistOpen(true)}>
             {t('items.makeChecklist')}
           </Button>
-          <Button size="sm" onClick={() => setConfirmDiscardOpen(true)}>
+          <Button size="sm" onClick={() => setDiscardPick({ preselect: selectedIds })}>
             {t('items.discard')}
           </Button>
           <Button size="sm" onClick={() => setSelected(new Set())}>
@@ -804,23 +827,23 @@ export function Items() {
         }}
       />
 
-      <ConfirmDialog
-        open={confirmDiscardOpen}
-        title={t('items.confirmDiscardTitle')}
-        danger
-        confirmLabel={t('items.discard')}
-        message={
-          <>
-            {t('items.confirmDiscardLine1', { count: selectedIds.length })}
-            <br />
-            {t('items.confirmDiscardLine2')}
-          </>
-        }
-        onConfirm={() => {
-          runBatchStatus('discarded')
-          setConfirmDiscardOpen(false)
+      {/*
+        删除前的勾选（issue 3）—— **只有批量删除走这里**。
+        行内那个垃圾桶图标是单击直接进回收站的（见上面那段注释）：
+        勾选列表要解决的是「批量选对没有」，不是「单条要不要删」。
+      */}
+      <DiscardPickerDialog
+        open={discardPick !== null}
+        onClose={() => setDiscardPick(null)}
+        items={liveItems(data)}
+        ctx={derived}
+        preselect={discardPick?.preselect}
+        onConfirm={(ids) => {
+          batchSetStatus(ids, 'discarded')
+          notify(tc(ids.length, 'ai.discardPicker.doneToast'), 'success')
+          setDiscardPick(null)
+          setSelected(new Set())
         }}
-        onCancel={() => setConfirmDiscardOpen(false)}
       />
     </>
   )

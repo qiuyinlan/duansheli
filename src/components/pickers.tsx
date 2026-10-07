@@ -3,11 +3,12 @@ import type { AttributeDef, Collection } from '../types'
 import { UNASSIGNED_ID } from '../types'
 import type { DerivedContext } from '../store/selectors'
 import { countByCategoryIncludingDescendants, liveItems } from '../store/selectors'
+import { expandAncestorsOf, filterTreeByIds, searchTreeIds } from '../lib/tree'
 import { useAppStore } from '../store/useAppStore'
 import { useT } from '../i18n'
 import { TreeView } from './TreeView'
 import { IconClose, IconPlus, IconSuitcase } from './ui/icons'
-import { Button, Modal } from './ui/primitives'
+import { Button, Modal, SearchInput } from './ui/primitives'
 
 /* ------------------------------------------------------------------ */
 /* 位置选择器                                                          */
@@ -32,7 +33,9 @@ export function LocationPicker({
   counts,
   allowUnassigned = true,
 }: LocationPickerProps) {
-  const { t } = useT()
+  const { t, tc } = useT()
+  /** 搜索词 —— 位置多了之后，滚动找一层抽屉是很费劲的事（issue 4） */
+  const [query, setQuery] = useState('')
 
   // 打开时展开顶层 + 当前选中项的祖先路径，让人一眼看到自己在哪
   const initialExpanded = useMemo(() => {
@@ -54,10 +57,37 @@ export function LocationPicker({
   const [expanded, setExpanded] = useState<Set<string>>(initialExpanded)
 
   useEffect(() => {
-    if (open) setExpanded(initialExpanded)
+    if (open) {
+      setExpanded(initialExpanded)
+      // 每次打开都从「没搜索」开始，免得上次搜的词让人以为位置变少了
+      setQuery('')
+    }
   }, [open, initialExpanded])
 
   const currentPath = value ? ctx.index.pathString(value, ' / ') : t('status.unassigned')
+
+  /*
+   * 搜索：命中的位置**连同祖先**一起显示（祖先淡一档）。
+   * 只留命中项的话，剩下的节点会被当成顶层 —— 搜「第二层抽屉」得到一条
+   * 孤零零的「第二层抽屉」，用户根本看不出它是哪个柜子里的。
+   */
+  const matchedIds = useMemo(
+    () => searchTreeIds(ctx.locationById ? [...ctx.index.byId.values()] : [], query),
+    [ctx, query],
+  )
+  const searching = query.trim() !== ''
+  const view = useMemo(
+    () => (searching ? filterTreeByIds([...ctx.index.byId.values()], matchedIds) : null),
+    [searching, ctx, matchedIds],
+  )
+  const pathOnlyIds = useMemo(() => {
+    if (!searching || !view) return new Set<string>()
+    return new Set([...view.keptIds].filter((id) => !matchedIds.has(id)))
+  }, [searching, view, matchedIds])
+  const effectiveExpanded = useMemo(() => {
+    if (!searching) return expanded
+    return new Set([...expanded, ...expandAncestorsOf([...ctx.index.byId.values()], matchedIds)])
+  }, [searching, expanded, ctx, matchedIds])
 
   return (
     <Modal
@@ -70,15 +100,38 @@ export function LocationPicker({
         {t('itemEdit.pickLocationCurrent', { path: currentPath })}
       </div>
 
+      <div style={{ marginBottom: 'var(--gap-2)' }}>
+        <SearchInput
+          value={query}
+          onValueChange={setQuery}
+          placeholder={t('itemEdit.locationSearchPlaceholder')}
+          aria-label={t('itemEdit.locationSearchAria')}
+        />
+      </div>
+
+      {searching ? (
+        <div className="small muted" style={{ marginBottom: 'var(--gap-2)' }}>
+          {matchedIds.size > 0
+            ? tc(matchedIds.size, 'itemEdit.locationSearchFound')
+            : t('itemEdit.locationSearchNone')}
+        </div>
+      ) : null}
+
       <TreeView
-        nodes={ctx.tree}
+        nodes={view ? view.roots : ctx.tree}
         selectedIds={value ? [value] : [UNASSIGNED_ID]}
+        /*
+         * 目录层级配色，和位置页那棵树保持一致 ——
+         * 同一个「家 / 卧室 / 衣柜」在这里和在那里长得应该一样，
+         * 否则用户得学两套。
+         */
+        tintDepth
         onSelect={(id) => {
           onSelect(id)
           onClose()
         }}
         counts={counts}
-        expanded={expanded}
+        expanded={effectiveExpanded}
         onToggle={(id) =>
           setExpanded((prev) => {
             const next = new Set(prev)
@@ -87,8 +140,10 @@ export function LocationPicker({
             return next
           })
         }
+        dimmedIds={pathOnlyIds}
+        /* 搜索时「未归位」那一行不该跟着出现在结果里 —— 它没名字，永远不匹配 */
         virtualRoot={
-          allowUnassigned
+          allowUnassigned && !searching
             ? {
                 id: UNASSIGNED_ID,
                 label: t('status.unassigned'),
@@ -96,7 +151,7 @@ export function LocationPicker({
               }
             : null
         }
-        emptyText={t('itemEdit.locationsEmpty')}
+        emptyText={searching ? t('itemEdit.locationSearchNone') : t('itemEdit.locationsEmpty')}
       />
     </Modal>
   )
@@ -118,21 +173,56 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
   const derived = useAppStore((s) => s.derived)
   const addCategory = useAppStore((s) => s.addCategory)
   const notify = useAppStore((s) => s.notify)
-  const { t } = useT()
+  const { t, tc } = useT()
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [newName, setNewName] = useState('')
+  /** 搜索词 —— 分类多了之后，滚动找一个分类是很费劲的事（issue 4） */
+  const [query, setQuery] = useState('')
 
   // 分类树一般不大，打开时全展开
   useEffect(() => {
     if (!open) return
     setExpanded(new Set(derived.categoryFlat.map((node) => node.node.id)))
+    // 每次打开都从「没搜索」开始，免得上次搜的词让人以为分类变少了
+    setQuery('')
   }, [open, derived.categoryFlat])
 
   const counts = useMemo(
     () => countByCategoryIncludingDescendants(liveItems(data), derived),
     [data, derived],
   )
+
+  /*
+   * 搜索。
+   *
+   * 命中的节点**连同祖先**一起显示（祖先淡一档）：树里把父级摘掉之后，
+   * 剩下的节点会被当成顶层显示，于是搜「眼影盘」得到一条孤零零的
+   * 「眼影盘」—— 用户会以为它是顶层分类，点下去选错层级也不知道。
+   */
+  const matchedIds = useMemo(
+    () => searchTreeIds(data.categories, query),
+    [data.categories, query],
+  )
+  const searching = query.trim() !== ''
+  const view = useMemo(
+    () => (searching ? filterTreeByIds(data.categories, matchedIds) : null),
+    [searching, data.categories, matchedIds],
+  )
+  /** 祖先节点（留着当路径，但不是命中项） */
+  const pathOnlyIds = useMemo(() => {
+    if (!searching || !view) return new Set<string>()
+    return new Set([...view.keptIds].filter((id) => !matchedIds.has(id)))
+  }, [searching, view, matchedIds])
+
+  /*
+   * 搜索时把祖先路径自动展开，而且**不要**动用户手动调过的 expanded ——
+   * 所以这里算的是「额外要展开的」，跟 expanded 合并后再给 TreeView。
+   */
+  const effectiveExpanded = useMemo(() => {
+    if (!searching) return expanded
+    return new Set([...expanded, ...expandAncestorsOf(data.categories, matchedIds)])
+  }, [searching, expanded, data.categories, matchedIds])
 
   const toggle = (id: string) => {
     onChange(
@@ -170,6 +260,25 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
         {t('itemEdit.pickCategoryHint')}
       </div>
 
+      {/* 搜索框：分类多的时候靠它，不用一层层翻 */}
+      <div style={{ marginBottom: 'var(--gap-2)' }}>
+        <SearchInput
+          value={query}
+          onValueChange={setQuery}
+          placeholder={t('itemEdit.categorySearchPlaceholder')}
+          aria-label={t('itemEdit.categorySearchAria')}
+        />
+      </div>
+
+      {/* 搜索时把「找到几条」如实说出来 —— 找不到是常见情况（打错一个字） */}
+      {searching ? (
+        <div className="small muted" style={{ marginBottom: 'var(--gap-2)' }}>
+          {matchedIds.size > 0
+            ? tc(matchedIds.size, 'itemEdit.categorySearchFound')
+            : t('itemEdit.categorySearchNone')}
+        </div>
+      ) : null}
+
       <div
         style={{
           border: '1px solid var(--line)',
@@ -180,13 +289,13 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
         }}
       >
         <TreeView
-          nodes={derived.categoryTree}
+          nodes={view ? view.roots : derived.categoryTree}
           selectedIds={selectedIds}
           onSelect={(id) => {
             if (id) toggle(id)
           }}
           counts={counts}
-          expanded={expanded}
+          expanded={effectiveExpanded}
           onToggle={(id) =>
             setExpanded((prev) => {
               const next = new Set(prev)
@@ -195,7 +304,10 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
               return next
             })
           }
-          emptyText={t('itemEdit.categoriesEmpty')}
+          dimmedIds={pathOnlyIds}
+          emptyText={
+            searching ? t('itemEdit.categorySearchNone') : t('itemEdit.categoriesEmpty')
+          }
         />
       </div>
 

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { DiscardPickerDialog } from '../components/DiscardPickerDialog'
 import { ItemRow } from '../components/ItemRow'
 import { LocationPicker } from '../components/pickers'
 import { IconTrash } from '../components/ui/icons'
-import { Button, ConfirmDialog, EmptyState, Modal } from '../components/ui/primitives'
+import { Button, EmptyState, Modal } from '../components/ui/primitives'
 import { useT, type DictKey } from '../i18n'
 import { NEUTRAL_GROUP_COLOR, assignTreeColors, topLevelColorMap } from '../lib/palette'
 import {
@@ -58,7 +59,8 @@ export function Spare() {
   const { t, tc } = useT()
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [confirmOpen, setConfirmOpen] = useState(false)
+  /* 删除走勾选列表（issue 3），不再是一点就走 */
+  const [discardPick, setDiscardPick] = useState<{ preselect: string[] } | null>(null)
 
   const spares = useMemo(() => spareItems(data), [data])
   const units = useMemo(() => totalUnits(spares), [spares])
@@ -192,6 +194,10 @@ export function Spare() {
                         size="sm"
                         variant="ghost"
                         title={t('spare.discardTitle')}
+                        /*
+                         * 单击直接舍弃 —— 这一行上的垃圾桶指的就是这一条，
+                         * 没有歧义。勾选列表留给「批量舍弃」。
+                         */
                         onClick={() => discard([item.id])}
                       >
                         <IconTrash size={14} />
@@ -262,7 +268,7 @@ export function Spare() {
             >
               {t('spare.takeAll')}
             </Button>
-            <Button size="sm" onClick={() => setConfirmOpen(true)}>
+            <Button size="sm" onClick={() => setDiscardPick({ preselect: selectedIds })}>
               {t('spare.discardSelected')}
             </Button>
           </div>
@@ -271,18 +277,19 @@ export function Spare() {
 
       {groups.map((node) => renderGroup(node, 0))}
 
-      <ConfirmDialog
-        open={confirmOpen}
-        title={t('spare.discardConfirmTitle')}
-        danger
-        confirmLabel={t('spare.discardSelected')}
-        message={t('spare.discardConfirmBody', { count: selectedIds.length })}
-        onConfirm={() => {
-          discard(selectedIds)
+      {/* 删除前的勾选（issue 3）—— **只有批量舍弃走这里** */}
+      <DiscardPickerDialog
+        open={discardPick !== null}
+        onClose={() => setDiscardPick(null)}
+        items={spares}
+        ctx={derived}
+        preselect={discardPick?.preselect}
+        hint={tc(spares.length, 'spare.discardPickerHint')}
+        onConfirm={(ids) => {
+          discard(ids)
           setSelected(new Set())
-          setConfirmOpen(false)
+          setDiscardPick(null)
         }}
-        onCancel={() => setConfirmOpen(false)}
       />
     </>
   )

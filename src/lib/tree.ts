@@ -237,3 +237,88 @@ export function pruneRedundantIds<T extends TreeItem>(
     return true
   })
 }
+
+/* ------------------------------------------------------------------ */
+/* 按名字搜索树                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 名字里含关键词的节点 id 集合。
+ *
+ * 匹配规则和 AI 那边的 `normName` 一致：去掉首尾和内部多余空白、不分大小写。
+ * 两处必须一致 —— 不一致的表现是「AI 找得到的，搜索框找不到」（或者反过来），
+ * 而那种不一致最难解释、也最难查。
+ */
+export function searchTreeIds<T extends TreeItem>(
+  nodes: readonly T[],
+  query: string,
+): Set<string> {
+  const wanted = query.trim().replace(/\s+/g, ' ').toLowerCase()
+  const out = new Set<string>()
+  if (wanted === '') return out
+  for (const node of nodes) {
+    if (node.name.trim().replace(/\s+/g, ' ').toLowerCase().includes(wanted)) out.add(node.id)
+  }
+  return out
+}
+
+/**
+ * 只留下「命中的节点 + 它们的全部祖先」。
+ *
+ * ── 为什么不是「只留命中的那些」──────────────────────────────────
+ * 位置和分类都是树，把父级摘掉之后**剩下的节点会被显示成顶层**（buildTree
+ * 遇到找不到的 parentId 就当顶层用）—— 于是搜「眼影盘」得到一条孤零零的
+ * 「眼影盘」，用户会以为它是顶层分类，点下去选错了层级也不知道。
+ *
+ * 所以祖先必须跟着留：命中的照常显示，**祖先只作为路径出现**。
+ * 界面上拿 matchedIds 把两者分开呈现（祖先淡一点），一眼看得出
+ * 「这条是藏在哪个大分类下面的」。
+ */
+export function filterTreeByIds<T extends TreeItem>(
+  nodes: readonly T[],
+  matchedIds: ReadonlySet<string>,
+): { roots: TreeNode<T>[]; keptIds: Set<string> } {
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+  const kept = new Set<string>()
+
+  for (const id of matchedIds) {
+    if (!byId.has(id)) continue
+    let current: T | undefined = byId.get(id)
+    const guard = new Set<string>()
+    while (current && !guard.has(current.id)) {
+      guard.add(current.id)
+      kept.add(current.id)
+      current = current.parentId ? byId.get(current.parentId) : undefined
+    }
+  }
+
+  const keptNodes = nodes.filter((node) => kept.has(node.id))
+  return { roots: buildTree(keptNodes), keptIds: kept }
+}
+
+/**
+ * 过滤之后要展开哪些节点。
+ *
+ * 不展开的话搜索结果里的父级是折叠的 —— 搜出来的东西反而看不见。
+ * 只展开**祖先**：命中者自己底下的那些没命中的子节点不该跟着铺开。
+ */
+export function expandAncestorsOf<T extends TreeItem>(
+  nodes: readonly T[],
+  matchedIds: ReadonlySet<string>,
+): Set<string> {
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+  const out = new Set<string>()
+
+  for (const id of matchedIds) {
+    const node = byId.get(id)
+    if (!node) continue
+    let current = node.parentId ? byId.get(node.parentId) : undefined
+    const guard = new Set<string>()
+    while (current && !guard.has(current.id)) {
+      guard.add(current.id)
+      out.add(current.id)
+      current = current.parentId ? byId.get(current.parentId) : undefined
+    }
+  }
+  return out
+}
