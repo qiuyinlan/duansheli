@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AI 功能的测试。
  *
  * 重点覆盖两类最容易出错、又最难靠肉眼发现的地方：
@@ -951,11 +951,11 @@ function botReply(
   removedIds: string[] = [],
   reply = '改好了',
 ): ParsedChatResponse {
-  return { reply, items, removedIds, loadScope: null, noChanges: false, categoryChanges: [] }
+  return { reply, items, removedIds, loadScope: null, noChanges: false, categoryChanges: [], ignoredCategoryChanges: 0 }
 }
 
 function loadRequest(reply: string, scope: LoadScopeRequest): ParsedChatResponse {
-  return { reply, items: [], removedIds: [], loadScope: scope, noChanges: false, categoryChanges: [] }
+  return { reply, items: [], removedIds: [], loadScope: scope, noChanges: false, categoryChanges: [], ignoredCategoryChanges: 0 }
 }
 
 /* ---- 合并 ---- */
@@ -1293,6 +1293,53 @@ await test('对话的 history 不会被无限撑大', () => {
   ok(!content.includes('第 0 轮'), '太老的轮次应该被丢掉')
   ok(content.includes('第 39 轮'), '最近几轮要保留')
   ok(messages.length < 16, `消息条数应该有上限，实际 ${messages.length}`)
+})
+
+await test('★ 当前指令只能出现一次（重复会把模型带偏，表现为「没有返回内容」）', () => {
+  /*
+   * 用户报的：「在原本的对话继续让 ai 处理，就显示不返回内容，
+   * 但是新建一个对话发这个就可以了。」
+   *
+   * 根因在这里。`send()` 原来在每次请求**之前**就把这一轮的指令追加进了
+   * history，而 buildChatMessages 最后又一定要把当前指令附上
+   * （草稿 JSON 跟它拼在一起）—— 于是同一句话在请求里出现了两次，
+   * 形状变成「…历史… [user:改一下] [user:草稿+改一下]」。
+   *
+   * 短对话模型还能猜过去，对话一长就被这种重复带偏。
+   * 新对话没有历史，所以一开就正常 —— 正好对上用户观察到的现象。
+   */
+  const instruction = '把装饰这个分类改成服饰/假发'
+  const history: ChatTurn[] = [
+    { role: 'user', content: '先看看有哪些分类' },
+    { role: 'assistant', content: '你有这些分类：装饰、洗护……' },
+  ]
+
+  const messages = buildChatMessages(
+    buildAiContext(fx, ctx),
+    buildInventoryDigest(fx, ctx),
+    history,
+    [],
+    instruction,
+  )
+
+  const userMessages = messages.filter((m) => m.role === 'user')
+  const occurrences = userMessages.filter((m) => m.content.includes(instruction)).length
+  eq(occurrences, 1, `★ 当前指令在用户消息里只能出现一次，实际 ${occurrences} 次`)
+
+  // 完不成的对话（上一轮是 user）也不该把同一句算两遍
+  const dangling: ChatTurn[] = [{ role: 'user', content: instruction }]
+  const messages2 = buildChatMessages(
+    buildAiContext(fx, ctx),
+    buildInventoryDigest(fx, ctx),
+    dangling,
+    [],
+    instruction,
+  )
+  eq(
+    messages2.filter((m) => m.role === 'user' && m.content.includes(instruction)).length,
+    1,
+    '历史里带着同一句话时，也不该在请求里出现两次',
+  )
 })
 
 /* ------------------------------------------------------------------ */

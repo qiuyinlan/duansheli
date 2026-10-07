@@ -296,6 +296,15 @@ export const ai = {
   catWillApply_other: '{count} category changes will be applied',
   catNothingApply: 'No applicable category changes',
 
+  /*
+   * The AI said it would change categories, but none of its entries could be read.
+   * This line exists purely so that never happens silently — before, the AI claimed
+   * "renamed X to Y" while the interface said "no changes", and the two just
+   * mistrusted each other.
+   */
+  categoryChangesUnread:
+    'The AI said it would change categories this round ({count} of them), but I could not read its format, so nothing was applied. Rephrasing usually fixes it.',
+
   catAccept: 'Accept category changes',
   catDone: 'Done: ',
   catResultCreated_one: '{count} category created',

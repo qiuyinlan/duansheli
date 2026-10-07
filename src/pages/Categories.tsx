@@ -3,8 +3,16 @@ import { useNavigate } from 'react-router-dom'
 import { ItemRow } from '../components/ItemRow'
 import { TreeView } from '../components/TreeView'
 import { IconPencil, IconPlus, IconTrash } from '../components/ui/icons'
-import { Button, ConfirmDialog, EmptyState, Modal, Switch } from '../components/ui/primitives'
+import {
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  Modal,
+  SearchInput,
+  Switch,
+} from '../components/ui/primitives'
 import { useT } from '../i18n'
+import { expandAncestorsOf, filterTreeByIds, searchTreeIds } from '../lib/tree'
 import {
   countByCategoryIncludingDescendants,
   itemsInCategory,
@@ -56,6 +64,8 @@ export function Categories() {
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null)
   const [nameDraft, setNameDraft] = useState('')
   const [moveTarget, setMoveTarget] = useState<string | null>(null)
+  /** 搜索词 —— 分类多了之后，滚动找一个分类很费劲（用户要求的） */
+  const [query, setQuery] = useState('')
   const [deleteProbe, setDeleteProbe] = useState<{
     id: string
     name: string
@@ -78,6 +88,30 @@ export function Categories() {
 
   // 还没点过任何分类时，默认选中第一个顶层分类
   const activeId = touched ? selected : (derived.categoryTree[0]?.node.id ?? null)
+
+  /*
+   * 搜索。规则和 CategoryPicker 共用同一套（见 lib/tree.ts）：
+   * 命中的节点 + 它们的祖先（祖先淡一档），而且祖先自动展开。
+   */
+  const matchedIds = useMemo(
+    () => searchTreeIds(data.categories, query),
+    [data.categories, query],
+  )
+  const searching = query.trim() !== ''
+  const filteredTree = useMemo(
+    () => (searching ? filterTreeByIds(data.categories, matchedIds) : null),
+    [searching, data.categories, matchedIds],
+  )
+  /** 留着当路径的祖先（不是命中项）—— 界面上淡一档显示 */
+  const pathOnlyIds = useMemo(() => {
+    if (!searching || !filteredTree) return new Set<string>()
+    return new Set([...filteredTree.keptIds].filter((id) => !matchedIds.has(id)))
+  }, [searching, filteredTree, matchedIds])
+  /** 搜索时把祖先路径自动展开，但**不动**用户手动调过的 expanded */
+  const effectiveExpanded = useMemo(() => {
+    if (!searching) return expanded
+    return new Set([...expanded, ...expandAncestorsOf(data.categories, matchedIds)])
+  }, [searching, expanded, data.categories, matchedIds])
 
   const scopedItems = useMemo(() => {
     if (activeId === null) {
@@ -209,15 +243,43 @@ export function Categories() {
         <div className="split">
           {/* ---------------- 左：分类树 ---------------- */}
           <div className="split__side">
+            {/*
+              搜索框（用户要求：「分类那个页面，要增加搜索，方便搜索，编辑」）。
+              分类攒久了会有几十上百个，找其中一个要一层层展开很费劲。
+
+              和 CategoryPicker 那边**同一套规则**（`searchTreeIds` 等）：
+              命中的节点连同祖先一起显示、祖先淡一档。
+              只留命中项的话，剩下的节点会被 buildTree 当顶层，
+              搜「眼影盘」得到一条孤零零的「眼影盘」，用户会以为它是顶层分类、
+              点下去改错层级也不知道。
+            */}
+            <div style={{ marginBottom: 'var(--gap-2)' }}>
+              <SearchInput
+                value={query}
+                onValueChange={setQuery}
+                placeholder={t('categories.searchPlaceholder')}
+                aria-label={t('categories.searchAria')}
+              />
+            </div>
+
+            {searching ? (
+              <div className="small muted" style={{ marginBottom: 'var(--gap-2)' }}>
+                {matchedIds.size > 0
+                  ? tc(matchedIds.size, 'categories.searchFound')
+                  : t('categories.searchNone')}
+              </div>
+            ) : null}
+
             <TreeView
-              nodes={derived.categoryTree}
+              nodes={filteredTree ? filteredTree.roots : derived.categoryTree}
               selectedIds={activeId ? [activeId] : [UNCATEGORIZED_ID]}
               onSelect={(id) => {
                 setSelected(id)
                 setTouched(true)
               }}
               counts={counts}
-              expanded={expanded}
+              expanded={effectiveExpanded}
+              dimmedIds={pathOnlyIds}
               onToggle={(id) =>
                 setExpanded((prev) => {
                   const next = new Set(prev)
@@ -226,11 +288,16 @@ export function Categories() {
                   return next
                 })
               }
-              virtualRoot={{
-                id: UNCATEGORIZED_ID,
-                label: t('status.uncategorized'),
-                count: counts.get(UNCATEGORIZED_ID) ?? 0,
-              }}
+              /* 搜索时「未分类」那一行不该跟着出现 —— 它没名字，永远不匹配 */
+              virtualRoot={
+                searching
+                  ? null
+                  : {
+                      id: UNCATEGORIZED_ID,
+                      label: t('status.uncategorized'),
+                      count: counts.get(UNCATEGORIZED_ID) ?? 0,
+                    }
+              }
               renderActions={(node) => (
                 <>
                   <Button

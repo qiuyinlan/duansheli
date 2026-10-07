@@ -399,8 +399,85 @@ export interface ParsedChatResponse {
    * 属于业务判断，要在**当时的分类树**上算 —— 交给 `ai/categoryEdit.ts`。
    */
   categoryChanges: CategoryChangeIntent[]
+  /**
+   * AI 说了要改分类，但**一条都没解析出来** —— 条数。
+   *
+   * 这是个防「静默丢掉」的字段，0 表示一切正常。
+   *
+   * 为什么非要有它：用户报过这么一串对话 ——
+   *   AI：「已把「装饰」分类改名为「服饰 / 假发」」
+   *   程序：没有改动
+   *   用户：你根本没改
+   * 两次都是这样。根因是模型把改动塞在了一个我没认的键名里
+   * （第一版只认 `categoryChanges / 分类改动 / categories_edit`，
+   * 而它有时写 `categories`），于是整批改动被一声不响地丢掉了。
+   *
+   * 现在：认不出来的键也会试着认，万一还是认不出来，就**把这件事说出来**，
+   * 而不是让用户和 AI 互相怀疑。
+   */
+  ignoredCategoryChanges: number
 }
 
+/**
+ * 这些键已经被别的逻辑处理过了，兜底扫描时跳过。
+ *
+ * 顺手也把 `reply` 挡住 —— 它是个字符串，本来就不会被 `looksLikeCategoryEdit`
+ * 认成数组，但把它列出来是为了说明「这里在扫剩下的键」。
+ */
+const KEY_ALREADY_HANDLED = new Set([
+  'reply',
+  '说明',
+  'message',
+  'items',
+  '物品',
+  'list',
+  'removedIds',
+  'removed',
+  '删除的id',
+  'loadScope',
+  '拉取范围',
+])
+
+/**
+ * 分类改动可能出现在哪些键名上。
+ *
+ * ⚠️ 这份名单**必须够宽**，因为漏一个键的后果是**整批改动被静默丢掉** ——
+ * 用户看到的是一句「已把「装饰」改名为「服饰 / 假发」」，而树一个字没动。
+ * 这是真实发生过的：第一版只认 `categoryChanges / 分类改动 / categories_edit`，
+ * 而模型有时写成 `categories`。
+ *
+ * 所以这里把「复数 / 中文 / 驼峰」的常见写法都列上，
+ * 另外在下面用 `looksLikeCategoryEdit` 兜一道底 —— 认不出来也要**出声**，
+ * 不能一声不响地丢掉。
+ */
+const CATEGORY_CHANGE_KEYS = [
+  'categoryChanges',
+  'category_changes',
+  'categoryEdits',
+  'category_edits',
+  'editCategories',
+  'categories_edit',
+  'categories',
+  '分类改动',
+  '分类调整',
+  '分类变更',
+  '分类',
+] as const
+
+/**
+ * 这个数组像不像「分类改动」的列表？
+ *
+ * 用来在**认不出来键名**时兜底：只要里面每一项都有个像动作的字段，
+ * 那就大概率是分类改动被塞在别的键里了 —— 这时候必须让用户知道
+ * 「AI 说了要改，但我没看懂它的格式」，而不是默默什么都不做。
+ */
+function looksLikeCategoryEdit(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length === 0) return false
+  return value.some((entry) => {
+    if (!isRecord(entry)) return false
+    return ['kind', 'action', '操作', '动作'].some((key) => typeof entry[key] === 'string')
+  })
+}
 /**
  * 分类改动的形状解析。
  *
@@ -408,6 +485,9 @@ export interface ParsedChatResponse {
  * `{ kind, path, newName }`，也可能写成中文键名、或者把路径写成
  * `"衣物 / 眼妆"` 这种字符串。三种都认，认不出来就丢掉这一条 ——
  * 丢一条总比把半截坏对象塞进树里好。
+ *
+ * ⚠️ 但「丢掉」和「默默丢掉」是两回事：调用方要知道
+ * **AI 说了要改分类、而我一条都没解析出来**（见 `ignoredCategoryChanges`）。
  */
 function normalizeCategoryChanges(raw: unknown): CategoryChangeIntent[] {
   if (!Array.isArray(raw)) return []
@@ -530,9 +610,57 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
 
   const rawItems = payload.items ?? payload.物品 ?? payload.list
   const rawRemoved = payload.removedIds ?? payload.removed ?? payload.删除的id
-  const categoryChanges = normalizeCategoryChanges(
-    payload.categoryChanges ?? payload.分类改动 ?? payload.categories_edit,
-  )
+
+  /*
+   * 按上面那份名单逐个键找分类改动 —— 找到第一个「像那么回事的数组」就用它。
+   */
+  let rawCategoryChanges: unknown = undefined
+  for (const key of CATEGORY_CHANGE_KEYS) {
+    const candidate = payload[key]
+    if (Array.isArray(candidate)) {
+      rawCategoryChanges = candidate
+      break
+    }
+  }
+
+  /*
+   * 兜底：名单里都没有，但**别的地方**有个数组看起来就是分类改动。
+   *
+   * 这一条是防「静默丢掉」的：以前的表现是用户看到
+   * 「已把 X 改名成 Y」而树一个字没动，然后他只能说「你根本没改」，
+   * 两个人都不知道为什么。
+   */
+  let fallbackRaw: unknown = undefined
+  if (rawCategoryChanges === undefined) {
+    for (const [key, value] of Object.entries(payload)) {
+      if (KEY_ALREADY_HANDLED.has(key)) continue
+      if (looksLikeCategoryEdit(value)) {
+        fallbackRaw = value
+        break
+      }
+    }
+  }
+
+  const changesFromKnownKey = normalizeCategoryChanges(rawCategoryChanges)
+  const changesFromFallback = normalizeCategoryChanges(fallbackRaw)
+  const categoryChanges =
+    changesFromKnownKey.length > 0 ? changesFromKnownKey : changesFromFallback
+
+  /*
+   * `ignoredCategoryChanges` 只在**真的没看懂**时才是非零 ——
+   * 也就是「有个东西看起来像分类改动，但一条都没解析出来」。
+   *
+   * 解析出来了就不算没看懂（哪怕键名是我没见过的）。
+   * 这个区分很要紧：它是界面上那句「AI 说了要改但我没看懂格式」的依据，
+   * 误报会让用户以为出了问题。
+   */
+  let ignoredCategoryChanges = 0
+  if (categoryChanges.length === 0) {
+    const unparsed = fallbackRaw ?? rawCategoryChanges
+    if (looksLikeCategoryEdit(unparsed) && Array.isArray(unparsed)) {
+      ignoredCategoryChanges = unparsed.length
+    }
+  }
 
   const removedIds = Array.isArray(rawRemoved)
     ? rawRemoved.map(asString).filter((id) => id !== '')
@@ -547,7 +675,15 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
    */
   if (!Array.isArray(rawItems) && removedIds.length === 0 && categoryChanges.length === 0) {
     if (loadScope) {
-      return { reply, items: [], removedIds: [], loadScope, noChanges: false, categoryChanges }
+      return {
+        reply,
+        items: [],
+        removedIds: [],
+        loadScope,
+        noChanges: false,
+        categoryChanges,
+        ignoredCategoryChanges,
+      }
     }
     if (reply !== '') {
       return {
@@ -557,6 +693,7 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
         loadScope: null,
         noChanges: true,
         categoryChanges,
+        ignoredCategoryChanges,
       }
     }
     throw new AiError('bad_response', t('data.ai.noReplyOrItems'))
@@ -570,5 +707,13 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
     }
   }
 
-  return { reply, items, removedIds, loadScope, noChanges: false, categoryChanges }
+  return {
+    reply,
+    items,
+    removedIds,
+    loadScope,
+    noChanges: false,
+    categoryChanges,
+    ignoredCategoryChanges,
+  }
 }

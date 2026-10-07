@@ -282,6 +282,16 @@ export const ai = {
   catWillApply_other: '将改动 {count} 处分类',
   catNothingApply: '没有可执行的分类改动',
 
+  /*
+   * AI 说了要改分类，但我一条都没看懂它的格式。
+   *
+   * 这条提示存在的意义就是**不让它静默消失**：以前的表现是 AI 说
+   * 「已把 X 改名成 Y」、界面上却是「没有改动」，用户和 AI 互相怀疑。
+   * 现在至少有一句话说清「它说了、我没读懂」，用户知道该换个说法重试。
+   */
+  categoryChangesUnread:
+    'AI 这一轮说了要改分类（{count} 处），但我没读懂它给的格式，所以一处都没执行。换个说法再说一次通常就好了。',
+
   catAccept: '采纳分类改动',
   catDone: '已',
   catResultCreated_one: '新建 {count} 个分类',

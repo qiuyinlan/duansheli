@@ -14,6 +14,7 @@ import {
   buildChatMessages,
   mergeChatResponse,
   serializeDrafts,
+  type ChatTurn,
 } from '../ai/chat'
 import { AiError, chat, createRequestController } from '../ai/deepseek'
 import { extractJson, parseChatResponse, type LoadScopeRequest } from '../ai/parse'
@@ -239,6 +240,14 @@ export function Ai() {
       let touchedNow = new Set(session.touchedKeys)
       /** 会话里已有的分类计划 —— 这一轮新提的追加在后面 */
       let categoryPlanNow = session.categoryPlan
+      /*
+       * 这一轮**真正完成**的对话轮次。
+       *
+       * 只在每种收尾（纯问答 / 有改动 / 拉完数据但没得拉）时并进去。
+       * 关键是：传进 `buildChatMessages` 的 history 里**不能**含当前指令 ——
+       * 那个函数最后一定会附当前指令，两处都带就会让同一句话出现两次。
+       */
+      let completedNow = historyNow
 
       for (let turn = 0; turn < MAX_AUTO_TURNS; turn++) {
         const fresh = useAppStore.getState()
@@ -264,8 +273,17 @@ export function Ai() {
         }))
 
         const parsed = parseChatResponse(extractJson(result.content))
-        historyNow = [
-          ...historyNow,
+        /*
+         * history 里追加的是**这一轮**：先记下它们，等这一次请求真正发完再合并。
+         *
+         * ⚠️ 不能让 history 和「当前指令」同时带上同一句话 ——
+         * `buildChatMessages` 最后一定要附当前指令（草稿 JSON 跟它拼在一起），
+         * 所以 history 里只能有**已完成**的轮次。以前这里直接在请求前
+         * 追加进 historyNow，于是同一句话在请求里出现两次，
+         * 对话一长模型就被带偏（表现是偶尔返回空内容）。
+         * 详见 buildChatMessages 的注释，有测试盯着。
+         */
+        const completedTurns: ChatTurn[] = [
           { role: 'user', content: pending },
           { role: 'assistant', content: parsed.reply || t('ai.noReplyNote') },
         ]
@@ -306,9 +324,21 @@ export function Ai() {
                 : t('ai.noMatchingItems'),
           })
 
-          if (added.length === 0) break
+          if (added.length === 0) {
+            completedNow = [...completedNow, ...completedTurns]
+            break
+          }
 
+          /*
+           * 这一轮是「先把数据拉进来」，还没结束 —— 所以它的用户话术要
+           * 换成 `continueAfterLoad`，让模型接着完成原来的指令。
+           *
+           * history 里记的也是换过之后的那句（记原始指令会和下一轮的
+           * 「草稿 + continueAfterLoad」对不上，模型会以为有两件事要做）。
+           */
           pending = t('ai.continueAfterLoad')
+          completedTurns[0] = { role: 'user', content: pending }
+          completedNow = [...completedNow, ...completedTurns]
           continue
         }
 
@@ -320,6 +350,7 @@ export function Ai() {
             text: parsed.reply,
             meta: t('ai.noDraftChangesMeta'),
           })
+          completedNow = [...completedNow, ...completedTurns]
           break
         }
 
@@ -335,6 +366,19 @@ export function Ai() {
           const merged = [...categoryPlanNow, ...plan.entries]
           categoryPlanNow = merged
           useAiSessionStore.setState({ categoryPlan: merged })
+        } else if (parsed.ignoredCategoryChanges > 0) {
+          /*
+           * AI 说了要改分类，但我一条都没看懂 —— **必须说出来**。
+           *
+           * 不说的话就是用户报过的那台戏：AI 说「已把「装饰」改名成
+           * 「服饰 / 假发」」，界面上却是「没有改动」，用户只能说
+           * 「你根本没改」——两个人都不知道为什么，最后靠说重话才推动。
+           */
+          appendBubble({
+            id: uid(),
+            role: 'note',
+            text: t('ai.categoryChangesUnread', { count: parsed.ignoredCategoryChanges }),
+          })
         }
 
         // ---- 正常改动 ----
@@ -364,9 +408,18 @@ export function Ai() {
           text: parsed.reply || t('ai.noReplyNote'),
           meta: parts.join(' · '),
         })
+        completedNow = [...completedNow, ...completedTurns]
         break
       }
 
+      /*
+       * 把这一轮真正完成的轮次并进 history。
+       *
+       * 「已完成」的意思是：那一轮的 assistant 回复已经出来了，而且**没有**
+       * 再触发一轮自动追问。loadScope 那一步只完成了一半（数据拉进来了、
+       * 还没动手），所以它记的是换过之后的那句话，让下一轮的上下文对得上。
+       */
+      historyNow = completedNow
       useAiSessionStore.setState({ history: historyNow })
     } catch (err) {
       useAiSessionStore.setState({ error: errorText(err) })

@@ -11,6 +11,15 @@ export const categories = {
     'Categories answer “what is this”. They nest as deep as you like — e.g. Cosmetics › Eye makeup — and one item can belong to several of them at once.',
   newTop: 'New category',
 
+  /* Search — same wording as the category picker in the item editor */
+  searchPlaceholder: 'Search categories, e.g. “makeup” or “medicine”',
+  searchAria: 'Search categories',
+  searchFound_one:
+    '{count} matching category (the faded ones are its upper levels — you can pick those too)',
+  searchFound_other:
+    '{count} matching categories (the faded ones are their upper levels — you can pick those too)',
+  searchNone: 'No matching categories. Clear the search to see all.',
+
   /* Empty state */
   empty: 'No categories yet',
   emptyHint: 'A few top-level categories you actually use are enough, e.g. Clothes, Electronics, Household.',

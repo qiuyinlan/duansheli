@@ -580,6 +580,61 @@ await test('没有 categoryChanges 字段时是空数组（不是 undefined）',
   deepEq(parsed.categoryChanges, [], '必须是空数组 —— undefined 会让界面上每一处都要防一手')
 })
 
+await test('★ 键名写成 categories 也要认（漏了它整批改动会被静默丢掉）', () => {
+  /*
+   * 用户报的（原话）：
+   *   AI：「已把「装饰」分类改名为「服饰 / 假发」……」
+   *   程序：没有改动
+   *   用户：你根本没改
+   *   （下一轮说了重话之后，它才真的改）
+   *
+   * 根因：模型把分类改动塞在 `categories` 这个键里，
+   * 而我第一版只认 `categoryChanges / 分类改动 / categories_edit` ——
+   * 于是整批改动被一声不响地丢掉了。用户和 AI 只好互相怀疑。
+   */
+  const parsed = parseChatResponse({
+    reply: '已把「装饰」改名为「服饰 / 假发」',
+    categories: [{ kind: 'rename', path: ['装饰'], newName: '服饰 / 假发' }],
+  })
+
+  eq(parsed.categoryChanges.length, 1, '★ 必须认出来，不能默默丢掉')
+  eq(parsed.categoryChanges[0]?.newName, '服饰 / 假发')
+  eq(parsed.ignoredCategoryChanges, 0, '认出来了就不算「没看懂」')
+})
+
+await test('★ 键名完全没见过的，也要**报出来**而不是默默丢掉', () => {
+  /*
+   * 上面那条是「把已知的键名补全」，这条是**兜底**：
+   * 模型可能在别的键名上冒出新写法。那时候至少要说出来 ——
+   * 让用户知道「AI 说了要改，但我没看懂它的格式」，
+   * 而不是让他和 AI 互相怀疑「你到底改没改」。
+   */
+  const parsed = parseChatResponse({
+    reply: '已把「装饰」改名为「服饰 / 假发」',
+    分类操作列表: [{ kind: 'rename', path: ['装饰'], newName: '服饰 / 假发' }],
+  })
+
+  eq(parsed.categoryChanges.length, 1, '兜底逻辑要能把它捞出来')
+  eq(parsed.ignoredCategoryChanges, 0)
+})
+
+await test('★ 真的解析不出来时，条数要非零（界面上会明说「没看懂」）', () => {
+  /*
+   * 形状坏到没法解析的：键看起来像分类动作，但每一条都缺关键字段。
+   * 这时候 categoryChanges 是空的，但必须让**调用方知道**有人想改分类。
+   */
+  const parsed = parseChatResponse({
+    reply: '改好了',
+    分类操作列表: [{ kind: 'rename' }, { kind: 'move' }],
+  })
+
+  eq(parsed.categoryChanges.length, 0, '解析不出来就是解析不出来')
+  ok(
+    parsed.ignoredCategoryChanges > 0,
+    '★ 但必须报出来 —— 静默丢掉才是那个 bug',
+  )
+})
+
 await test('prompt 里确实教了它这件事（防回归）', () => {
   // 提示词是 AI 质量的地基，少了这段它就永远不会输出 categoryChanges
   for (const text of [promptTextZh.chatSystem, promptTextEn.chatSystem]) {

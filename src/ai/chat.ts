@@ -195,6 +195,23 @@ export interface ChatTurn {
  * 提示词本身按语言分两份放在 src/ai/promptText/ 下。注意一个副作用：
  * 切语言会让 system 前缀变化、DeepSeek 的前缀缓存失效一次 ——
  * 这个代价可以接受，没人会一轮一轮地切语言。
+ *
+ * ── `history` 里**不能**包含这一轮的指令 ────────────────────────
+ *
+ * 这条踩过一次，症状是「原来的对话继续问就报『没有返回内容』，
+ * 新开一个对话就好了」。原因在这儿：
+ *
+ * `send()` 在每次请求之后把 `{ role:'user', content: instruction }` 追加进
+ * history，而 buildChatMessages 最后又**必须**把当前指令作为最后一条用户消息
+ * 附上（因为草稿 JSON 要跟它拼在一起）。于是**同一句话在请求里出现了两次**，
+ * 而且是「…历史… [user:改一下] [user:草稿+改一下]」这种很怪的形状。
+ *
+ * 短对话时模型还能猜过去；对话一长，它就被这种重复带偏 ——
+ * 表现是偶尔返回空内容，越聊越容易出。新对话没有历史，所以一开就正常。
+ *
+ * 约定：**调用方传进来的 history 只含已完成的轮次**（上一轮 assistant 之后
+ * 就截止了），当前指令单独通过 `instruction` 传。
+ * 有测试盯着这一条（tests/ai.ts「当前指令只能出现一次」）。
  */
 export function buildChatMessages(
   context: AiContext,
@@ -226,9 +243,27 @@ export function buildChatMessages(
     },
   ]
 
-  // 历史只放「用户说了什么 + AI 回了什么」，不放历史草稿快照 ——
-  // 草稿永远用最新的一份附在最后那条用户消息里，避免旧快照造成混乱。
-  for (const turn of history.slice(-MAX_HISTORY_MESSAGES)) {
+  /*
+   * 历史只放「用户说了什么 + AI 回了什么」，不放历史草稿快照 ——
+   * 草稿永远用最新的一份附在最后那条用户消息里，避免旧快照造成混乱。
+   *
+   * ⚠️ 顺手**去掉历史里和当前指令重复的那一条**。
+   *
+   * 为什么非去不可：`send()` 已经把这一轮的指令写进 history 了
+   * （那是它记账的方式），而下面又必须把当前指令附在最后
+   * （草稿 JSON 跟它拼在一起）。不去重的话，请求里就会出现
+   * 「…历史… [user:改一下] [user:草稿+改一下]」——
+   * 短对话模型还能猜过去，对话一长就被这种重复带偏，
+   * 表现就是用户报的「原来的对话继续问就报『没有返回内容』，
+   * 新开一个对话就好了」。
+   *
+   * 按内容比而不是按位置比：history 是纯文本记账，没有 id 可用；
+   * 而「同一句话被当成两件事」正是要消灭的东西。
+   */
+  const deduped = history.filter(
+    (turn) => !(turn.role === 'user' && turn.content.includes(instruction)),
+  )
+  for (const turn of deduped.slice(-MAX_HISTORY_MESSAGES)) {
     messages.push({ role: turn.role, content: turn.content })
   }
 
