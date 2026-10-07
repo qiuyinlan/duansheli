@@ -182,6 +182,38 @@ export interface ItemDraft {
   adoptNewCategories: boolean
   /** 是否采纳 AI 建议的新位置 */
   adoptNewLocation: boolean
+  /**
+   * 名字撞上了库里的某件东西时，用户选的那个「就是它」。
+   *
+   * 这个字段存在的唯一理由，就是 issue 2 那个 bug：用户说「我仓库里有」，
+   * AI 却新建了一条一模一样的。有值 → 采纳时**更新**那件已有物品；
+   * 没值且名字仍然撞着 → 界面上必须先问，程序自己不猜。
+   *
+   * 它是**用户的选择**，所以 AI 的每一轮返回都不该动它 —— 见
+   * mergeChatResponse 里那一串「保留用户手动做过的选择」。
+   */
+  duplicateOf?: string
+  /**
+   * AI 说「这一条删掉」，而且用户还没点采纳 —— **待删**。
+   *
+   * ── 为什么是标记，而不是直接从草稿里删掉 ──────────────────────
+   * 这里原来是「把这条草稿从数组里删掉」。那会造成一台很坑的戏：
+   *
+   *   AI：「已把「钱包卡片」下的 13 件物品全部移入回收站」
+   *   用户：「ok，你帮我删除啊」
+   *   AI：「已经全部移入回收站了」（其实一件都没动）
+   *
+   * 根因：条目一从草稿里消失，**下一轮 AI 就看不见它了**。用户接着催，
+   * AI 手里那个草稿是空白的，它既不知道要删什么、也没有落库的能力，
+   * 只能编一句「已经删了」。
+   *
+   * 打成标记之后：AI 下一轮明确看到「这 13 条带着 removed」，
+   * 于是它说的是「等你点采纳」而不是「已经删好了」。
+   *
+   * 采纳时由 `draftsToApply` 把它变成真正的软删除（进回收站）；
+   * 采纳完 `settleApplied` 才把它从草稿里移走 —— 那时它已经是事实了。
+   */
+  removed?: boolean
 }
 
 export function toItemDraft(
@@ -398,8 +430,34 @@ function itemSignature(item: Item, derived: DerivedContext): string {
 
 export interface DraftApplyResult {
   plan: DraftApplyItem[]
-  /** 要软删除的已有物品 id（移入回收站，可恢复） */
+  /**
+   * 计划里第 i 条对应哪一条草稿 —— 采纳之后要拿它去结算会话
+   * （把已落库的草稿从预览里移走）。两边顺序一一对应。
+   */
+  planKeys: string[]
+  /**
+   * **计划里第 i 条**要更新哪件已有物品（而不是新建）。
+   *
+   * 和 plan / planKeys / appliedIds 同一套下标，可以直接喂给
+   * `applyDraftItems({ duplicates })`。用计划下标而不是草稿下标是刻意的：
+   * 计划会跳过「没勾选」和「还在等确认」的条目，两套下标混用会让确认
+   * 落到别的条目上 —— 那种错位很难查，而且后果是「改错东西 / 又多一件」。
+   */
+  duplicates: Map<number, string>
+  /** 被软删除的已有物品 id（移入回收站，可恢复） */
   discardIds: string[]
+  /**
+   * 用户要求删、但数据库里已经找不到的那些 id。
+   *
+   * 这些是**静默丢失**的入口：以前它们被 `filter` 一声不响地过滤掉，
+   * 用户点了采纳、界面说「移入回收站 3」，其实一件都没动。
+   * 现在数出来，界面上如实说一句。
+   */
+  missingDiscards: string[]
+  /** 要被删的那些**还没落库**（AI 说要删，但用户还没点采纳） */
+  pendingDiscards: number
+  /** 已经被 AI 移出草稿、采纳时会真进回收站的草稿 key */
+  discardKeys: string[]
   /** 已经是已有物品、且内容变了 → 会被更新 */
   updating: number
   /** 新录入的 → 会被创建 */
@@ -408,6 +466,68 @@ export interface DraftApplyResult {
   discarding: number
   /** 已有物品但内容没动 → 跳过，不去动它的 updatedAt */
   untouched: number
+  /** 名字撞上已有物品的条目 —— 界面上必须先让用户选「改它」还是「另建一条新的」 */
+  collisions: DraftNameCollision[]
+}
+
+/**
+ * 一条「名字和库里已有物品撞了」的草稿。
+ *
+ * 这是 issue 2 的正脸：用户说「我仓库里有」，AI 却新建了一条一模一样的。
+ * 这里把撞上的那件东西找出来，交给界面**逼用户点一下**：
+ *   · 默认是**更新**那件已有的（`duplicateOf`），因为绝大多数情况下
+ *     「我仓库里有」就是「改那一条」
+ *   · 真想再放一件同名的（比如第二根充电线），界面上可以明确选「新建一条」
+ * 绝不允许程序自己猜 —— 猜错了就是用户报的那个 bug：悄悄多出一件东西。
+ */
+export interface DraftNameCollision {
+  draftKey: string
+  draftName: string
+  /** 撞上的那件已有物品 */
+  existingId: string
+  /** 已有物品现在的位置文字，帮用户确认「是不是同一件」 */
+  existingLocationLabel: string
+}
+
+/** 名字比对用的归一化：去掉首尾空白、内部空白压成一个、大小写拉平 */
+export function normName(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+/**
+ * 名字撞车检查（只针对**要新建**的草稿）。
+ *
+ * 带 sourceItemId 的草稿本来就是「改这一条」，不存在撞车问题。
+ */
+export function findNameCollisions(
+  drafts: ItemDraft[],
+  currentItems: Item[],
+  derived: DerivedContext,
+): DraftNameCollision[] {
+  const live = currentItems.filter((item) => item.status !== 'discarded')
+  const byName = new Map<string, Item>()
+  for (const item of live) {
+    const key = normName(item.name)
+    if (key !== '' && !byName.has(key)) byName.set(key, item)
+  }
+
+  const out: DraftNameCollision[] = []
+  for (const draft of drafts) {
+    if (!draft.include || draft.sourceItemId) continue
+    const name = draft.name.trim()
+    if (name === '') continue
+    const existing = byName.get(normName(name))
+    if (!existing) continue
+    out.push({
+      draftKey: draft.key,
+      draftName: name,
+      existingId: existing.id,
+      existingLocationLabel: existing.locationId
+        ? derived.index.pathString(existing.locationId, ' / ')
+        : t('status.unassigned'),
+    })
+  }
+  return out
 }
 
 /**
@@ -418,21 +538,42 @@ export interface DraftApplyResult {
  *   · 已有物品里**内容没变的直接跳过** —— 否则你把 74 件药品拉进来只改了 3 件，
  *     落库时那 74 件的修改时间全被刷新，排序和「最近修改」就全乱了
  *   · 被移出草稿的已有物品 → **软删除**（进回收站），不是硬删
+ *
+ * ── collisionMode 是 issue 2 的那道闸 ────────────────────────────────
+ * 要新建的草稿里，名字和库里某件东西撞上时：
+ *   · 'ask'   —— 默认**不动**（列表里给 collisions，界面上必须让用户点头）。
+ *                宁可什么都不做，也绝不悄悄多出一件重名的东西
+ *   · 'update'—— 用户已经确认「就是它」→ 改成更新那一条
+ *   · 'create'—— 用户明确说「就是要新建」→ 照新建（他可能真有两根一样的数据线）
  */
 export function draftsToApply(
   drafts: ItemDraft[],
   currentItems: Item[],
   derived: DerivedContext,
   removedKeys: readonly string[] = [],
+  collisionMode: 'ask' | 'update' | 'create' = 'ask',
+  /**
+   * 「计划里的第 i 条」= 落到哪件已有物品上。
+   *
+   * ⚠️ 下标是**传进来这批草稿**的下标，不是最后那份 plan 的下标。
+   * 这一点很要紧：下面会按顺序把还留在候选里的草稿收进 plan，
+   * 两套下标不小心混用的话，「哪条新建、哪条更新」会错位到别的条目上。
+   */
+  duplicates?: ReadonlyMap<number, string>,
 ): DraftApplyResult {
   const byId = new Map(currentItems.map((item) => [item.id, item]))
+  const collisions = findNameCollisions(drafts, currentItems, derived)
+  const collisionByKey = new Map(collisions.map((c) => [c.draftKey, c]))
   const plan: DraftApplyItem[] = []
+  const planKeys: string[] = []
+  /** 计划下标 → 要更新的已有物品 id（用计划下标，见 DraftApplyResult.duplicates） */
+  const planDuplicates = new Map<number, string>()
   let updating = 0
   let creating = 0
   let untouched = 0
 
-  for (const draft of drafts) {
-    if (!draft.include || draft.name.trim() === '') continue
+  drafts.forEach((draft, index) => {
+    if (!draft.include || draft.name.trim() === '') return
 
     const categoryPaths = [
       ...draft.matchedCategoryIds.map((id) => derived.categoryIndex.pathNames(id)),
@@ -461,24 +602,127 @@ export function draftsToApply(
 
     if (draft.sourceItemId) {
       const existing = byId.get(draft.sourceItemId)
-      if (!existing) continue // 期间被删了，跳过
+      if (!existing) return // 期间被删了，跳过
       if (effectiveSignable(draft, derived) === itemSignature(existing, derived)) {
         untouched++
-        continue
+        return
       }
       plan.push({ ...entry, existingId: draft.sourceItemId })
+      planKeys.push(draft.key)
       updating++
-      continue
+      return
+    }
+
+    // ---- 要新建的这一支：先看名字撞不撞，再看用户有没有定过 ----
+    const collision = collisionByKey.get(draft.key)
+    /*
+     * `duplicateOf` = 用户已经点过界面上那个「就是它」，是**最明确**的一条指令；
+     * 其次是调用方按条目注入的 `duplicates`（界面上的选择）；
+     * 最后才是全局的 `collisionMode`。
+     */
+    const targetId =
+      draft.duplicateOf ??
+      duplicates?.get(index) ??
+      (collisionMode === 'update' ? collision?.existingId : undefined)
+
+    if (targetId !== undefined) {
+      const existing = byId.get(targetId)
+      if (existing) {
+        plan.push({ ...entry, existingId: existing.id })
+        planKeys.push(draft.key)
+        planDuplicates.set(plan.length - 1, existing.id)
+        updating++
+        return
+      }
+      // 那件东西在这中间被删了 → 退回新建，免得整条丢掉
+    } else if (collision !== undefined && collisionMode === 'ask') {
+      return // 等用户点头，这一步什么都不做
     }
 
     plan.push(entry)
+    planKeys.push(draft.key)
     creating++
+  })
+  /*
+   * 要被软删的：
+   *   · `removedKeys` —— 会话里累计的「要删」清单（AI 说删了的那些）
+   *   · 草稿上带 `removed` 标记的 —— 同一条信息的另一份记录，
+   *     只有确实指得到数据库里某件东西时才算数
+   *
+   * ⚠️ 这里**不能**一声不响地 filter 掉找不到的：用户点了采纳、
+   * 界面说「移入回收站 3」，其实那 3 条早就不在了 —— 那就是
+   * 「说做了、没做、还不说」。找不到的数出来交给界面。
+   */
+  const wantedDiscards = [...new Set([
+    ...removedKeys,
+    ...drafts.filter((draft) => draft.removed).map((draft) => draft.sourceItemId ?? draft.key),
+  ])].filter((key) => key !== '')
+  const discardIds = wantedDiscards.filter((key) => byId.has(key))
+  const missingDiscards = wantedDiscards.filter((key) => !byId.has(key))
+
+  return {
+    plan,
+    planKeys,
+    duplicates: planDuplicates,
+    discardIds,
+    discardKeys: [...discardIds],
+    missingDiscards,
+    pendingDiscards: discardIds.length,
+    updating,
+    creating,
+    discarding: discardIds.length,
+    untouched,
+    collisions,
   }
+}
 
-  // 只有确实存在于数据库里的 key 才去软删，AI 编的 id 一律忽略
-  const discardIds = removedKeys.filter((key) => byId.has(key))
+/* ------------------------------------------------------------------ */
+/* 草稿与当前数据对齐（拉进来之后、以及每次落库之前都要跑一遍）          */
+/* ------------------------------------------------------------------ */
 
-  return { plan, discardIds, updating, creating, discarding: discardIds.length, untouched }
+export interface ReconcileResult {
+  drafts: ItemDraft[]
+  /** 有 sourceItemId、但那件物品已经不在库里的草稿数 */
+  droppedSources: number
+}
+
+/**
+ * 把草稿重新对齐到**当前**的数据上。
+ *
+ * 为什么必须有这一层：草稿是「针对某一份数据的计划」，而用户完全可能
+ * 在聊天的同时自己删掉几件东西、或者用 AI 采纳了上一批。这时候草稿里的
+ * `sourceItemId` 就指不到任何东西了，而 `draftsToApply` 对这种情况是
+ * **静默跳过**的 —— 用户点「采纳」会得到一个悄悄少了几条的结果。
+ *
+ * 所以：指不到的，就地**摘掉那个标记**、变成一条普通的新建草稿，
+ * 并且报出数量，界面上如实说一句。默默少做一部分是这个项目一直在避免的事。
+ */
+export function reconcileDrafts(
+  drafts: ItemDraft[],
+  currentItems: Item[],
+  derived: DerivedContext,
+): ReconcileResult {
+  const live = new Map(
+    currentItems.filter((item) => item.status !== 'discarded').map((item) => [item.id, item]),
+  )
+  let droppedSources = 0
+
+  const next = drafts.map((draft) => {
+    if (!draft.sourceItemId) return draft
+    if (live.has(draft.sourceItemId)) return draft
+    droppedSources++
+    return {
+      ...draft,
+      sourceItemId: undefined,
+      key: draft.key,
+    }
+  })
+
+  // derived 目前只用来保证签名一致；留着这个参数是为了让调用方一眼看出
+  // 「对齐这件事是跟数据有关的」，而不是纯粹的数组操作。
+  void derived
+
+  return { drafts: next, droppedSources }
 }
 
 /* ------------------------------------------------------------------ */
@@ -547,6 +791,24 @@ export function itemsForLoadScope(
   for (const path of scope.locationPaths ?? []) {
     const id = resolvePathToId(path, derived.index)
     if (id) add(itemsInLocation(live, id, true, derived))
+  }
+
+  /*
+   * 按名字找（issue 8 的主力）。
+   *
+   * 为什么必须有这一条：用户说「我仓库里有棉签」，而 AI 手里只有
+   * 「哪个分类有多少件」的统计 —— 棉签可能在「日用」也可能在「药品」，
+   * 它猜不到该拉哪一支，于是回一句「没找到」。用户看到的就是
+   * 「我明明有，它说找不到」。
+   *
+   * 匹配用**子串**（忽略大小写和空白）：AI 说「棉签」，库里那条叫
+   * 「碘伏棉签」也应该被拉进来 —— 这正是用户希望的那件事。
+   * 宁可多拉几条让 AI 自己判断，也不要因为叫法差一点就找不到。
+   */
+  for (const name of scope.names ?? []) {
+    const wanted = normName(name)
+    if (wanted === '') continue
+    add(live.filter((item) => normName(item.name).includes(wanted)))
   }
 
   return [...picked.values()]

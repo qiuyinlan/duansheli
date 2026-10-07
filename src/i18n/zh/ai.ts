@@ -133,9 +133,31 @@ export const ai = {
   needToSeeItems: '需要先看一下你现有的物品',
   loadedIntoDrafts_one: '已把 {count} 条现有物品拉进草稿（采纳时是更新，不会新建）',
   loadedIntoDrafts_other: '已把 {count} 条现有物品拉进草稿（采纳时是更新，不会新建）',
-  noMatchingItems: '没有找到符合条件的物品',
-  continueAfterLoad: '（上面那些物品已经拉进来了，请继续完成我刚才的指令）',
+  noMatchingItems:
+    '没有找到符合条件的物品。如果它确实在你库里，换个说法（比如直接说名字）让它再找一次，别直接新建。',
+  continueAfterLoad:
+    '（上面那些物品已经拉进来了，请继续完成我刚才的指令。注意：它们现在就在草稿里，改它们用 update、不要新建。）',
   noDraftChangesMeta: '这条没有改动草稿',
+  sourceMissing_one:
+    '有 {count} 条草稿对应的物品已经不在了（可能被删掉、或已经被采纳过）—— 已把它们改成新建，请确认这几条是不是你要的。',
+  sourceMissing_other:
+    '有 {count} 条草稿对应的物品已经不在了（可能被删掉、或已经被采纳过）—— 已把它们改成新建，请确认这几条是不是你要的。',
+
+  /* ---- 删除物品前的勾选（issue 3）---- */
+  discardPicker: {
+    title: '选择要移入回收站的东西',
+    lead: '勾选要移入回收站的物品 —— 一个都没勾时不会删任何东西。',
+    selectAll: '全选这 {count} 件',
+    confirm_one: '移入回收站（{count} 件）',
+    confirm_other: '移入回收站（{count} 件）',
+    nonePicked: '先勾选要删的',
+    empty: '没有可删除的物品。',
+    trashNote_one: '将把 {count} 件移入回收站，物品本身不会消失。',
+    trashNote_other: '将把 {count} 件移入回收站，物品本身不会消失。',
+    whereToRestore: '之后可以在「设置 → 已舍弃回收站」里逐条恢复。',
+    doneToast_one: '已把 {count} 件移入回收站，可在设置里恢复',
+    doneToast_other: '已把 {count} 件移入回收站，可在设置里恢复',
+  },
 
   metaAdded: '新增 {count}',
   metaUpdated: '修改 {count}',
@@ -151,6 +173,14 @@ export const ai = {
   resultNewCategories: '新建 {count} 个分类',
   resultNewLocations: '新建 {count} 个位置',
   appliedPrefix: '已',
+  /*
+   * 要求删、但数据库里已经找不到的那些。
+   *
+   * 这一条是防「说做了、没做、还不说」的最后一道：以前它们被静默跳过，
+   * 提示照样说「移入回收站 13」，其实一件都没动。
+   */
+  resultMissingDiscards_one: '有 {count} 条要删的已经不在库里了（可能已被删过），没有重复处理',
+  resultMissingDiscards_other: '有 {count} 条要删的已经不在库里了（可能已被删过），没有重复处理',
   noChangesToast: '没有变化',
 
   draftEmptyTitle: '这里会显示要改的东西',
@@ -174,6 +204,95 @@ export const ai = {
   summaryCloseParen: '）',
   summaryChangedHint: '· 加粗的是这一轮改过的',
   clearHighlight: '取消高亮',
+
+  /*
+   * 只显示改动过的（issue 6）。
+   *
+   * 用户的场景：让 AI 把 189 条现有物品拉进来核对，它只改了 3 条 ——
+   * 那 186 条没动的铺在预览底下，把真正要看的东西淹掉了。
+   */
+  showUnchanged: '显示没改动的 {count} 条',
+  showOnlyChanged: '只看改动过的',
+  noChangesInDraftsTitle: '这一轮没有改动',
+  noChangesInDraftsHint_one: '拉进来的 {count} 条都保持原样 —— 所以这里不铺列表。',
+  noChangesInDraftsHint_other: '拉进来的 {count} 条都保持原样 —— 所以这里不铺列表。',
+
+  /*
+   * 名字撞上库里已有物品时的确认（issue 2）。
+   *
+   * 这里**必须**让用户点，程序不给默认值：猜「新建」就是他报的那个 bug
+   * （「我明明有，它又建了一个」），猜「更新」更糟（动了他没让动的东西）。
+   */
+  dedupeLead: '有 ',
+  dedupeTail: ' 条的名字和你库里已有的东西一样。请先确认每一条是哪种情况：',
+  dedupeExisting: '库里已有这一条（位置：{location}）',
+  dedupeUpdate: '就是它，改这一条',
+  dedupeCreate: '不是它，另建一条新的',
+  acceptWaitingDedupe: ' · 待确认 {count}',
+  needDedupeChoice: '还有 {count} 条重名没确认，先在上面选一下再采纳',
+
+  /*
+   * 会被删掉的那些（单独列一块）。
+   *
+   * 它们已经从草稿里被移走了，所以不会出现在改动列表里 ——
+   * 不单独列的话，用户在点「采纳」之前看不到自己将要失去哪几件。
+   * 用户原话：「只需要给我看更改的，还有删除的即可。」
+   */
+  willDiscardLead_one: '这 {count} 件会被移进回收站：',
+  willDiscardLead_other: '这 {count} 件会被移进回收站：',
+  willDiscardTail: '（它们不会真的消失，可以在「设置 → 已舍弃回收站」里恢复）',
+
+  /* 上一批已生效的条目 —— 拼在下一轮指令前面，AI 才知道那批不用再新建 */
+  appliedContext: '（上一批已经采纳落库了：{names}。它们现在是已有物品。）\n',
+
+  /*
+   * ---- AI 整理分类 ----
+   *
+   * 用户要的能力：「我希望 ai 可以编辑分类，我可以让它帮我整理已有的分类。」
+   *
+   * 分类是**结构**，改错了没法用眼睛验（你只知道树变了样子），
+   * 所以预览这一块的重点是「把将要发生什么一行一行说清楚」，
+   * 而且每种状态都要说清「这条到底会不会被执行」。
+   */
+  catLead: 'AI 想对分类做 ',
+  catLeadTail: ' 处改动（取消勾选就不做）：',
+  catProblemsLead: '其中有 ',
+  catProblemsBold: '做不了',
+  catProblemsTail: ' 的条目 —— 它们不会被执行，也不会悄悄丢掉。看看要不要让它换个说法重试。',  catIncludeAria: '是否执行「{name}」这一条',
+
+  catKindCreate: '新建',
+  /* 新建的那一条没有「原来的分类」——逻辑层只给出 isNew 这个事实，措辞在这一层 */
+  catFromNew: '（新分类）',  catKindRename: '改名',
+  catKindMove: '移动',
+  catKindDelete: '删除',
+
+  catNoteNoop: '本来就是这样，不用改',
+  catNoteMissing: '找不到这个分类（可能名字不对，或者它已经被改过了）',
+  catNoteDuplicate: '同级已经有同名的分类了，不能撞成两个',
+  catNoteCycle: '不能把分类挪到它自己（或它的下级）里面 —— 那样整棵子树会从界面上消失',
+
+  catDeleteChildren_one: '{count} 个子分类会挂到上一级',
+  catDeleteChildren_other: '{count} 个子分类会挂到上一级',
+  catDeleteItems_one: '{count} 件物品会失去这个分类归属',
+  catDeleteItems_other: '{count} 件物品会失去这个分类归属',
+  /* 用户最怕的就是「删了它会不会把东西也删了」，所以必须明说 */
+  catDeleteNothingLost: '（物品本身一件都不会少）',
+
+  catWillApply_one: '将改动 {count} 处分类',
+  catWillApply_other: '将改动 {count} 处分类',
+  catNothingApply: '没有可执行的分类改动',
+
+  catAccept: '采纳分类改动',
+  catDone: '已',
+  catResultCreated_one: '新建 {count} 个分类',
+  catResultCreated_other: '新建 {count} 个分类',
+  catResultRenamed_one: '改名 {count} 个',
+  catResultRenamed_other: '改名 {count} 个',
+  catResultMoved_one: '移动 {count} 个',
+  catResultMoved_other: '移动 {count} 个',
+  catResultDeleted_one: '删除 {count} 个',
+  catResultDeleted_other: '删除 {count} 个',
+  catResultNothing: '分类没有任何改动',
 
   accept: '采纳',
   acceptUpdating: ' · 更新 {count}',

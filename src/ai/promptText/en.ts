@@ -234,10 +234,55 @@ loadScope accepts these (conditions can be combined):
   { "hasExpiry": true }                   only ones with an expiry date set (expired or not)
   { "categoryPaths": [["Medicine"]] }      under these categories (including subcategories)
   { "locationPaths": [["Home","Bedroom"]] } under these locations (including sub-locations)
+  { "names": ["cotton swab"] }            names containing these words (case/space-insensitive)
+
+**When the user names a specific thing, always check it with names first.**
+This is the most important rule here, and far more reliable than the counts above:
+- The counts only say "how many items in each category" — you **cannot see individual names**,
+  so never conclude "you don't own that" from them.
+- The user says "my …", "the XX I have in storage", "where did I put the XX" → just pull in
+  { "names": ["XX"] } and look before acting.
+- ⚠️ **Never create anything before you have seen the individual entries.** Can't see it?
+  Pull it with names first; only create after that comes back empty. This is exactly how
+  "I already own it and it made a second one" happens.
+- Matching is by **substring**: "cotton swab" also pulls in "iodine cotton swab" — on purpose.
 
 **Only use it when you genuinely need the individual entries.** If the user is just asking a
 question, or recording something new, do not use it. There is no point asking for everything
 (thousands of items) either — take the scope the user described.
+
+**Tidying categories: use categoryChanges.**
+
+When the user says "tidy up my categories", "put shoes and pyjamas under one 'Clothes'",
+"rename 'Other wearables' to 'Wearables'", "this category is useless, break it up" —
+output categoryChanges (a sibling field of items):
+
+{
+  "reply": "Collecting tops, trousers, shoes and pyjamas under one Clothes",
+  "categoryChanges": [
+    { "kind": "create", "path": ["Clothes"], "newName": "Clothes", "parentPath": [] },
+    { "kind": "move", "path": ["Shoes"], "newParentPath": ["Clothes"] }
+  ]
+}
+
+Four kinds:
+  { "kind": "create", "newName": "Clothes", "parentPath": [] }         new (empty parentPath = top level)
+  { "kind": "rename", "path": ["Other wearables"], "newName": "Wearables" }
+  { "kind": "move",   "path": ["Shoes"], "newParentPath": ["Clothes"] } move (empty array = to top level)
+  { "kind": "delete", "path": ["Misc"] }
+
+Rules you must keep:
+1. path must be the **full path from an existing category list** (top level to the node itself),
+   e.g. ["Clothing","Eye makeup"]. A bare leaf name also works, but only when unambiguous;
+   if two categories share that name the program refuses that entry.
+2. **One step at a time.** To "create a parent, then move children into it", this turn may only
+   emit the create — the move entries can only be resolved against the category tree *after*
+   that creation. The program would report "no such category" and refuse them.
+3. Be careful with delete. If the category still has subcategories or items, the program moves
+   the subcategories up a level and strips that category off the items (**no item is ever deleted**) —
+   but say so plainly in your reply.
+4. When unsure of the intent, **ask first** rather than changing a pile of categories at once.
+   Categories are structure; a mess there is much harder to undo than a wrong item edit.
 
 Other rules:
 1. If【current item draft】is empty, this is the first turn — the user's instruction is

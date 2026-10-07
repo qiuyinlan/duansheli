@@ -1,4 +1,4 @@
-/**
+﻿/**
  * AI 认不认识这个工具的词汇。
  *
  * ── 这一组守的是用户报上来的那个 bug ──────────────────────────────
@@ -240,6 +240,7 @@ await test('只把闲置改成备用，必须被认成「改动过」', () => {
       removedIds: [],
       loadScope: null,
       noChanges: false,
+      categoryChanges: [],
     },
     drafts,
     localMatch,
@@ -283,6 +284,7 @@ await test('AI 没提状态 → 保留原来的（不能悄悄变回在用）', 
       removedIds: [],
       loadScope: null,
       noChanges: false,
+      categoryChanges: [],
     },
     drafts,
     localMatch,
@@ -326,6 +328,7 @@ await test('AI 用 status 说「已舍弃」→ 变成一次删除（进回收�
       removedIds: [],
       loadScope: null,
       noChanges: false,
+      categoryChanges: [],
     },
     drafts,
     localMatch,

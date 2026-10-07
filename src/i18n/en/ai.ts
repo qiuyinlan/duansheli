@@ -149,9 +149,31 @@ export const ai = {
     'Pulled {count} existing item into the drafts — accepting updates it instead of creating it',
   loadedIntoDrafts_other:
     'Pulled {count} existing items into the drafts — accepting updates them instead of creating them',
-  noMatchingItems: 'No items matched',
-  continueAfterLoad: '(those items are in the drafts now — please carry on with my instruction)',
+  noMatchingItems:
+    'No items matched. If it really is in your database, rephrase (its name works best) and let it look again — do not create it directly.',
+  continueAfterLoad:
+    '(Those items are in the drafts now — please carry on with my instruction. Note: they are existing drafts, so update them instead of creating new ones.)',
   noDraftChangesMeta: 'This one changed nothing in the drafts',
+  sourceMissing_one:
+    '{count} draft pointed at an item that no longer exists (deleted, or already accepted) — it has been turned back into a new item, so check that it is what you want.',
+  sourceMissing_other:
+    '{count} drafts pointed at items that no longer exist (deleted, or already accepted) — they have been turned back into new items, so check that they are what you want.',
+
+  /* ---- Choosing what to discard ---- */
+  discardPicker: {
+    title: 'Choose what goes to the trash',
+    lead: 'Tick the items to move to the trash — with nothing ticked, nothing is deleted.',
+    selectAll: 'Select all {count}',
+    confirm_one: 'Move to trash ({count})',
+    confirm_other: 'Move to trash ({count})',
+    nonePicked: 'Tick something first',
+    empty: 'There is nothing to discard.',
+    trashNote_one: '{count} item will move to the trash — the record itself stays.',
+    trashNote_other: '{count} items will move to the trash — the records themselves stay.',
+    whereToRestore: 'You can restore them later under Settings → Discarded recycle bin.',
+    doneToast_one: 'Moved {count} item to the trash — restorable in Settings',
+    doneToast_other: 'Moved {count} items to the trash — restorable in Settings',
+  },
 
   metaAdded: '{count} added',
   metaUpdated: '{count} changed',
@@ -167,6 +189,15 @@ export const ai = {
   resultNewCategories: '{count} categories created',
   resultNewLocations: '{count} places created',
   appliedPrefix: 'Done: ',
+  /*
+   * Deletions requested for items that are no longer in the database.
+   * The last line of defence against "it said it did it, it did not, and it never said so":
+   * these used to be skipped silently while the toast still claimed "13 moved to trash".
+   */
+  resultMissingDiscards_one:
+    '{count} item marked for deletion is no longer in your database (already deleted?) — nothing was done twice',
+  resultMissingDiscards_other:
+    '{count} items marked for deletion are no longer in your database (already deleted?) — nothing was done twice',
   noChangesToast: 'No changes',
 
   draftEmptyTitle: 'Anything to be changed shows up here',
@@ -190,6 +221,92 @@ export const ai = {
   summaryCloseParen: ')',
   summaryChangedHint: '· Bold ones changed this round',
   clearHighlight: 'Clear highlight',
+
+  /*
+   * Showing only what changed.
+   *
+   * The user's case: they had the AI pull in 189 existing items to check them and it
+   * changed 3 — the untouched 186 buried the three that matter.
+   */
+  showUnchanged: 'Show the {count} unchanged',
+  showOnlyChanged: 'Only changed',
+  noChangesInDraftsTitle: 'Nothing changed this round',
+  noChangesInDraftsHint_one: 'All {count} pulled-in item stayed as it was — so there is no list here.',
+  noChangesInDraftsHint_other:
+    'All {count} pulled-in items stayed as they were — so there is no list here.',
+
+  /*
+   * Name collisions with items already in the database.
+   *
+   * The program deliberately has no default here: guessing "create" is the reported bug
+   * ("I already own it and it made a second one"), and guessing "update" is worse —
+   * it changes something the user never asked to change.
+   */
+  dedupeLead: '',
+  dedupeTail:
+    ' draft names match something you already own. Confirm what each one means first:',
+  dedupeExisting: 'you already have this (at {location})',
+  dedupeUpdate: 'That is it — update it',
+  dedupeCreate: 'Not it — create a new one',
+  acceptWaitingDedupe: ' · {count} awaiting your call',
+  needDedupeChoice: '{count} name matches are still unconfirmed — pick one above before accepting',
+
+  /*
+   * What is about to be deleted, listed on its own.
+   * Those entries have already left the draft list, so without this the user cannot
+   * see what they are about to lose before clicking Accept.
+   */
+  willDiscardLead_one: 'This {count} item will move to the trash:',
+  willDiscardLead_other: 'These {count} items will move to the trash:',
+  willDiscardTail:
+    '(they do not really disappear — restore them under Settings → Discarded recycle bin)',
+
+  /* Items from the previous accepted batch — prepended to the next instruction */
+  appliedContext: '(The previous batch has been accepted and saved: {names}. They are existing items now.)\n',
+
+  /* ---- The AI organising categories ---- */
+  catLead: 'The AI wants to make ',
+  catLeadTail: ' change(s) to your categories (untick any you do not want):',
+  catProblemsLead: 'Of these, ',
+  catProblemsBold: 'cannot be done',  catProblemsTail:
+    ' — those entries will NOT be applied, and they will not be silently dropped either. Consider asking it to rephrase. For example, a category cannot be moved inside itself or one of its own subcategories: that would make the whole subtree disappear from the interface.',
+
+  catIncludeAria: 'Apply the “{name}” entry',
+
+  catKindCreate: 'New',
+  /* A new category has no "from" — the logic layer only reports isNew; wording lives here */
+  catFromNew: '(new category)',
+  catKindRename: 'Rename',
+  catKindMove: 'Move',
+  catKindDelete: 'Delete',
+
+  catNoteNoop: 'already like this — nothing to change',
+  catNoteMissing: 'no such category (wrong name, or it has been changed already)',
+  catNoteDuplicate: 'a category of that name already exists at the same level',
+  catNoteCycle: 'cannot move a category inside itself or its own subcategory',
+
+  catDeleteChildren_one: '{count} subcategory will move up one level',
+  catDeleteChildren_other: '{count} subcategories will move up one level',
+  catDeleteItems_one: '{count} item will lose this category',
+  catDeleteItems_other: '{count} items will lose this category',
+  /* The user's biggest fear is "will deleting this delete my things too" — so say it outright */
+  catDeleteNothingLost: ' (not a single item is deleted)',
+
+  catWillApply_one: '{count} category change will be applied',
+  catWillApply_other: '{count} category changes will be applied',
+  catNothingApply: 'No applicable category changes',
+
+  catAccept: 'Accept category changes',
+  catDone: 'Done: ',
+  catResultCreated_one: '{count} category created',
+  catResultCreated_other: '{count} categories created',
+  catResultRenamed_one: '{count} renamed',
+  catResultRenamed_other: '{count} renamed',
+  catResultMoved_one: '{count} moved',
+  catResultMoved_other: '{count} moved',
+  catResultDeleted_one: '{count} deleted',
+  catResultDeleted_other: '{count} deleted',
+  catResultNothing: 'No category changes were applied',
 
   accept: 'Accept',
   acceptUpdating: ' · update {count}',

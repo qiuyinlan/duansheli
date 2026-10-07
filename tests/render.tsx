@@ -18,6 +18,8 @@ import { APP_DATA_KEY, STORE_APP, idbPut } from '../src/storage/idb'
 import { ErrorBoundary } from '../src/components/ErrorBoundary'
 import { resetBootGuardForTest, showBootError } from '../src/lib/bootGuard'
 import { createDerived } from '../src/store/selectors'
+import type { ItemDraft } from '../src/ai/convert'
+import { planCategoryChanges } from '../src/ai/categoryEdit'
 import { flushWrites, useAppStore } from '../src/store/useAppStore'
 import { clearAiSession, useAiSessionStore } from '../src/store/useAiSessionStore'
 import { setLang } from '../src/i18n'
@@ -173,8 +175,108 @@ await test('物品列表页显示物品名与位置路径', () => {
   withPage('/items', data, (_container, html) => {
     contains(html, '灰色羊毛衫', '应显示物品名')
     contains(html, '牛仔裤')
-    contains(html, '家 / 卧室 / 衣柜', '应显示位置路径')
+    /*
+     * 物品行里的位置就是**普通文字**（完整路径），不上色。
+     * 用户看过第一版「逐级上色」之后明确说过：
+     * 「我只是要展示的目录层级颜色改变，正常物品那里正常展示颜色就可以了。」
+     * 颜色留给位置页那棵目录树（见下面那条「目录树」用例）。
+     */
+    contains(html, '家 / 卧室 / 衣柜', '应显示完整位置路径')
+    ok(
+      !html.includes('loc-path'),
+      '物品行里不该再有那些逐级上色的路径片段 —— 那是被否掉的做法',
+    )
   })
+})
+
+await test('位置页那棵目录树：子目录统一绿色，大标题保持原样', () => {
+  withPage('/locations', data, (_container, html) => {
+    /*
+     * 用户要的是这个：目录有多层时，「是子目录的那几行」变绿，
+     * 顶层大标题不动。断言的是 TreeView 给出的那个层级类名
+     * （`tree-node__label--sub`），它只在 depth > 0 的行上加。
+     */
+    contains(html, 'tree-node__label--sub', '子目录必须有层级配色')
+
+    const treeLabels = html.match(/class="tree-node__label[^"]*"/g) ?? []
+    ok(treeLabels.length > 0, '应该能抓到树里的行')
+    const subCount = treeLabels.filter((l) => l.includes('--sub')).length
+    ok(
+      subCount > 0,
+      `应该有子目录被标成绿色那一档。实际抓到 ${treeLabels.length} 行，其中 ${subCount} 行是子目录`,
+    )
+    ok(
+      subCount < treeLabels.length,
+      '不能所有行都算子目录 —— 大标题（第 0 层）必须保持原样，否则等于没上色',
+    )
+  })
+})
+
+await test('位置选择器里的目录树也用同一套层级配色（两处不能长成两样）', () => {
+  /*
+   * 位置选择器是个 Modal（走 portal 挂到 body 上），所以这里要看
+   * `document.body` —— 只看容器的 innerHTML 是抓不到弹窗的。
+   */
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+
+  useAppStore.setState({
+    status: 'ready',
+    error: null,
+    data,
+    derived: createDerived(data),
+    aiApiKey: '',
+  })
+
+  try {
+    act(() => {
+      root.render(
+        <MemoryRouter
+          initialEntries={['/items/new']}
+          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
+          <AppRoutes />
+        </MemoryRouter>,
+      )
+    })
+
+    /*
+     * 打开「位置」字段那个选择器。
+     *
+     * 那个按钮里的文字是 `未归位（点击选择）`（夹具里新录入的物品
+     * 默认沿用上次的位置），所以按这个找比按「位置」两个字找可靠 ——
+     * 后者会撞上字段标签那一堆。
+     */
+    const trigger = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('点击选择') ?? false,
+    )
+    ok(
+      trigger !== undefined,
+      `录入页上应该有一个位置的入口按钮。实际按钮：${Array.from(
+        container.querySelectorAll('button'),
+      )
+        .map((b) => b.textContent?.trim() ?? '')
+        .filter(Boolean)
+        .slice(0, 20)
+        .join(' | ')}`,
+    )
+    act(() => {
+      trigger?.click()
+    })
+
+    const modal = document.querySelector('.modal__body')
+    ok(modal !== null, '点了之后应该弹出选择器')
+    ok(
+      modal?.innerHTML.includes('tree-node__label--sub') ?? false,
+      '选择器里的目录树也要有层级配色，不能只有位置页有',
+    )
+  } finally {
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  }
 })
 
 await test('位置页显示位置树与该位置的物品', () => {
@@ -1297,8 +1399,7 @@ await test('闲置默认从物品列表里收起来，但必须显示「收了�
   }
 })
 
-await test('闲置页照常显示 —— 那里正是它们的家', () => {
-  withPage('/idle', fixture(), (_container, html) => {
+await test('闲置页照常显示 —— 那里正是它们的家', () => {  withPage('/idle', fixture(), (_container, html) => {
     contains(html, '旧手机')
   })
 })
@@ -1480,6 +1581,868 @@ await test('设置页有数据体检，文案里没有漏到界面上的加粗�
     contains(html, '快照', '体检要摆出快照的状态')
     ok(!html.includes('**'), '界面上出现了字面的星号 —— 有文案把 markdown 当渲染语法了')
   })
+})
+
+/* ------------------------------------------------------------------ */
+/* 拖拽：把物品拖到位置上                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 拖物品用的 MIME 类型。
+ *
+ * 这里**故意再写一遍**，而不是从页面里 import：它是一份协议，
+ * 页面改了而这里没改，测试就该红 —— 从同一个常量取值反而会把这种漂移藏起来。
+ */
+const ITEM_MIME = 'application/x-duansheli-item'
+
+/**
+ * 造一次拖放事件。
+ *
+ * jsdom 没有实现 DataTransfer，所以自己捏一个最小够用的。要点是必须把
+ * dataTransfer 挂到**事件对象**上：React 是照着接口表从原生事件上抄属性的
+ * （DragEventInterface 里有 dataTransfer 这一项），挂在 window 上它看不见。
+ */
+function fireDrag(el: Element, type: 'dragover' | 'drop', mime: string, payload: string): void {
+  const dataTransfer = {
+    types: [mime],
+    getData: (wanted: string) => (wanted === mime ? payload : ''),
+    setData: () => {},
+    files: [],
+    effectAllowed: '',
+    dropEffect: '',
+  }
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+  act(() => {
+    el.dispatchEvent(event)
+  })
+}
+
+/** 位置树里某个名字的那一行（落点就在这一行上） */
+function treeRow(container: HTMLElement, name: string): HTMLElement {
+  const label = treeLabel(container, name)
+  return must(label.closest<HTMLElement>('.tree-node__row'), `「${name}」那一行没找到容器`)
+}
+
+/** 位置树里某个名字的那个按钮 */
+function treeLabel(container: HTMLElement, name: string): HTMLButtonElement {
+  const label = Array.from(
+    container.querySelectorAll<HTMLButtonElement>('.tree-node__label'),
+  ).find((button) => (button.textContent ?? '').trim() === name)
+  return must(label, `位置树里找不到「${name}」`)
+}
+
+/** 右边列表里名字含某个词的那一行 */
+function rowOf(container: HTMLElement, name: string): HTMLElement {
+  const row = Array.from(container.querySelectorAll<HTMLLIElement>('li.list-row')).find((li) =>
+    (li.textContent ?? '').includes(name),
+  )
+  return must(row, `物品列表里找不到「${name}」`)
+}
+
+/** 轻提示是 portal 到 document.body 的，不在页面容器里 */
+function toastText(): string {
+  return document.querySelector('.toast-stack')?.textContent ?? ''
+}
+
+function locationIdOf(data: AppData, name: string): string {
+  return must(
+    data.locations.find((l) => l.name === name),
+    `夹具缺少位置 ${name}`,
+  ).id
+}
+
+function locationOfItem(id: string): string | null {
+  return must(
+    useAppStore.getState().data.items.find((i) => i.id === id),
+    `物品 ${id} 不该消失`,
+  ).locationId
+}
+
+/**
+ * 等这次改动真的落盘。
+ *
+ * 拖放会真的写数据，而落盘是异步排队走的 —— 不等它，那次写就会飘到后面的用例里去
+ * （体检那一组会先清空 IndexedDB 再摆自己的数据，然后被这一笔覆盖掉，
+ * 症状是「主记录在」那条用例莫名其妙地红）。
+ */
+async function settleWrites(): Promise<void> {
+  await act(async () => {
+    await flushWrites()
+  })
+}
+
+suite('位置页：把物品拖到位置上')
+
+await test('拖到另一个位置：归位跟着变，而且会出声', async () => {
+  const data = fixture()
+  const wardrobe = locationIdOf(data, '衣柜')
+  const cupboard = locationIdOf(data, '橱柜')
+
+  withPage('/locations', data, (container) => {
+    // 先点「衣柜」，右边才会列出它的东西 ——
+    // 这样断言不依赖「含子位置」那个开关当前是什么状态
+    act(() => {
+      treeLabel(container, '衣柜').click()
+    })
+    ok(rowOf(container, '灰色羊毛衫'), '点了衣柜，右边该列出里面的东西')
+    eq(locationOfItem('i1'), wardrobe, '拖之前的归位是衣柜')
+
+    fireDrag(treeRow(container, '橱柜'), 'dragover', ITEM_MIME, 'i1')
+    fireDrag(treeRow(container, '橱柜'), 'drop', ITEM_MIME, 'i1')
+
+    eq(locationOfItem('i1'), cupboard, '松手之后它该落到橱柜上')
+    contains(toastText(), '已把「灰色羊毛衫」移到', '拖完必须给个回执，否则用户不知道成没成')
+  })
+
+  await settleWrites()
+})
+
+await test('拖到「未归位」＝把位置撤掉（不是「没有动作」）', async () => {
+  // null 和「不调用」是两件事：少了这条路径，东西拖出去就再也拖不回来了。
+  const data = fixture()
+
+  withPage('/locations', data, (container) => {
+    act(() => {
+      treeLabel(container, '衣柜').click()
+    })
+
+    fireDrag(treeRow(container, '未归位'), 'dragover', ITEM_MIME, 'i2')
+    fireDrag(treeRow(container, '未归位'), 'drop', ITEM_MIME, 'i2')
+
+    eq(locationOfItem('i2'), null, '落到未归位上就是 locationId 变 null')
+  })
+
+  await settleWrites()
+})
+
+await test('拖回原地：数据一动不动，但要说一声', () => {
+  /*
+   * 静默的成功和失效长得一模一样 —— 不说的话用户只会以为拖拽没生效，
+   * 然后反复拖，或者干脆改用手动路径。
+   */
+  const data = fixture()
+  const wardrobe = locationIdOf(data, '衣柜')
+
+  withPage('/locations', data, (container) => {
+    act(() => {
+      treeLabel(container, '衣柜').click()
+    })
+
+    fireDrag(treeRow(container, '衣柜'), 'dragover', ITEM_MIME, 'i1')
+    fireDrag(treeRow(container, '衣柜'), 'drop', ITEM_MIME, 'i1')
+
+    eq(locationOfItem('i1'), wardrobe, '本来就在衣柜里，不该被挪走')
+    contains(toastText(), '本来就在', '拖回原地也得说一句')
+  })
+})
+
+await test('不是给这棵树的拖拽类型，一概不接', () => {
+  // 拖文字、拖文件从这里经过时不能把物品挪走 —— 认 MIME 就是为了这个。
+  const data = fixture()
+  const wardrobe = locationIdOf(data, '衣柜')
+
+  withPage('/locations', data, (container) => {
+    act(() => {
+      treeLabel(container, '衣柜').click()
+    })
+
+    fireDrag(treeRow(container, '橱柜'), 'dragover', 'text/plain', 'i1')
+    fireDrag(treeRow(container, '橱柜'), 'drop', 'text/plain', 'i1')
+
+    eq(locationOfItem('i1'), wardrobe, '别的东西拖过去，这一件的归位不该变')
+  })
+})
+
+await test('物品行上挂着「移到…」，给拖不了的设备留了路', () => {
+  /*
+   * HTML5 拖放在触屏上根本不触发，键盘也拖不了。
+   * 这个按钮不是可有可无的备胎 —— 没有它，位置页在手机上就是「看得见、改不动」。
+   */
+  withPage('/locations', fixture(), (container) => {
+    act(() => {
+      treeLabel(container, '衣柜').click()
+    })
+    const fallback = Array.from(container.querySelectorAll('button')).find(
+      (button) => (button.textContent ?? '').trim() === '移到…',
+    )
+    ok(fallback, '每个物品行上都要有一条不用拖的入口')
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 闲置页：按分类分组                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 四件闲置，落在三个不同的分类桶里：
+ *   i2 牛仔裤（衣物，闲置 100 天）
+ *   i1 灰色羊毛衫（衣物，闲置 10 天）
+ *   i3 旧手机（电子 —— 夹具里本来就是闲置，400 天）
+ *   i5 不知道放哪的东西（**没有分类**）
+ */
+function withIdle(): AppData {
+  const base = fixture()
+  const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 3600 * 1000).toISOString()
+  return {
+    ...base,
+    items: base.items.map((i): Item => {
+      if (i.id === 'i1') return { ...i, status: 'idle', idleAt: daysAgo(10) }
+      if (i.id === 'i2') return { ...i, status: 'idle', idleAt: daysAgo(100) }
+      if (i.id === 'i5') return { ...i, status: 'idle', idleAt: daysAgo(5) }
+      return i
+    }),
+  }
+}
+
+function categoryIdOf(data: AppData, name: string): string {
+  return must(
+    data.categories.find((c) => c.name === name),
+    `夹具缺少分类 ${name}`,
+  ).id
+}
+
+/** 页面上所有分组标题，按出现顺序 */
+function groupLabels(container: HTMLElement): string[] {
+  return [...container.querySelectorAll('.group-head__label')].map((el) =>
+    (el.textContent ?? '').trim(),
+  )
+}
+
+/** 某个分组那一块（含它下面的子分组与物品） */
+function groupBlock(container: HTMLElement, label: string): HTMLElement {
+  const head = [...container.querySelectorAll('.group-head__label')].find(
+    (el) => (el.textContent ?? '').trim() === label,
+  )
+  return must(head?.closest<HTMLElement>('.item-group'), `找不到「${label}」这个分组`)
+}
+
+suite('闲置页：按分类分组')
+
+await test('按分类分块，没有分类的排在最后', () => {
+  // 顺序跟着**分类树**走（和物品列表页同一个规矩），不是按名字排、也不是按件数排。
+  withPage('/idle', withIdle(), (container) => {
+    eq(groupLabels(container).join(' / '), '衣物 / 电子 / 未分类', '分组顺序跟着分类树走')
+  })
+})
+
+await test('每个分组里仍然是「闲置越久越靠前」', () => {
+  /*
+   * 分组以后最容易丢掉的就是这条：按分类切块之后，如果组内不做排序，
+   * 最该处理的反而被埋起来了 —— 那这一页存在的意义就少了一半。
+   */
+  withPage('/idle', withIdle(), (container) => {
+    const names = [...groupBlock(container, '衣物').querySelectorAll('.list-row__title')].map(
+      (el) => (el.textContent ?? '').trim(),
+    )
+    eq(names.length, 2, '衣物这一组应该有两条')
+    ok(names[0].startsWith('牛仔裤'), `组内最久的排最前，实际是：${names.join(' / ')}`)
+    ok(names[1].startsWith('灰色羊毛衫'), '闲置 10 天的要排在 100 天后面')
+  })
+})
+
+await test('没有分类的闲置归到「未分类」，不串进别的组', () => {
+  withPage('/idle', withIdle(), (container) => {
+    contains(groupBlock(container, '未分类').innerHTML, '不知道放哪的东西')
+    ok(
+      !groupBlock(container, '衣物').innerHTML.includes('不知道放哪的东西'),
+      '一件东西不能同时出现在两个分组里（它压根没有分类）',
+    )
+  })
+})
+
+await test('点分组标题能折叠，展开状态和物品列表页共用一份', () => {
+  // 闲置页默认全部展开（这一页就是拿来从头看一遍的），但用户收起来的分组
+  // 必须照样尊重 —— 而且和物品列表页是同一个 key，两页对得上。
+  const idleData = withIdle()
+  const clothing = categoryIdOf(idleData, '衣物')
+  const originalUi = useAppStore.getState().ui
+  const page = mountForSwitch('/idle', idleData)
+
+  try {
+    contains(page.html(), '牛仔裤', '先得有东西可折叠')
+
+    const head = [...page.container.querySelectorAll('.group-head')].find((el) =>
+      (el.textContent ?? '').includes('衣物'),
+    )
+    ok(head, '应该找得到「衣物」的分组标题')
+
+    act(() => {
+      ;(head as HTMLElement).click()
+    })
+
+    ok(!page.html().includes('牛仔裤'), '折叠之后里面的东西不该再列出来')
+    ok(
+      useAppStore.getState().ui.collapsedGroups.includes(clothing),
+      '折叠要记进 ui，才能跨页、跨刷新生效',
+    )
+  } finally {
+    page.unmount()
+    useAppStore.setState({ ui: originalUi })
+  }
+})
+
+/* ------------------------------------------------------------------ */
+/* 行内的垃圾桶：一下就是一下                                            */
+/* ------------------------------------------------------------------ */
+
+suite('删除：单条直接进回收站，批量才弹勾选')
+
+/** 某一行的动作区里那些按钮 */
+function rowButtons(container: HTMLElement, name: string): HTMLButtonElement[] {
+  return [...rowOf(container, name).querySelectorAll<HTMLButtonElement>('button')]
+}
+
+await test('★ 点物品行那个垃圾桶：直接进回收站，**不弹任何对话框**', () => {
+  /*
+   * 用户的原话：「在物品界面，点击右边选项，删除，跳出的是所有物品，
+   * 让我再次选择放啥进回收站。但是明明只需要点击一下删除键，直接丢到
+   * 回收站的。」
+   *
+   * 第一版我把行内这个图标也接到了勾选列表上，错在**把「小心」用错了地方**：
+   * 勾选列表要解决的是「批量选对没有」，而单条上的垃圾桶指的就是这一件。
+   * 这条用例就是让那种「再问一遍」的改动立刻变红。
+   */
+  const data = fixture()
+
+  withPage('/items', data, (container) => {
+    const buttons = rowButtons(container, '灰色羊毛衫')
+    const trash = buttons[buttons.length - 1]
+    ok(trash !== undefined, '那一行应该有一个删除按钮')
+
+    act(() => {
+      trash.click()
+    })
+
+    ok(document.querySelector('.modal') === null, '不该弹出任何对话框 —— 点一下就该完事')
+
+    const moved = must(
+      useAppStore.getState().data.items.find((i) => i.id === 'i1'),
+      '那一件不该从数据里消失',
+    )
+    eq(moved.status, 'discarded', '应该已经被移进回收站')
+    contains(toastText(), '已移入', '要给个回执，否则用户不确定点到了没有')
+  })
+})
+
+await test('★ 闲置页、备用页、位置页的行内垃圾桶同样是一下就完事', () => {
+  // 四个页面的行为必须一致 —— 只有一处弹框、别处不弹，用户会以为那些是坏的
+  const pages: Array<{ path: string; name: string; id: string }> = [
+    { path: '/idle', name: '旧手机', id: 'i3' },
+  ]
+
+  for (const page of pages) {
+    const data = fixture()
+    withPage(page.path, data, (container) => {
+      const buttons = rowButtons(container, page.name)
+      const trash = buttons[buttons.length - 1]
+      ok(trash !== undefined, `${page.path} 那一行应该有一个删除按钮`)
+
+      act(() => {
+        trash.click()
+      })
+
+      ok(document.querySelector('.modal') === null, `${page.path} 不该弹对话框`)
+      eq(
+        must(
+          useAppStore.getState().data.items.find((i) => i.id === page.id),
+          `${page.name} 不该消失`,
+        ).status,
+        'discarded',
+        `${page.path} 应该已经移进回收站`,
+      )
+    })
+  }
+})
+
+await test('批量删除仍然要弹勾选列表（那条路才是真需要核对的）', () => {
+  /*
+   * 这条是上面两条的反面。批量选中之后点「舍弃」，用户面对的是
+   * 「这几个到底选对没有」—— 那时候把名单亮出来让他核一遍是真有用的。
+   * 所以两个行为要**同时**成立，缺一边都不对。
+   */
+  const data = fixture()
+
+  withPage('/items', data, (container) => {
+    // 勾上第一件
+    const boxes = [...container.querySelectorAll<HTMLInputElement>('.row-checkbox')]
+    const first = boxes[0]
+    ok(first !== undefined, '应该有可勾选的物品')
+    act(() => {
+      first.click()
+    })
+
+    // 选中栏里的「舍弃」
+    const discard = must(
+      [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+        (b) => (b.textContent ?? '').trim() === '舍弃',
+      ),
+      '选中之后应该出现批量操作栏',
+    )
+    act(() => {
+      discard.click()
+    })
+
+    const modal = document.querySelector('.modal__body')
+    ok(modal !== null, '批量删除必须弹勾选列表')
+    contains(modal?.textContent ?? '', '回收站', '框里要说清进的是回收站')
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* AI 整理分类                                                          */
+/* ------------------------------------------------------------------ */
+
+suite('AI 整理分类：预览摆出来、采纳真的落库')
+
+await test('★ 分类改动单列一块，每行说清「旧 → 新」和能不能做', () => {
+  /*
+   * 用户要的能力：「我希望 ai 可以编辑分类，我可以让它帮我整理已有的分类。」
+   *
+   * 分类是结构 —— 改错了你只会看到「树变了样子」，看不出哪一层错了。
+   * 所以这一块必须在**动之前**把「将要发生什么」一行一行说清楚，
+   * 而且做不了的那几条要明说「不会执行」。
+   */
+  clearAiSession()
+  const data = fixture()
+
+  // 造一份「有 ok、也有做不了」的计划
+  const plan = planCategoryChanges(data, [
+    { kind: 'create', path: ['衣服'], newName: '衣服', parentPath: [] },
+    { kind: 'rename', path: ['衣物'], newName: '穿戴' },
+    { kind: 'rename', path: ['根本没有的分类'], newName: '随便' },
+    { kind: 'move', path: ['衣物'], newParentPath: ['衣物'] },
+  ])
+
+  useAiSessionStore.setState({ categoryPlan: plan.entries })
+
+  const page = mountForSwitch('/ai', data)
+  try {
+    const html = page.html()
+    contains(html, '分类', '要有分类那一块')
+    contains(html, '新建', '要标出动作是「新建」')
+    contains(html, '改名', '要标出「改名」')
+    contains(html, '移动', '要标出「移动」')
+
+    ok(html.includes('衣物') && html.includes('穿戴'), '改名要显示「旧 → 新」')
+    ok(html.includes('衣服'), '新建的目标要显示出来')
+
+    contains(html, '找不到这个分类', '★ 做不了的那条要明说原因')
+    contains(html, '做不了', '★ 而且要有一块专门说明「这几条不会执行」')
+
+    // 做不了的条目三个勾选框状态要能区分：ok 的可勾、missing/cycle 的禁用
+    const boxes = [...page.container.querySelectorAll<HTMLInputElement>('.cat-plan input')]
+    eq(boxes.length, 4, '四条各一个勾选框')
+    ok(boxes[2]?.disabled === true, 'missing 那条要禁用勾选')
+    ok(boxes[3]?.disabled === true, 'cycle 那条要禁用勾选')
+    ok(boxes[0]?.disabled === false, 'ok 那条可以勾')
+  } finally {
+    page.unmount()
+    clearAiSession()
+  }
+})
+
+await test('★ 点「采纳分类改动」：只执行能做的那几条，而且真的改到数据上', () => {
+  clearAiSession()
+  const data = fixture()
+  const clothesId = must(
+    data.categories.find((c) => c.name === '衣物'),
+    '夹具里应该有「衣物」',
+  ).id
+
+  const plan = planCategoryChanges(data, [
+    { kind: 'rename', path: ['衣物'], newName: '穿戴' },
+    { kind: 'rename', path: ['根本没有的分类'], newName: '随便' },
+  ])
+  useAiSessionStore.setState({ categoryPlan: plan.entries })
+
+  const page = mountForSwitch('/ai', data)
+  return (async () => {
+    try {
+      const accept = must(
+        [...page.container.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
+          (b.textContent ?? '').includes('采纳分类改动'),
+        ),
+        '应该找得到「采纳分类改动」按钮',
+      )
+
+      await act(async () => {
+        accept.click()
+        await flushWrites()
+      })
+
+      const after = useAppStore.getState().data
+      eq(
+        must(after.categories.find((c) => c.id === clothesId), '衣物应该还在').name,
+        '穿戴',
+        '★ 合法的那条要真的改到数据上',
+      )
+      eq(after.categories.length, data.categories.length, '做不了的那条不该凭空造出分类')
+
+      // 采纳完计划要清掉，否则会再执行一遍
+      eq(useAiSessionStore.getState().categoryPlan.length, 0, '采纳之后计划要清空')
+      // 对话里留一条回执（说的是「改了几处」和哪种改动）
+      ok(
+        useAiSessionStore.getState().bubbles.some((b) => b.text.includes('改名')),
+        `要在聊天记录里留一条「已改了什么」的回执。实际气泡：${useAiSessionStore
+          .getState()
+          .bubbles.map((b) => b.text)
+          .join(' | ')}`,
+      )
+    } finally {
+      page.unmount()
+      clearAiSession()
+    }
+  })()
+})
+
+await test('★ 删分类的连带后果要在预览里写出来（用户最怕「会不会把东西也删了」）', () => {
+  clearAiSession()
+  const data = fixture()
+  const clothesId = must(data.categories.find((c) => c.name === '衣物'), '衣物').id
+
+  // 造一个有子分类 + 挂着物品的分类
+  const withChildren: AppData = {
+    ...data,
+    categories: [
+      ...data.categories,
+      { id: 'c1', name: '上装', parentId: clothesId, order: 0, createdAt: '2026-01-01T00:00:00.000Z' },
+    ],
+  }
+  const plan = planCategoryChanges(withChildren, [{ kind: 'delete', path: ['衣物'] }])
+  eq(plan.entries[0]?.childCount, 1, '先确认确实有一个子分类')
+  ok((plan.entries[0]?.itemCount ?? 0) > 0, '而且确实挂着物品')
+
+  useAiSessionStore.setState({ categoryPlan: plan.entries })
+
+  const page = mountForSwitch('/ai', withChildren)
+  try {
+    const html = page.html()
+    contains(html, '子分类会挂到上一级', '要说清子分类会怎样')
+    contains(html, '失去这个分类归属', '要说清物品会怎样')
+    contains(html, '物品本身一件都不会少', '★ 这句话必须写出来 —— 用户最怕这个')
+  } finally {
+    page.unmount()
+    clearAiSession()
+  }
+})
+
+/* ------------------------------------------------------------------ */
+/* AI 预览：只给看改动过的和被删的                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 把 DeepSeek 的 HTTP 响应按顺序喂进去。
+ *
+ * 这一组要验的正是「拉进来 189 条之后 touchedKeys 里剩什么」——
+ * 那是 `send()` 内部的一步，**只有真的走一遍那条链路才测得到**。
+ * 所以这里不打桩 chat()，而是把 fetch 换成假的（lib/chat 用的就是它）。
+ */
+function stubChat(responses: string[]): { restore: () => void; calls: () => number } {
+  const original = globalThis.fetch
+  let index = 0
+  let calls = 0
+
+  globalThis.fetch = (async () => {
+    const content = responses[Math.min(index, responses.length - 1)] ?? '{}'
+    index++
+    calls++
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{ message: { content }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      }),
+    }
+  }) as unknown as typeof globalThis.fetch
+
+  return { restore: () => {
+    globalThis.fetch = original
+  }, calls: () => calls }
+}
+
+/** 造一条「拉进来当上下文」的草稿：内容就是库里那件东西的原样 */
+function contextDraft(id: string, name: string): ItemDraft {
+  return {
+    key: id,
+    sourceItemId: id,
+    name,
+    quantity: 1,
+    locationId: null,
+    locationLabel: '',
+    newLocationPath: null,
+    matchedCategoryIds: [],
+    newCategoryPaths: [],
+    tags: [],
+    attrs: {},
+    droppedAttrs: [],
+    note: '',
+    expiresAt: null,
+    status: null,
+    matchedCollectionIds: [],
+    droppedCollections: [],
+    include: true,
+    adoptNewCategories: false,
+    adoptNewLocation: false,
+  }
+}
+
+suite('AI 预览：只显示改动过的和会被删的')
+
+await test('★ 拉进来 189 条只改了 2 条：预览只铺那 2 条，不铺 189 条', () => {
+  /*
+   * 用户的原话：「它还是把所有东西都放到草稿箱显示出来，但是让我采纳，
+   * 只需要给我看更改的，还有删除的即可，不需要所有都展示。」
+   *
+   * 这一条守的就是那个「拉进来 ≠ 动过」的区分：
+   *   拉进来的是**上下文**，只有 AI 真改了的（进 touchedKeys / changedKeys）
+   *   才该铺在预览里。别把「189 条拉进来了」当成「189 条都要给用户看」。
+   */
+  clearAiSession()
+
+  // 189 条纯上下文（模拟「把不用的都删掉，先全拉进来我看看」）
+  const context = Array.from({ length: 189 }, (_, i) =>
+    contextDraft(`ctx-${i}`, `上下文物品 ${i}`),
+  )
+  // 2 条真被改过的
+  const changed = [contextDraft('chg-1', '改过的那一件'), contextDraft('chg-2', '改过的另一件')]
+  // 1 条 AI 决定删掉的：**留在草稿里，带待删标记**
+  const toDelete = [{ ...contextDraft('i3', '旧手机'), removed: true }]
+
+  useAiSessionStore.setState({
+    bubbles: [{ id: 'b1', role: 'user', text: '把不用的删掉' }],
+    drafts: [...context, ...changed, ...toDelete],
+    // 只有这 2 条是「动过」的
+    touchedKeys: ['chg-1', 'chg-2'],
+    changedKeys: ['chg-1'],
+    removedKeys: ['i3'],
+  })
+
+  try {
+    withPage('/ai', data, (_container, html) => {
+      contains(html, '改过的那一件', '改动过的必须看得到')
+      contains(html, '改过的另一件', '改动过的必须看得到')
+
+      ok(
+        !html.includes('上下文物品 0'),
+        '★ 没动过的上下文条目**不许**铺在预览里 —— 正是用户报的那件事',
+      )
+      ok(!html.includes('上下文物品 188'), '最后一条也不该出现')
+
+      // 删除必须单独有一块，而且要看得见名字
+      contains(html, '会被移进回收站', '删除要单独列出来')
+      contains(html, '旧手机', '★ 要被删掉的那几件要看得见名字，而不是只有一个数字')
+
+      // 入口还在手边：想看全貌随时能摊开
+      contains(html, '显示没改动的', '要留一个「看全部」的入口')
+    })
+  } finally {
+    clearAiSession()
+  }
+})
+
+await test('★ 只删不改时也要看得到：那一块列出被删的名字', () => {
+  /*
+   * 纯删除是最容易「什么都没有」的一种：改动的列表是空的（因为一条都没改），
+   * 而被删的条目**带着待删标记留在草稿里**（不在改动列表里显示），
+   * 所以必须单独有一块把它们列出来。不列的话，用户在点「采纳」之前
+   * 看到的就是一片空白加一个数字。
+   */
+  clearAiSession()
+
+  useAiSessionStore.setState({
+    bubbles: [{ id: 'b1', role: 'user', text: '把这几件不用的删掉' }],
+    drafts: [
+      contextDraft('ctx-1', '留下的那一件'),
+      { ...contextDraft('i3', '旧手机'), removed: true },
+      { ...contextDraft('i5', '不知道放哪的东西'), removed: true },
+    ],
+    touchedKeys: [],
+    changedKeys: [],
+    removedKeys: ['i3', 'i5'],
+  })
+
+  try {
+    withPage('/ai', data, (_container, html) => {
+      contains(html, '会被移进回收站', '纯删除也要有那一块')
+      contains(html, '旧手机')
+      contains(html, '不知道放哪的东西')
+      ok(!html.includes('留下的那一件'), '留下的那条是纯上下文，不该铺出来')
+      // 「这一轮没有改动」那个空状态不该在这里出现 —— 明明有删除要交代
+      ok(!html.includes('这一轮没有改动'), '有东西要被删时不该显示「没有改动」的空状态')
+    })
+  } finally {
+    clearAiSession()
+  }
+})
+
+await test('★ 真的走一遍 send：拉进来 189 条、AI 只动 1 条 → touchedKeys 只有那 1 条', async () => {
+  /*
+   * 上面两条是「照着契约渲染」，这一条是**真跑那条链路**：
+   * 把 fetch 换成假的，让 send() 真的收到两轮回复 ——
+   * 第一轮说「先全都拉进来」（loadScope: all），第二轮只动 1 条、删 1 条。
+   *
+   * 要验的就是那个我修过的坑：**「拉进来」不许被算成「动过」**。
+   * 之前我在这里写的是「拉进来的一律先记成动过」，于是 189 条全铺出来。
+   * 所以这条用例是真正能抓到那个 bug 的那一条（其余两条抓不到 ——
+   * 它们是直接摆好 store 状态再渲染的）。
+   */
+  clearAiSession()
+  const page = mountForSwitch('/ai', fixture())
+
+  // Key 是必填的，而 jsdom 里没法给输入框派事件，所以直接摆进 store
+  useAppStore.setState({ aiApiKey: 'test-key' })
+
+  // 两轮回复：先要全部数据，再只改一条、删一条
+  const stub = stubChat([
+    JSON.stringify({ reply: '先把所有东西拉进来看看', loadScope: { all: true } }),
+    JSON.stringify({
+      reply: '改了一件、删了一件',
+      items: [{ id: 'i1', name: '灰色羊毛衫', quantity: 3 }],
+      removedIds: ['i3'],
+    }),
+  ])
+
+  try {
+    const textarea = must(
+      page.container.querySelector<HTMLTextAreaElement>('textarea'),
+      'AI 页应该有一个输入框',
+    )
+    const sendButton = must(
+      [...page.container.querySelectorAll<HTMLButtonElement>('button')].find(
+        (b) => b.textContent?.trim() === '发送',
+      ),
+      '应该找得到「发送」按钮',
+    )
+    ok(sendButton.disabled, '先确认：空输入时「发送」是禁用的')
+
+    /*
+     * ⚠️ jsdom 环境的一个已知限制（见 tests/dom.ts）：**在输入框上派发
+     * input/change 事件，React 的 onChange 收不到**。所以这里没法靠「打字」
+     * 把文字填进去。
+     *
+     * 变通办法就是这条用例在验的那件事本身：**点那两条示例**。
+     * 它们是真按钮，`click()` 在 jsdom 里可靠，而且 AspChatPanel 收到点击后
+     * 调的就是 `setDraft(starter)` —— 和用户手动打字走的是同一条状态更新。
+     */
+    const starter = must(
+      page.container.querySelector<HTMLButtonElement>('.chat-starter'),
+      '空状态里应该有起步示例按钮',
+    )
+    act(() => {
+      starter.click()
+    })
+    ok(
+      (textarea.value ?? '').length > 0,
+      `点了示例之后输入框该有文字了，实际是 ${JSON.stringify(textarea.value)}`,
+    )
+    ok(!sendButton.disabled, '输入框有内容之后「发送」该可点了')
+
+    await act(async () => {
+      sendButton.click()
+      // 让两轮回复 + 状态更新都跑完
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    ok(stub.calls() >= 2, `应该发了两轮请求，实际 ${stub.calls()} 轮`)
+
+    const session = useAiSessionStore.getState()
+    /*
+     * 夹具里 5 件全都是「没被舍弃」的（那件闲置的也在内），所以 `loadScope: all`
+     * 会拉进 5 件。其中 1 件被删 —— 但它**仍然留在草稿里**（带走待删标记），
+     * 所以总数还是 5。这条断言本身就是那个 bug 的回归测试：
+     * 原来删掉的会被从草稿里移走，于是下一轮 AI 面对一个空草稿，
+     * 只能编一句「已经删好了」。
+     */
+    eq(session.drafts.length, 5, '拉进来的都还在草稿里（被删的那件带走标记）')
+    eq(
+      session.drafts.filter((d) => d.removed).length,
+      1,
+      '★ 被删的那件要留在草稿里、带待删标记 —— 这样下一轮 AI 才看得见',
+    )
+    eq(
+      session.touchedKeys.length,
+      1,
+      `★ 只有那 1 条被改的算「动过」。实际 touchedKeys：${session.touchedKeys.join(',')}`,
+    )
+    eq(session.touchedKeys[0], 'i1')
+    ok(session.removedKeys.includes('i3'), '被删的那条要记下来')
+    eq(session.removedKeys.length, 1)
+
+    // 预览区里只该出现那 1 条 + 删除那一块，另外 3 条不许铺出来。
+    // ⚠️ 只看预览区，不看整页 —— 对话框那条气泡、侧栏、「看全部」按钮的
+    // 文案里都可能合法地出现别的字，拿整页 html 断言会误伤。
+    const preview = must(
+      page.container.querySelector<HTMLElement>('.chat-layout__draft'),
+      '应该能找得到预览区',
+    )
+    const html = preview.innerHTML
+    contains(html, '灰色羊毛衫', '改动过的要看得到')
+    ok(!html.includes('牛仔裤'), '★ 没动的那些不许铺在预览里')
+    ok(!html.includes('平底锅'), '没动的不许铺')
+    contains(html, '会被移进回收站', '删除要单独列出来')
+    contains(html, '旧手机', '被删的名字要看得见')
+  } finally {
+    stub.restore()
+    page.unmount()
+    clearAiSession()
+  }
+})
+
+await test('★ 点「采纳」之后那几件**真的**进了回收站（不是只有提示说进了）', () => {
+  /*
+   * 用户报的那台戏的最后一环：「已把 13 件全部移入回收站」→ 点采纳 →
+   * 「没有改动」→ 东西一个都没少。
+   *
+   * 这条就钉住「采纳 → 真的落库」这一步：摆好一份「AI 已标记待删」的会话，
+   * 真的去点那个「采纳」按钮，然后断言**数据里那几件的 status 变成了
+   * discarded**，而不是只看提示文案。
+   */
+  clearAiSession()
+  // 会话状态要在挂载**之前**摆好，组件一渲染就是这份
+  useAiSessionStore.setState({
+    bubbles: [{ id: 'b1', role: 'user', text: '把钱包卡片下那几件删了' }],
+    drafts: [{ ...contextDraft('i3', '旧手机'), removed: true }],
+    touchedKeys: [],
+    changedKeys: [],
+    removedKeys: ['i3'],
+  })
+  const page = mountForSwitch('/ai', fixture())
+
+  return (async () => {
+    try {
+      const accept = must(
+        [...page.container.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
+          (b.textContent ?? '').trim().startsWith('采纳'),
+        ),
+        '应该找得到「采纳」按钮',
+      )
+
+      await act(async () => {
+        accept.click()
+        await flushWrites()
+      })
+
+      const moved = must(
+        useAppStore.getState().data.items.find((i) => i.id === 'i3'),
+        '那件东西不该从数据里消失',
+      )
+      eq(moved.status, 'discarded', '★ 采纳之后它必须真的进回收站 —— 不能只是提示说进了')
+
+      // 会话里那份待删记录要清掉，否则下一次采纳会再删一遍
+      ok(
+        !useAiSessionStore.getState().removedKeys.includes('i3'),
+        '删过的要从待删清单里剔掉，免得下次采纳再删一遍',
+      )
+    } finally {
+      page.unmount()
+      clearAiSession()
+    }
+  })()
 })
 
 /* ------------------------------------------------------------------ */

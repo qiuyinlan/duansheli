@@ -1,4 +1,4 @@
-/**
+﻿/**
  * AI 功能的测试。
  *
  * 重点覆盖两类最容易出错、又最难靠肉眼发现的地方：
@@ -19,6 +19,7 @@ import {
   createMatchContext,
   draftsFromItems,
   draftsToApply,
+  findNameCollisions,
   itemsForLoadScope,
   toItemDraft,
   type ItemDraft,
@@ -47,7 +48,7 @@ import { createEmptyData } from '../src/storage/seed'
 import { createDerived } from '../src/store/selectors'
 import { flushWrites, useAppStore } from '../src/store/useAppStore'
 import type { AppData, Category, Location } from '../src/types'
-import { deepEq, eq, fixture, item, must, ok, suite, test } from './harness'
+import { OLD_DATE, deepEq, eq, fixture, item, must, ok, suite, test } from './harness'
 
 /* ------------------------------------------------------------------ */
 /* 1. 从模型回复里抠 JSON                                              */
@@ -950,11 +951,11 @@ function botReply(
   removedIds: string[] = [],
   reply = '改好了',
 ): ParsedChatResponse {
-  return { reply, items, removedIds, loadScope: null, noChanges: false }
+  return { reply, items, removedIds, loadScope: null, noChanges: false, categoryChanges: [] }
 }
 
 function loadRequest(reply: string, scope: LoadScopeRequest): ParsedChatResponse {
-  return { reply, items: [], removedIds: [], loadScope: scope, noChanges: false }
+  return { reply, items: [], removedIds: [], loadScope: scope, noChanges: false, categoryChanges: [] }
 }
 
 /* ---- 合并 ---- */
@@ -1000,11 +1001,27 @@ await test('AI 新加的物品 → added，并沿用 AI 给的 id', () => {
   eq(outcome.drafts[0].key, 'new-1', '沿用 AI 的 id，下一轮还能对上')
 })
 
-await test('removedIds → 真的删掉', () => {
+await test('removedIds → 打上待删标记，**但草稿留着**', () => {
+  /*
+   * ⚠️ 这条断言在修一个真 bug 时改过，改的方向很值得记下来。
+   *
+   * 原来的断言是「草稿列表变成 0 条」—— 那正是那个 bug 的正脸：
+   * 条目一从草稿里被删掉，**下一轮 AI 就看不见它了**。于是用户说
+   * 「把钱包卡片下那 13 件删了」，AI 删掉（标记）之后草稿空了；
+   * 用户接着催「ok，你帮我删除啊」，AI 面对一个空草稿，
+   * 既不知道要删什么、也没有落库的能力，只能编一句「已经删好了」——
+   * 而实际上什么都没落库。
+   *
+   * 所以现在是：留着，只打一个 `removed` 标记。AI 下一轮能看见
+   * 「这 13 条待删」，于是它说的是「等你点采纳」，而不是「已经删好了」。
+   * 采纳时才由 draftsToApply 真正软删、settleApplied 才把它移走。
+   */
   const base = toItemDraft(raw({ name: '卸妆膏' }), chatMatch, ctx)
   const outcome = mergeChatResponse(botReply([], [base.key]), [base], chatMatch, ctx)
   eq(outcome.removed, 1)
-  eq(outcome.drafts.length, 0)
+  eq(outcome.drafts.length, 1, '草稿要留着 —— 删掉它，下一轮 AI 就瞎了')
+  eq(outcome.drafts[0]?.removed, true, '而且要带上待删标记')
+  eq(outcome.removedKeys[0], base.key)
 })
 
 await test('单条上的 removed: true 也认（AI 有时会这么写）', () => {
@@ -1016,7 +1033,39 @@ await test('单条上的 removed: true 也认（AI 有时会这么写）', () =>
     ctx,
   )
   eq(outcome.removed, 1)
-  eq(outcome.drafts.length, 0)
+  eq(outcome.drafts.length, 1)
+  eq(outcome.drafts[0]?.removed, true)
+})
+
+await test('★ 下一轮 AI 看得见「待删」的那些（它就是「他说删了其实没删」的解药）', () => {
+  // 把上一轮的结果原样喂给下一轮：AI 应该仍然看得到那一条，而且带着 removed
+  const base = toItemDraft(raw({ name: '卸妆膏' }), chatMatch, ctx)
+  const first = mergeChatResponse(botReply([], [base.key]), [base], chatMatch, ctx)
+  const second = mergeChatResponse(botReply([], []), first.drafts, chatMatch, ctx)
+
+  eq(second.drafts.length, 1, '★ 待删的条目必须活到下一轮 —— 否则 AI 只能说「已经删了」')
+  eq(second.drafts[0]?.removed, true, '标记也要还在')
+
+  // 发给模型的草稿里也要能看出它待删（serializeDrafts 会把标记发出去）
+  const sent = serializeDrafts(second.drafts, ctx)
+  eq(sent.length, 1, '待删的条目也要发给 AI，不然它不知道这回事')
+})
+
+await test('用户改主意了：AI 再把它返回一遍，待删标记就摘掉', () => {
+  const base = toItemDraft(raw({ name: '卸妆膏' }), chatMatch, ctx)
+  const marked = mergeChatResponse(botReply([], [base.key]), [base], chatMatch, ctx)
+  eq(marked.drafts[0]?.removed, true)
+
+  // 下一轮 AI 正常返回这一条（不再说它 removed）
+  const restored = mergeChatResponse(
+    botReply([revisedItem({ id: base.key, name: '卸妆膏', quantity: 3 })]),
+    marked.drafts,
+    chatMatch,
+    ctx,
+  )
+  eq(restored.drafts.length, 1)
+  eq(restored.drafts[0]?.removed, undefined, '★ 标记必须能摘掉，否则这件东西就删不掉了')
+  eq(restored.drafts[0]?.quantity, 3)
 })
 
 /**
@@ -1074,7 +1123,8 @@ await test('removedIds 里混进不存在的 id 时，只计数不崩', () => {
   )
   eq(outcome.removed, 1)
   eq(outcome.unknownIds, 1, 'AI 编的 id 要如实计数，但不该影响别的')
-  eq(outcome.drafts.length, 0)
+  eq(outcome.drafts.length, 1, '那一条留着（带待删标记），编出来的那个 id 不产生任何条目')
+  eq(outcome.drafts[0]?.removed, true)
 })
 
 await test('AI 改内容时，用户取消的勾选状态要保留', () => {
@@ -1323,6 +1373,369 @@ await test('loadScope：几种条件混用取并集，同一件不会重复', ()
 await test('loadScope：路径找不到时返回空，不瞎猜', () => {
   const picked = itemsForLoadScope({ categoryPaths: [['不存在的分类']] }, fx, ctx)
   eq(picked.length, 0)
+})
+
+/* ------------------------------------------------------------------ */
+/* 按名字找（issue 8）                                                  */
+/* ------------------------------------------------------------------ */
+
+await test('★ loadScope 支持按名字找 —— 「我仓库里有」不再是找不到', () => {
+  /*
+   * 用户的原话：「在拉取已有的东西的时候，经常会识别不到我已有的东西，
+   * 不知道是分类还是什么的原因。我告诉他我的仓库里有，但是他找不到。」
+   *
+   * 原因很实在：system 里只放了「哪个分类有多少件」的统计，
+   * 而「棉签」可能在「日用」也可能在「药品」—— AI 猜不到该拉哪一支，
+   * 只能回一句「没找到」。有了 names 它可以按名字直接要。
+   */
+  const data: AppData = {
+    ...createEmptyData(),
+    items: [
+      item({ id: 'n1', name: '棉签' }),
+      item({ id: 'n2', name: '碘伏棉签' }),
+      item({ id: 'n3', name: '舒筋通络颗粒' }),
+      item({ id: 'n4', name: '创可贴' }),
+    ],
+  }
+  const dataCtx = createDerived(data)
+
+  const byName = itemsForLoadScope({ names: ['棉签'] }, data, dataCtx)
+  eq(
+    byName.length,
+    2,
+    `「棉签」是子串匹配，碘伏棉签也要拉进来。实际拉到：${byName
+      .map((i) => i.name)
+      .join('、')}`,
+  )
+  ok(
+    byName.some((i) => i.name === '棉签'),
+    '必须包含「棉签」',
+  )
+  ok(
+    byName.some((i) => i.name === '碘伏棉签'),
+    '也必须包含「碘伏棉签」—— 认名字差一点就找不到正是那个 bug',
+  )
+
+  const exact = itemsForLoadScope({ names: ['舒筋通络颗粒'] }, data, dataCtx)
+  eq(exact.length, 1)
+
+  const none = itemsForLoadScope({ names: ['根本不存在的东西'] }, data, dataCtx)
+  eq(none.length, 0, '找不到就是找不到，不瞎猜')
+
+  // 大小写和多余空格不该影响结果
+  const messy = itemsForLoadScope({ names: ['  棉签  '] }, data, dataCtx)
+  eq(messy.length, 2)
+})
+
+await test('loadScope 的 names 和别的条件取并集', () => {
+  const data: AppData = {
+    ...createEmptyData(),
+    items: [item({ id: 'n1', name: '棉签' }), item({ id: 'n2', name: '创可贴', status: 'idle', idleAt: OLD_DATE })],
+  }
+  const dataCtx = createDerived(data)
+
+  const picked = itemsForLoadScope({ names: ['棉签'], idle: true }, data, dataCtx)
+  eq(picked.length, 2, '两块都要，而且不重复')
+})
+
+await test('loadScope：names 认不出来时整条请求不算数（避免空转一轮）', () => {
+  const parsed = parseChatResponse({ reply: '看一下', loadScope: { names: [] } })
+  eq(parsed.loadScope, null, '一个字都没给就不算请求')
+
+  const withNames = parseChatResponse({ reply: '看一下', loadScope: { names: ['棉签'] } })
+  ok(withNames.loadScope !== null, '给了名字就是有效请求')
+  eq(withNames.loadScope?.names?.length, 1)
+})
+
+/* ------------------------------------------------------------------ */
+/* 名字撞车：不许悄悄新建（issue 2）                                     */
+/* ------------------------------------------------------------------ */
+
+await test('★ 名字已经有了一件，默认**不落库**，等人确认', () => {
+  /*
+   * 用户的原话：「已有的东西更新位置或分类时，它有时候并不是更新，
+   * 而会新建一个物品。他必须要先核查我到底有没有，再来新建。」
+   *
+   * findNameCollisions 负责「核查」，'ask' 模式负责「先别动手」。
+   */
+  const data = fixture()
+  const dataCtx = createDerived(data)
+  const existing = must(data.items.find((i) => i.name === '灰色羊毛衫'), '夹具里应该有它')
+
+  const drafts: ItemDraft[] = [
+    toItemDraft(
+      {
+        name: '灰色羊毛衫',
+        quantity: 2,
+        categoryPaths: [],
+        location: null,
+        tags: [],
+        attributes: {},
+        note: '',
+        expiresAt: null,
+        status: null,
+        collections: [],
+      },
+      createMatchContext(data, dataCtx),
+      dataCtx,
+    ),
+  ]
+
+  const collisions = findNameCollisions(drafts, data.items, dataCtx)
+  eq(collisions.length, 1, '名字撞上了，必须被认出来')
+  eq(collisions[0]?.existingId, existing.id, '要指出撞的是哪一件（好让用户核对）')
+
+  const plan = draftsToApply(drafts, data.items, dataCtx, [], 'ask')
+  eq(plan.creating, 0, '★ 没确认之前绝不能新建 —— 这就是那个 bug 的正脸')
+  eq(plan.updating, 0)
+  eq(plan.plan.length, 0)
+  eq(plan.collisions.length, 1, '而且要把冲突报出来，不能默默不动')
+})
+
+await test('★ 用户选了「就是它」→ 更新那一条，不新建', () => {
+  const data = fixture()
+  const dataCtx = createDerived(data)
+  const existing = must(data.items.find((i) => i.name === '灰色羊毛衫'), '夹具里应该有它')
+  const before = data.items.length
+
+  const drafts: ItemDraft[] = [
+    {
+      ...toItemDraft(
+        {
+          name: '灰色羊毛衫',
+          quantity: 3,
+          categoryPaths: [],
+          location: null,
+          tags: [],
+          attributes: {},
+          note: '',
+          expiresAt: null,
+          status: null,
+          collections: [],
+        },
+        createMatchContext(data, dataCtx),
+        dataCtx,
+      ),
+      duplicateOf: existing.id,
+    },
+  ]
+
+  const plan = draftsToApply(drafts, data.items, dataCtx, [], 'ask')
+  eq(plan.creating, 0, '不能新建')
+  eq(plan.updating, 1, '要更新')
+  eq(plan.plan[0]?.existingId, existing.id)
+
+  // 真的落库一遍：物品数不该变，那一条的数量应该变成 3
+  useAppStore.setState({
+    status: 'ready',
+    data,
+    derived: dataCtx,
+    error: null,
+    toasts: [],
+  })
+  useAppStore.getState().applyDraftItems({ items: plan.plan, discardIds: [] })
+
+  const after = useAppStore.getState().data
+  eq(after.items.length, before, '★ 物品总数一件都不能多')
+  eq(
+    must(after.items.find((i) => i.id === existing.id), '那一件还在').quantity,
+    3,
+    '更新的是原来那一条',
+  )
+})
+
+await test('用户明确选「另建一条新的」→ 允许两条同名的东西', () => {
+  // 真有两根一样的数据线是完全正常的，所以这条路必须留着
+  const data = fixture()
+  const dataCtx = createDerived(data)
+  const before = data.items.length
+
+  const drafts: ItemDraft[] = [
+    toItemDraft(
+      {
+        name: '灰色羊毛衫',
+        quantity: 1,
+        categoryPaths: [],
+        location: null,
+        tags: [],
+        attributes: {},
+        note: '',
+        expiresAt: null,
+        status: null,
+        collections: [],
+      },
+      createMatchContext(data, dataCtx),
+      dataCtx,
+    ),
+  ]
+
+  const plan = draftsToApply(drafts, data.items, dataCtx, [], 'create')
+  eq(plan.creating, 1, '明确要新建就新建')
+
+  useAppStore.setState({ status: 'ready', data, derived: dataCtx, error: null, toasts: [] })
+  useAppStore.getState().applyDraftItems({ items: plan.plan, discardIds: [] })
+
+  const after = useAppStore.getState().data
+  eq(after.items.length, before + 1, '这次确实多了一条')
+  eq(
+    after.items.filter((i) => i.name === '灰色羊毛衫').length,
+    2,
+    '两条同名都在',
+  )
+})
+
+await test('带 sourceItemId 的草稿不算撞名（它本来就是「改这一条」）', () => {
+  const data = fixture()
+  const dataCtx = createDerived(data)
+  const existing = must(data.items.find((i) => i.name === '灰色羊毛衫'), '夹具里应该有它')
+
+  const drafts: ItemDraft[] = [
+    {
+      ...toItemDraft(
+        {
+          name: '灰色羊毛衫',
+          quantity: 1,
+          categoryPaths: [],
+          location: null,
+          tags: [],
+          attributes: {},
+          note: '',
+          expiresAt: null,
+          status: null,
+          collections: [],
+        },
+        createMatchContext(data, dataCtx),
+        dataCtx,
+      ),
+      sourceItemId: existing.id,
+    },
+  ]
+
+  eq(findNameCollisions(drafts, data.items, dataCtx).length, 0, '改已有物品不该被当成冲突')
+})
+
+await test('applyDraftItems 的 duplicates 能让一条「要新建」的草稿落到已有物品上', () => {
+  /*
+   * 界面上的确认是按条目做的（同名两条：一条「就是它」、一条「新的」），
+   * 所以注入用的是**计划里的下标**。按名字查会把两条都落到同一条物品上。
+   */
+  const data = fixture()
+  const dataCtx = createDerived(data)
+  const existing = must(data.items.find((i) => i.name === '灰色羊毛衫'), '夹具里应该有它')
+  const before = data.items.length
+
+  useAppStore.setState({ status: 'ready', data, derived: dataCtx, error: null, toasts: [] })
+
+  const result = useAppStore.getState().applyDraftItems({
+    items: [
+      {
+        name: '灰色羊毛衫',
+        quantity: 7,
+        categoryPaths: [],
+        locationPath: null,
+        tags: [],
+        attrs: {},
+        note: '',
+        expiresAt: null,
+        collectionIds: [],
+      },
+      {
+        name: '灰色羊毛衫',
+        quantity: 1,
+        categoryPaths: [],
+        locationPath: null,
+        tags: [],
+        attrs: {},
+        note: '',
+        expiresAt: null,
+        collectionIds: [],
+      },
+    ],
+    discardIds: [],
+    duplicates: new Map([[0, existing.id]]),
+  })
+
+  eq(result.updated, 1, '第一条只该更新那一件')
+  eq(result.added, 1, '第二条才是新建')
+  eq(useAppStore.getState().data.items.length, before + 1)
+  eq(
+    must(useAppStore.getState().data.items.find((i) => i.id === existing.id), '那一件').quantity,
+    7,
+    '更新落在原来那一条上',
+  )
+})
+
+await test('★ 计划会跳过一些草稿时，「哪条更新」不能错位到别的条目上', () => {
+  /*
+   * 这一条守的是一个很难查的错位：计划里**不是每条草稿都在**——
+   * 没勾选的、还在等用户确认的都会被跳过。于是「草稿的下标」
+   * 和「计划的下标」是两套东西。
+   *
+   * 混用会出这种事：用户确认的是第二行那条，程序却改了第一行
+   * （或者把第二行那条又新建了一遍）—— 界面上看起来完全正常。
+   *
+   * 场景：三条草稿，第一条没勾选被跳过，第二条是撞名且用户确认了「就是它」，
+   * 第三条是全新的。计划里应该只有两条，而且第二条的确认要落对。
+   */
+  const data = fixture()
+  const dataCtx = createDerived(data)
+  const existing = must(data.items.find((i) => i.name === '灰色羊毛衫'), '夹具里应该有它')
+  const before = data.items.length
+
+  const makeDraft = (name: string, extra: Partial<ItemDraft> = {}): ItemDraft => ({
+    ...toItemDraft(
+      {
+        name,
+        quantity: 1,
+        categoryPaths: [],
+        location: null,
+        tags: [],
+        attributes: {},
+        note: '',
+        expiresAt: null,
+        status: null,
+        collections: [],
+      },
+      createMatchContext(data, dataCtx),
+      dataCtx,
+    ),
+    ...extra,
+  })
+
+  const drafts: ItemDraft[] = [
+    // ① 没勾选 —— 该被跳过，所以它不能占着计划的下标
+    makeDraft('不需要的这条', { include: false }),
+    // ② 撞名 + 用户点了「就是它」
+    makeDraft('灰色羊毛衫', { duplicateOf: existing.id }),
+    // ③ 全新的
+    makeDraft('全新的一条'),
+  ]
+
+  const plan = draftsToApply(drafts, data.items, dataCtx, [], 'ask')
+
+  eq(plan.plan.length, 2, '只有两条进计划（没勾选的那条被跳过）')
+  eq(plan.updating, 1)
+  eq(plan.creating, 1)
+  eq(plan.duplicates.get(0), existing.id, '★ 计划第 0 条（撞名那条）要更新已有物品')
+
+  useAppStore.setState({ status: 'ready', data, derived: dataCtx, error: null, toasts: [] })
+  const result = useAppStore.getState().applyDraftItems({
+    items: plan.plan,
+    discardIds: plan.discardIds,
+    duplicates: plan.duplicates,
+  })
+
+  eq(result.updated, 1)
+  eq(result.added, 1)
+  ok(
+    result.appliedIds[0] === existing.id,
+    `计划第 0 条必须落到已有那件上，实际是 ${String(result.appliedIds[0])}`,
+  )
+  eq(
+    useAppStore.getState().data.items.length,
+    before + 1,
+    '只该多出「全新的一条」，撞名那条不能变成新建',
+  )
 })
 
 await test('AI 要数据这一步不该被当成「没变化」', () => {

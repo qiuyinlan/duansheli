@@ -266,6 +266,15 @@ export interface MergeOutcome {
   changedKeys: string[]
   /** 被移出草稿的 key。若是已有物品，采纳时会软删除（进回收站），不是硬删 */
   removedKeys: string[]
+  /**
+   * 被移出草稿的那些条目本身（名字 + 原来的物品 id）。
+   *
+   * 为什么要连条目一起报出来：它们**已经从草稿里消失了**，界面上如果不单独
+   * 列一笔，用户在点「采纳」之前就看不到自己将要失去哪几件东西 ——
+   * 只能在按钮上看到一个数字。AI 报给我们的只是 id，名字在这里才拿得到。
+   * （用户原话：「只需要给我看更改的，还有删除的即可。」）
+   */
+  removedItems: Array<{ key: string; name: string; sourceItemId?: string }>
   /** AI 报了个本地不存在的 id 要删（大概率是它自己编的） */
   unknownIds: number
 }
@@ -350,6 +359,14 @@ export function mergeChatResponse(
         include: existing.include,
         adoptNewCategories: existing.adoptNewCategories,
         adoptNewLocation: existing.adoptNewLocation,
+        /*
+         * 「就是库里那一条」这个选择**更不能被 AI 清掉**。
+         *
+         * 它默认是空的，而空着就意味着「名字撞了要问用户」——
+         * AI 每回一轮就把用户刚点过的确认抹一次，用户会看到那个确认框
+         * 反复弹出来，最后随手点掉，然后库里多出一件重名的东西。
+         */
+        duplicateOf: existing.duplicateOf,
         // 最要紧的一条：保住「这是已有物品」的标记，
         // 否则采纳时会把它当新条目又创建一遍
         sourceItemId: existing.sourceItemId,
@@ -366,14 +383,35 @@ export function mergeChatResponse(
     changedKeys.push(key)
   }
 
-  // 按原顺序拼：改过的就地替换，没提到的原样保留，被删的丢掉
+  // 按原顺序拼：改过的就地替换，没提到的原样保留，被删的**打标记留着**
   const drafts: ItemDraft[] = []
   const removedKeys: string[] = []
+  const removedItems: MergeOutcome['removedItems'] = []
   let removed = 0
   for (const draft of current) {
     if (removedSet.has(draft.key)) {
       removed++
       removedKeys.push(draft.key)
+      removedItems.push({ key: draft.key, name: draft.name, sourceItemId: draft.sourceItemId })
+      /*
+       * ⚠️ **留着它，只打一个 `removed` 标记。**
+       *
+       * 这里原来写的是 `continue`（直接从草稿里删掉），那会造成一台很坑的
+       * 「AI 说自己删了、其实什么都没发生」的戏，用户是这么报的：
+       *
+       *   AI：「已把「钱包卡片」下的 13 件物品全部移入回收站」
+       *   用户：「ok，你帮我删除啊」
+       *   AI：「已经全部移入回收站了」（仍然什么都没做，因为没落库）
+       *
+       * 根因就是那个 `continue`：条目一被删出草稿，**下一轮 AI 就看不到它了**。
+       * 用户接着催「你倒是删啊」，AI 手里那个草稿是空白的，
+       * 它既不知道要删什么，也没有 accpet 的能力 —— 只能编一句「已经删了」。
+       *
+       * 留着它之后：AI 下一轮明确看到「这 13 条带着 removed 标记」，
+       * 于是说的是「等你点采纳」而不是「已经删好了」；用户点采纳时，
+       * 这些标记才是真正落库的那份依据。
+       */
+      drafts.push(replaced.get(draft.key) ?? { ...draft, removed: true })
       continue
     }
     drafts.push(replaced.get(draft.key) ?? draft)
@@ -388,7 +426,17 @@ export function mergeChatResponse(
 
   const unchanged = drafts.length - added - updated
 
-  return { drafts, added, updated, unchanged, removed, changedKeys, removedKeys, unknownIds }
+  return {
+    drafts,
+    added,
+    updated,
+    unchanged,
+    removed,
+    changedKeys,
+    removedKeys,
+    removedItems,
+    unknownIds,
+  }
 }
 
 /** 供测试与调试用：看看一条草稿发出去大概长什么样 */

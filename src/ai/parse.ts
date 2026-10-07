@@ -349,6 +349,31 @@ export interface LoadScopeRequest {
   categoryPaths?: string[][]
   /** 这些位置下的（含子位置） */
   locationPaths?: string[][]
+  /**
+   * **按名字找**。
+   *
+   * 这一条是给 issue 8 兜底的：用户说「我仓库里有棉签」，AI 却找不到 ——
+   * 因为它手里只有「哪个分类有多少件」的统计，而棉签可能在「日用」也可能在
+   * 「药品」，它猜不到该拉哪个分类。
+   *
+   * 有了这一条，它可以直接说「把名字里有『棉签』的都拉进来」，
+   * 程序按名字子串匹配（忽略大小写和空格）。拉进来之后那些草稿**带着
+   * sourceItemId**，于是下一轮改它们就是「更新」，不会再新建一件同名的。
+   */
+  names?: string[]
+}
+
+/**
+ * 解析层眼里的分类改动：全是**名称路径**，没有一个 id。
+ *
+ * 和物品那边同一个规矩：AI 只认人话，程序负责翻译成 id ——
+ * 让模型碰 id 只会让它编。
+ */
+export interface CategoryChangeIntent {
+  kind: 'create' | 'rename' | 'move' | 'delete'
+  path: string[]
+  newName?: string
+  newParentPath?: string[]
 }
 
 export interface ParsedChatResponse {
@@ -361,6 +386,82 @@ export interface ParsedChatResponse {
   loadScope: LoadScopeRequest | null
   /** AI 什么都没做（纯问答），草稿应原样保留 */
   noChanges: boolean
+  /**
+   * AI 想对**分类**做的改动。
+   *
+   * 用户要的能力：「我希望 ai 可以编辑分类，我可以让它帮我整理已有的分类。」
+   *
+   * 刻意和 items 那条路**分开**：分类是结构，改错了很难复原，
+   * 而 items 那条路的语义是「这条物品长什么样」。混在一起的话，
+   * 一个字段要同时表达「改这件物品」和「动这棵树」，解析和提示词都会含糊。
+   *
+   * 这一层只做**形状**解析。至于「这个路径指的是哪个分类、这件事能不能做」
+   * 属于业务判断，要在**当时的分类树**上算 —— 交给 `ai/categoryEdit.ts`。
+   */
+  categoryChanges: CategoryChangeIntent[]
+}
+
+/**
+ * 分类改动的形状解析。
+ *
+ * 宽容是刻意的（和物品那边一致）：模型可能写成
+ * `{ kind, path, newName }`，也可能写成中文键名、或者把路径写成
+ * `"衣物 / 眼妆"` 这种字符串。三种都认，认不出来就丢掉这一条 ——
+ * 丢一条总比把半截坏对象塞进树里好。
+ */
+function normalizeCategoryChanges(raw: unknown): CategoryChangeIntent[] {
+  if (!Array.isArray(raw)) return []
+  const out: CategoryChangeIntent[] = []
+
+  for (const entry of raw) {
+    if (!isRecord(entry)) continue
+
+    const kindText = asString(entry.kind ?? entry.action ?? entry.操作 ?? entry.动作).toLowerCase()
+    const kind: CategoryChangeIntent['kind'] | null =
+      kindText === 'create' || kindText === '新建' || kindText === 'add'
+        ? 'create'
+        : kindText === 'rename' || kindText === '改名' || kindText === '重命名'
+          ? 'rename'
+          : kindText === 'move' || kindText === '移动' || kindText === '挪动'
+            ? 'move'
+            : kindText === 'delete' || kindText === '删除' || kindText === 'remove'
+              ? 'delete'
+              : null
+    if (kind === null) continue
+
+    // 路径允许是数组，也允许是 "衣物 / 眼妆" 这种字符串
+    let path = asPathList(entry.path ?? entry.分类 ?? entry.路径 ?? entry.name ?? entry.名称)
+    const newName = asString(entry.newName ?? entry.新名字 ?? entry.改名后 ?? entry.rename)
+
+    /*
+     * 新建时模型常常只给名字、不给路径（`{kind:'create', newName:'衣服'}`）。
+     * 那就把名字当作路径的末级 —— 也就是新建一个顶层分类。
+     */
+    if (path.length === 0 && newName !== '') path = [newName]
+    if (path.length === 0) continue
+
+    const parentRaw = entry.newParentPath ?? entry.parentPath ?? entry.父级 ?? entry.上级分类
+    /*
+     * 父级这一项的解析有个**必须区分**的地方：
+     *   · 字段根本没出现 → `undefined`（= 没提这件事）
+     *   · 出现了但是空数组（或者空字符串）→ `[]`（= 明确提出「挪到顶层」）
+     * 混起来的话，AI 想说「提到顶层」的那个请求会变成什么都不做，
+     * 而用户看到的是「它说改了、界面上没变」。
+     */
+    const parentPresent = parentRaw !== undefined && parentRaw !== null
+    const newParentPath = parentPresent
+      ? asPathList(parentRaw).filter((part) => part !== '')
+      : undefined
+
+    out.push({
+      kind,
+      path,
+      ...(newName !== '' ? { newName } : {}),
+      ...(newParentPath !== undefined ? { newParentPath } : {}),
+    })
+  }
+
+  return out
 }
 
 function normalizeRevisedItem(raw: unknown): RawRevisedItem | null {
@@ -392,6 +493,9 @@ function normalizeLoadScope(raw: unknown): LoadScopeRequest | null {
   const locations = asPathListOfLists(raw.locationPaths ?? raw.locations)
   if (locations.length > 0) scope.locationPaths = locations
 
+  const names = asStringList(raw.names ?? raw.search ?? raw.名称 ?? raw.名字)
+  if (names.length > 0) scope.names = names
+
   // 一个字都没给，就不算请求
   const empty =
     !scope.all &&
@@ -403,7 +507,8 @@ function normalizeLoadScope(raw: unknown): LoadScopeRequest | null {
     !scope.expired &&
     !scope.hasExpiry &&
     !scope.categoryPaths &&
-    !scope.locationPaths
+    !scope.locationPaths &&
+    !scope.names
   return empty ? null : scope
 }
 
@@ -425,15 +530,34 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
 
   const rawItems = payload.items ?? payload.物品 ?? payload.list
   const rawRemoved = payload.removedIds ?? payload.removed ?? payload.删除的id
+  const categoryChanges = normalizeCategoryChanges(
+    payload.categoryChanges ?? payload.分类改动 ?? payload.categories_edit,
+  )
 
   const removedIds = Array.isArray(rawRemoved)
     ? rawRemoved.map(asString).filter((id) => id !== '')
     : []
 
-  if (!Array.isArray(rawItems) && removedIds.length === 0) {
-    if (loadScope) return { reply, items: [], removedIds: [], loadScope, noChanges: false }
+  /*
+   * 「什么都没做」的判定要把分类改动算进去。
+   *
+   * 漏了它的话，「只整理分类」那一轮会被当成纯问答（noChanges），
+   * 界面上只会显示一句话，分类改动**被默默丢掉** ——
+   * 用户看到的是「AI 说改好了、但树没变」。
+   */
+  if (!Array.isArray(rawItems) && removedIds.length === 0 && categoryChanges.length === 0) {
+    if (loadScope) {
+      return { reply, items: [], removedIds: [], loadScope, noChanges: false, categoryChanges }
+    }
     if (reply !== '') {
-      return { reply, items: [], removedIds: [], loadScope: null, noChanges: true }
+      return {
+        reply,
+        items: [],
+        removedIds: [],
+        loadScope: null,
+        noChanges: true,
+        categoryChanges,
+      }
     }
     throw new AiError('bad_response', t('data.ai.noReplyOrItems'))
   }
@@ -446,5 +570,5 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
     }
   }
 
-  return { reply, items, removedIds, loadScope, noChanges: false }
+  return { reply, items, removedIds, loadScope, noChanges: false, categoryChanges }
 }
