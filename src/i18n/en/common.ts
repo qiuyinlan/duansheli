@@ -1,4 +1,4 @@
-/** Shared buttons, units, confirmations, toasts. */
+﻿/** Shared buttons, units, confirmations, toasts. */
 
 export const common = {
   /* Buttons */

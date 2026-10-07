@@ -3,7 +3,8 @@
 export const idle = {
   /* 页头 */
   subtitleEmpty: '标记为闲置的物品会汇总到这里',
-  subtitle: '闲置越久的排越前面 —— 最该被处理的自动浮到顶上',
+  /* 分组之后「越久越靠前」是**组内**的规矩，所以这句要说清「同一类里」 */
+  subtitle: '按分类分组；同一类里闲置越久的排越前面 —— 最该被处理的自动浮到顶上',
 
   /* 一件闲置都没有 */
   emptyTitle: '闲置已清空',
@@ -29,6 +30,9 @@ export const idle = {
   markedActiveToast: '已把 {count} 件改回「在用」',
   discardedToast: '已移入「已舍弃」，可在设置里找回',
   handledToast: '已处理 {count} 件，闲置清单又短了一点',
+  /* 勾选列表标题旁边那句 —— 说明候选范围就是这一页的闲置 */
+  discardPickerHint_one: '（候选：这一页的 {count} 件闲置）',
+  discardPickerHint_other: '（候选：这一页的 {count} 件闲置）',
 
   /* 确认框 */
   confirmTitle: '确认已处理？',

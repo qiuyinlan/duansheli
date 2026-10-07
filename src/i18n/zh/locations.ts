@@ -33,6 +33,35 @@ export const locations = {
   unassignedEmpty: '没有未归位的物品',
   unassignedEmptyHint: '每件物品都已经有了明确的位置。',
 
+  /*
+   * 拖拽改归位。
+   *
+   * 列表上那句和把手上的那句说的是一件事，只是出现的地方不同：
+   * 一句在列表标题下面（一直在），一句在行首那个小点上（悬停才看得到）。
+   */
+  dragHint: '把物品那一行拖到左边的位置上，就能改它的归位。',
+  dragHandleTitle: '按住拖到左侧的位置上',
+  dropDone: '已把「{name}」移到「{location}」',
+  /* 拖回了原地：什么也没改，但也得出声，否则看起来像拖拽失灵 */
+  dropSame: '「{name}」本来就在「{location}」',
+  /* 触屏和键盘走这条：HTML5 拖放在手机上根本不触发 */
+  moveItem: '移到…',
+
+  /*
+   * 这一页的**就地**增删改查（issue 7）。
+   *
+   * 用户的原话：「在位置那一个页面里也可以进行物品的增删改查，现在只能点击
+   * 那个物品进去才能编辑它，我想要像分类那个地方一样，可以直接在那个界面删除。」
+   * 位置页本来就是站在柜子前面清点的地方，每改一件都跳出去再跳回来，
+   * 清点根本做不下去。
+   */
+  renameItemTitle: '就地改名',
+  renameItemAria: '重命名「{name}」',
+  itemRenamed: '已改名',
+  deleteItemTitle: '移入回收站（可在设置里找回）',
+  discardPickerHint_one: '（候选：这一页的 {count} 件物品）',
+  discardPickerHint_other: '（候选：这一页的 {count} 件物品）',
+
   /* 新建 / 重命名对话框 */
   addTopTitle: '新建顶层位置',
   addChildTitle: '在「{name}」下新建位置',

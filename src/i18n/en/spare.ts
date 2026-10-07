@@ -50,6 +50,9 @@ export const spare = {
   discardConfirmTitle: 'Discard these spares?',
   discardConfirmBody:
     'The {count} selected entries go to the recycle bin and can be restored at any time.',
+  /* The line next to the picker title, saying what is on offer */
+  discardPickerHint_one: '(candidates: the {count} spare on this page)',
+  discardPickerHint_other: '(candidates: the {count} spares on this page)',
   discardDoneToast_one: '{count} discarded — restorable from the recycle bin',
   discardDoneToast_other: '{count} discarded — restorable from the recycle bin',
 

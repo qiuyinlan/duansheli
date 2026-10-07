@@ -159,6 +159,21 @@ export const IconTrash = (p: IconProps) => (
   </Svg>
 )
 
+/**
+ * 拖拽把手：两列三行共六个点。
+ *
+ * 用「六点」而不是箭头或手掌 —— 六点是各平台拖拽把手的通用画法，
+ * 不用解释就知道按住它能把这一行拎起来。
+ */
+export const IconGrip = (p: IconProps) => (
+  <Svg {...p}>
+    <path
+      d="M6.25 4h.01M9.75 4h.01M6.25 8h.01M9.75 8h.01M6.25 12h.01M9.75 12h.01"
+      strokeWidth={2}
+    />
+  </Svg>
+)
+
 export const IconPencil = (p: IconProps) => (
   <Svg {...p}>
     <path d="m11 2.5 2.5 2.5L6 12.5H3.5V10z" />

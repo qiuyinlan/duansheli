@@ -86,11 +86,27 @@ export const itemEdit = {
   pickLocationTitle: '选择位置',
   pickLocationCurrent: '当前：{path}',
   locationsEmpty: '还没有位置，可以在「位置」页面里创建。',
+  locationSearchPlaceholder: '搜索位置，例如「衣柜」「第二层」',
+  locationSearchAria: '搜索位置',
+  locationSearchFound_one: '找到 {count} 个匹配的位置（淡色的是它在哪一级下面）',
+  locationSearchFound_other: '找到 {count} 个匹配的位置（淡色的是它在哪一级下面）',
+  locationSearchNone: '没有匹配的位置。换个词试试，或者清空搜索看全部。',
 
   /* 分类选择器 */
   pickCategoryTitle: '选择分类',
   pickCategoryHint: '点分类名切换选中，可以选多个。分类是多级的，物品挂在哪一级都可以。',
   categoriesEmpty: '还没有分类，在下面新建一个。',
+  /*
+   * 搜索（issue 4）。
+   *
+   * 用户的原话：「在手动编辑物品选择分类的时候，要有跳出可以搜索已有分类的地方，
+   * 可以让我搜索并选择。」分类攒到几十个之后，在一棵树里滚动找一个是很费劲的。
+   */
+  categorySearchPlaceholder: '搜索分类，例如「眼妆」「药品」',
+  categorySearchAria: '搜索分类',
+  categorySearchFound_one: '找到 {count} 个匹配的分类（淡色的是它上面那几级，点它也能选）',
+  categorySearchFound_other: '找到 {count} 个匹配的分类（淡色的是它上面那几级，点它也能选）',
+  categorySearchNone: '没有匹配的分类。可以清空搜索看全部，或者在下面新建一个。',
   newTopCategory: '新建顶层分类',
   newCategoryPlaceholder: '例如：化妆品',
   duplicateCategory: '顶层已经有一个叫「{name}」的分类了',

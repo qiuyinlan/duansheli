@@ -570,6 +570,39 @@
   background: var(--bg-hover);
 }
 
+/* ---------------- 拖拽 ---------------- */
+
+/*
+ * 拖拽把手。
+ *
+ * 它只是「这一行能拖」的信号 —— 整行才是拖拽源，所以颜色压得很淡，
+ * 不跟内容抢；悬停时加深一点，算是「按住我」的邀请。
+ */
+.list-row__grip {
+  display: flex;
+  align-items: center;
+  color: var(--line-strong);
+  flex-shrink: 0;
+  /* 手掌光标：不用点就知道这里是「拿起来」的地方 */
+  cursor: grab;
+  /* 拖的时候鼠标会一路划过这一段，别顺手把文字选中了 */
+  user-select: none;
+}
+
+.list-row:hover .list-row__grip {
+  color: var(--text-3);
+}
+
+/*
+ * 正被拖走的那一行。
+ *
+ * 淡下去而不是加个边框：要表达的是「这一行在我手上」，
+ * 而不是「这一行被选中了」—— 后者在这个列表里已经有别的意思了。
+ */
+.list-row--dragging {
+  opacity: 0.4;
+}
+
 /* ---------------- 徽标 ---------------- */
 
 .badge {
@@ -601,6 +634,31 @@
   color: var(--text);
 }
 
+/*
+ * 状态徽章：颜色跟着语义走，和 lib/palette.ts 里那套状态色一致。
+ *
+ * 三档刻意分开：「闲置」是琥珀（该想想怎么处理）、「备用」是蓝（特意留的，
+ * 放多久都正常）、「已舍弃」是中性灰（它已经不在日常视野里了）。
+ * 以前三档长得一模一样，扫一眼分不出来 —— 而这两件事的意思正好相反。
+ */
+.badge--status-idle {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #b45309;
+}
+
+.badge--status-spare {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #075985;
+}
+
+.badge--status-discarded {
+  background: var(--bg-sub);
+  border-color: var(--line-strong);
+  color: var(--text-3);
+}
+
 /* ---------------- 位置树 ---------------- */
 
 .tree {
@@ -627,6 +685,17 @@
 .tree-node__row.is-active {
   background: var(--accent-soft);
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/*
+ * 手上有东西、正悬在这一行上 —— 也就是「松手就放这儿」。
+ *
+ * 用整圈描边而不是只换底色：底色已经被「选中」占了，两个状态还可能同时出现
+ * （拖到自己当前所在的位置上就是这样），只换底色的话那种情况完全看不出来。
+ */
+.tree-node__row.is-drop-hover {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .tree-node__toggle {
@@ -677,6 +746,32 @@
 
 .tree-node__label--empty-loc {
   color: var(--text-3);
+}
+
+/*
+ * 子目录（第 1 层及更深）统一绿色。
+ *
+ * 用的就是这一页的主色（`--accent` = #0d9488 青绿），所以「这一屏的颜色」
+ * 和「子目录的颜色」是同一个色系，不会显得像是另加了一层装饰。
+ *
+ * 为什么只给子目录上色、大标题保持原样：这一棵树里唯一需要一眼读出来的
+ * 信息是「我翻到第几层了」。全上色等于没上色；只给子级上色，眼睛扫下来
+ * 就能看出哪一段是「收在里面的」，而顶层那几项仍然是中性的锚点。
+ */
+.tree-node__label--sub {
+  color: var(--accent-text);
+}
+
+/* 子目录里没有东西的那个状态色要压过它 —— 空位置是「这一格没有东西」的提示，
+   比层级更值得说。 */
+.tree-node__label--sub.tree-node__label--empty-loc {
+  color: var(--text-3);
+}
+
+/* 搜索结果里「只是路径」的那些祖先节点（见 TreeView 的 dimmedIds） */
+.tree-node__label--path {
+  color: var(--text-3);
+  font-weight: 400;
 }
 
 .tree-node__count {
@@ -1004,6 +1099,237 @@
   .selection-bar {
     bottom: var(--gap-5);
   }
+}
+
+/* ---------------- 勾选列表（删除前选哪些） ---------------- */
+
+.pick-list {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.pick-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap-3);
+  padding: var(--gap-3) var(--gap-4);
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.pick-row:last-child {
+  border-bottom: none;
+}
+
+.pick-row:hover {
+  background: var(--bg-sub);
+}
+
+.pick-row input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.pick-row__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pick-row__name {
+  font-size: var(--fs-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pick-row__meta {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+/* ---------------- 快照对比 ---------------- */
+
+.diff-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.diff-dot--danger {
+  background: var(--danger);
+}
+
+.diff-dot--ok {
+  background: #059669;
+}
+
+.diff-dot--muted {
+  background: var(--text-3);
+}
+
+.diff-list {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.diff-list__row {
+  padding: var(--gap-2) var(--gap-3);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.diff-list__row:last-child {
+  border-bottom: none;
+}
+
+.diff-list__name {
+  font-size: var(--fs-sm);
+}
+
+.diff-list__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+.diff-field {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+.diff-field__key {
+  color: var(--text-3);
+}
+
+.diff-field__before {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+
+.diff-field__arrow {
+  color: var(--text-3);
+}
+
+.diff-field__after {
+  color: var(--accent-text);
+  font-weight: 500;
+}
+
+.diff-tag {
+  margin-right: var(--gap-2);
+}
+
+.diff-tag--ok {
+  color: #047857;
+}
+
+.diff-tag--danger {
+  color: var(--danger);
+}
+
+/* ---------------- 分类改动预览 ---------------- */
+
+/*
+ * AI 提议的分类改动，一行一条。
+ *
+ * 这一块要让人**在动之前**看懂「将要发生什么」，所以每行都带
+ * 「旧 → 新」和一个状态说明；做不了的那些整行压暗、勾选框禁用 ——
+ * 让人一眼看出「这条不会被执行」。
+ */
+.cat-plan {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.cat-plan__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.cat-plan__row:last-child {
+  border-bottom: none;
+}
+
+.cat-plan__row--off {
+  background: var(--bg-sub);
+}
+
+.cat-plan__row--missing,
+.cat-plan__row--cycle {
+  /* 做不了的用警示边色标出来，但不用红底 —— 它不是错误，只是这条不做 */
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+.cat-plan__row--duplicate {
+  box-shadow: inset 3px 0 0 #d97706;
+}
+
+.cat-plan__kind {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  min-width: 2.4em;
+  padding-top: 2px;
+}
+
+.cat-plan__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cat-plan__names {
+  font-size: var(--fs-sm);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap-2);
+}
+
+.cat-plan__from {
+  color: var(--text-2);
+}
+
+/* 路径里的层级用淡色连接符表示，和位置树那边一个读法 */
+.cat-plan__arrow {
+  color: var(--text-3);
+}
+
+.cat-plan__to {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.cat-plan__note {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  line-height: 1.5;
 }
 
 /* ---------------- 分组标题 ---------------- */

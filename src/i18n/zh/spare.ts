@@ -47,6 +47,9 @@ export const spare = {
   discardSelected: '舍弃',
   discardConfirmTitle: '舍弃这些备用？',
   discardConfirmBody: '选中的 {count} 条会进「已舍弃回收站」，随时可以恢复。',
+  /* 勾选列表标题旁边那句 —— 说明候选范围就是这一页的备用 */
+  discardPickerHint_one: '（候选：这一页的 {count} 种备用）',
+  discardPickerHint_other: '（候选：这一页的 {count} 种备用）',
   discardDoneToast_one: '{count} 条已舍弃，可在回收站恢复',
   discardDoneToast_other: '{count} 条已舍弃，可在回收站恢复',
 

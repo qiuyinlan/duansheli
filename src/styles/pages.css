@@ -329,6 +329,39 @@
   flex-shrink: 0;
 }
 
+/*
+ * 拖放导入的落点。
+ *
+ * 虚线框是这件事唯一的「看得见的说法」：不画出来，用户不会想到还能拖。
+ * 高亮用实线 + 底色，和旁边那些实线卡片区分开 —— 这一刻它是活的。
+ */
+.dropzone {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  padding: var(--gap-3) var(--gap-4);
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+.dropzone.is-over {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.dropzone__hint {
+  margin-top: var(--gap-2);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+/* 拖着文件的时候这句话才是重点，别的都让开 */
+.dropzone.is-over .dropzone__hint {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
 /* 存储状态面板 */
 .storage-grid {
   display: grid;

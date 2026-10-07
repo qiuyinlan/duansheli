@@ -3,7 +3,9 @@
 export const idle = {
   /* Header */
   subtitleEmpty: 'Anything you mark as idle collects here',
-  subtitle: 'Idle longest first — whatever most needs dealing with floats to the top',
+  /* Now that the list is grouped, "longest first" is a rule *inside* each group */
+  subtitle:
+    'Grouped by category; inside each group the longest-idle items come first — whatever most needs dealing with floats to the top',
 
   /* Nothing idle at all */
   emptyTitle: 'Nothing is idle',
@@ -29,6 +31,9 @@ export const idle = {
   markedActiveToast: 'Moved {count} back to "in use"',
   discardedToast: 'Moved to "discarded" — you can restore it in Settings',
   handledToast: '{count} handled — the idle list is a little shorter',
+  /* The line next to the picker title, saying what is on offer */
+  discardPickerHint_one: '(candidates: the {count} idle item on this page)',
+  discardPickerHint_other: '(candidates: the {count} idle items on this page)',
 
   /* Confirmation dialog */
   confirmTitle: 'Mark as handled?',

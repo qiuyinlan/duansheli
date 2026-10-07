@@ -117,7 +117,24 @@ export const data = {
     allCleared: '所有数据已清空（可在快照中回退）',
     manualSnapshotCreated: '已生成一份手动备份快照',
     snapshotNotFound: '找不到这份快照',
-    snapshotRestored: '已回退到所选快照',
+    /*
+     * 醒来发现盘上的东西比快照还少时，自动救回来之后说的话。
+     *
+     * 这条提示的意义在于：用户本来会看到「我的东西没了」，
+     * 现在他看到的是「我们发现它少了，已经放回去了」——
+     * 同一件事，两种完全不同的感受。
+     */
+    restoredFromSnapshot:
+      '打开时发现本地数据比上一份快照少了 {missing} 件（很可能是上次没存完就关掉了页面）。已自动从那份快照恢复，现在有 {count} 件物品，请核对一下。',
+    snapshotRestored: '已回退到所选快照（{count} 件物品）',
+    /*
+     * 回退会**改变物品数量**，所以要如实报出前后差别（issue 16）。
+     * 少了的时候尤其要说清楚 —— 那正是用户会慌的那一刻。
+     */
+    snapshotRestoredMore:
+      '已回退：物品从 {before} 件变成 {after} 件（多了 {delta} 件）',
+    snapshotRestoredFewer:
+      '已回退：物品从 {before} 件变成 {after} 件（少了 {delta} 件）。少掉的还在上一份快照里，可以再回退回来。',
   },
 
   /* ---------------- 快照 ---------------- */

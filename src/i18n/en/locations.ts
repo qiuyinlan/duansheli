@@ -34,6 +34,28 @@ export const locations = {
   unassignedEmpty: 'No items without a place',
   unassignedEmptyHint: 'Every item already has a place of its own.',
 
+  /*
+   * Dragging an item onto a place.
+   *
+   * The line under the list heading and the tooltip on the grip say the same
+   * thing in two places: one is always there, the other only on hover.
+   */
+  dragHint: 'Drag an item row onto a place on the left to move it there.',
+  dragHandleTitle: 'Hold and drag onto a place on the left',
+  dropDone: 'Moved “{name}” to “{location}”',
+  /* Dropped back where it started: nothing changed, but staying silent reads as broken */
+  dropSame: '“{name}” is already in “{location}”',
+  /* For touch screens and keyboards — HTML5 drag never fires on a phone */
+  moveItem: 'Move to…',
+
+  /* In-place editing of items on this page */
+  renameItemTitle: 'Rename right here',
+  renameItemAria: 'Rename “{name}”',
+  itemRenamed: 'Renamed',
+  deleteItemTitle: 'Move to the trash (restorable in Settings)',
+  discardPickerHint_one: '(candidates: the {count} item on this page)',
+  discardPickerHint_other: '(candidates: the {count} items on this page)',
+
   /* New / rename dialog */
   addTopTitle: 'New top-level place',
   addChildTitle: 'New place under “{name}”',

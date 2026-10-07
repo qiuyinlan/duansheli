@@ -124,7 +124,20 @@ export const data = {
     allCleared: 'All data cleared (you can roll back from a snapshot)',
     manualSnapshotCreated: 'Saved a manual backup snapshot',
     snapshotNotFound: 'That snapshot is not there',
-    snapshotRestored: 'Rolled back to the snapshot you picked',
+    /*
+     * Shown after silently restoring from a snapshot on startup.
+     * The user used to see "my things are gone"; now they see "we noticed and put them back".
+     */
+    restoredFromSnapshot:
+      'On opening, your local data had {missing} fewer items than the last snapshot (most likely the page was closed before a save finished). It has been restored from that snapshot — you now have {count} items; please check them over.',
+    snapshotRestored: 'Rolled back to the snapshot you picked ({count} items)',
+    /*
+     * A rollback CHANGES the item count, so say so up front — the moment it drops
+     * is exactly when people panic.
+     */
+    snapshotRestoredMore: 'Rolled back: items went from {before} to {after} — {delta} more',
+    snapshotRestoredFewer:
+      'Rolled back: items went from {before} to {after} — {delta} fewer. What disappeared is still in the previous snapshot, so you can roll back again.',
   },
 
   /* ---------------- Snapshots ---------------- */

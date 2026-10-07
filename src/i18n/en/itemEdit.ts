@@ -89,12 +89,27 @@ export const itemEdit = {
   pickLocationTitle: 'Choose a place',
   pickLocationCurrent: 'Current: {path}',
   locationsEmpty: 'No places yet — you can create them on the Places page.',
+  locationSearchPlaceholder: 'Search places, e.g. “wardrobe” or “top drawer”',
+  locationSearchAria: 'Search places',
+  locationSearchFound_one:
+    '{count} matching place (the faded ones are the levels it sits under)',
+  locationSearchFound_other:
+    '{count} matching places (the faded ones are the levels they sit under)',
+  locationSearchNone: 'No matching places. Try another word, or clear the search to see all.',
 
   /* Category picker */
   pickCategoryTitle: 'Choose categories',
   pickCategoryHint:
     'Tap a category name to toggle it; you can pick several. Categories are nested, and an item can sit at any level.',
   categoriesEmpty: 'No categories yet — create one below.',
+  categorySearchPlaceholder: 'Search categories, e.g. “makeup” or “medicine”',
+  categorySearchAria: 'Search categories',
+  categorySearchFound_one:
+    '{count} matching category (the faded ones are its upper levels — you can pick those too)',
+  categorySearchFound_other:
+    '{count} matching categories (the faded ones are their upper levels — you can pick those too)',
+  categorySearchNone:
+    'No matching categories. Clear the search to see all, or create one below.',
   newTopCategory: 'New top-level category',
   newCategoryPlaceholder: 'e.g. Cosmetics',
   duplicateCategory: 'There is already a top-level category called “{name}”',

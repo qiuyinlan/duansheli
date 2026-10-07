@@ -165,6 +165,20 @@ function toNumber(value: unknown): number {
  * 默认开启 JSON 模式（response_format: json_object）。DeepSeek 要求开启时
  * prompt 里必须出现 "json" 字样 —— 我们的 prompt 里都有，见 prompts.ts。
  * 万一接口将来不再支持这个参数，这里会自动去掉它重试一次。
+ *
+ * ── 空回复自动重试（issue 5）──────────────────────────────────────
+ * 用户报的现象：「有时候不知道为什么跳出来 DeepSeek 这次没有返回内容
+ * （偶发情况）。直接再点一次通常就好了。」
+ *
+ * 「再点一次就好」说明**问题出在一次性的抖动上**，而不是请求本身有问题 ——
+ * 那就不该让用户去点第二次。JSON 模式下返回空 content 是官方文档里
+ * 记过的已知情况，所以这里自己重试（最多再试 2 次，短暂退避）。
+ *
+ * 两条边界，都是刻意的：
+ *   · **只重试「空内容 / 不是 JSON」这两种**。401 / 402 / 429 这些重试没有
+ *     意义（结果一样），网络错误也不重试 —— 那更可能是真的断网了，
+ *     让用户马上看到原因比默默卡住十几秒好
+ *   · 用户按了取消就立刻停，不再试下一次
  */
 export async function chat(options: ChatOptions): Promise<ChatResult> {
   const apiKey = options.apiKey.trim()
@@ -172,6 +186,53 @@ export async function chat(options: ChatOptions): Promise<ChatResult> {
     throw new AiError('no_key', t('data.ai.noKey'))
   }
 
+  const attempts = 3
+  let lastError: AiError | null = null
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (options.signal?.aborted) throw new AiError('aborted', t('data.ai.aborted'))
+    try {
+      return await chatOnce(apiKey, options)
+    } catch (err) {
+      // 只有「这次回复是空的 / 不是 JSON」值得再试一次
+      const retryable =
+        err instanceof AiError && (err.kind === 'bad_response') && attempt < attempts - 1
+      if (!retryable) throw err
+      lastError = err
+      /*
+       * 退避一下就再来。
+       *
+       * 空回复往往是那一瞬间模型那边的问题，隔一点点时间再问命中率明显更高；
+       * 但也不能等太久 —— 用户正盯着「AI 正在思考」，等 10 秒会以为卡死了。
+       * 400ms / 900ms 这两档是这么定下来的。
+       */
+      await delay(attempt === 0 ? 400 : 900, options.signal)
+    }
+  }
+
+  throw lastError ?? new AiError('bad_response', t('data.ai.emptyContent'))
+}
+
+/** 等一会儿；期间用户取消就立刻抛 aborted，不再干等 */
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new AiError('aborted', t('data.ai.aborted')))
+      return
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new AiError('aborted', t('data.ai.aborted')))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+async function chatOnce(apiKey: string, options: ChatOptions): Promise<ChatResult> {
   const body: Record<string, unknown> = {
     model: DEEPSEEK_MODEL,
     messages: options.messages,
@@ -209,7 +270,8 @@ export async function chat(options: ChatOptions): Promise<ChatResult> {
   const choice = payload.choices?.[0]
   const content = choice?.message?.content
   if (typeof content !== 'string' || content.trim() === '') {
-    // JSON 模式偶尔会返回空内容，官方文档里也提到了这个已知情况
+    // JSON 模式偶尔会返回空内容，官方文档里也提到了这个已知情况。
+    // 抛 'bad_response' → 上面的 chat() 会自动再试。
     throw new AiError('bad_response', t('data.ai.emptyContent'))
   }
 
