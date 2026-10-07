@@ -12,15 +12,24 @@ import 'fake-indexeddb/auto'
 import './dom'
 
 import './smoke'
+import './categoryFix'
 import './expiry'
 import './collections'
 import './spare'
 import './csv'
 import './aiVocab'
+// AI 整理分类（新建/改名/移动/删除）—— 纯逻辑，算和写分开
+import './categoryEdit'
 import './storage'
+// 数据丢失：init 不能把还没落盘的新东西冲掉（issue 10）
+import './dataLoss'
+// 两份数据的差异、快照件数、合并只做加法（issue 14/15/16）
+import './diff'
 import './ai'
 import './i18n'
 import './render'
+// 状态一致性：列表说什么、点进去就得是什么（issue 13）
+import './statusConsistency'
 // 体检会清空真实的 IndexedDB，放最后 —— 免得把前面用例依赖的数据擦掉
 import './diagnose'
 // 同上：会话用例也会写 IndexedDB 与 store 状态，放在最后
