@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>分类层级整理 · 本地工具</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --bg-sub: #fafafa;
+        --line: #e8e8e6;
+        --line-strong: #d4d4d1;
+        --text: #1a1a1a;
+        --text-2: #6b6b6b;
+        --text-3: #9b9b9b;
+        --accent: #2563eb;
+        --accent-soft: #eff6ff;
+        --danger: #b3261e;
+        --radius: 8px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 32px 20px 64px;
+        background: var(--bg-sub);
+        color: var(--text);
+        font: 15px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+          'Microsoft YaHei', sans-serif;
+      }
+      main {
+        max-width: 780px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 8px;
+      }
+      h2 {
+        font-size: 16px;
+        margin: 24px 0 8px;
+      }
+      .card {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .lead {
+        color: var(--text-2);
+        margin: 0 0 4px;
+      }
+      .hint {
+        color: var(--text-3);
+        font-size: 13px;
+        margin: 6px 0 0;
+      }
+      .status {
+        border-radius: var(--radius);
+        padding: 12px 16px;
+        margin-bottom: 16px;
+        border: 1px solid var(--line);
+        background: var(--bg);
+        white-space: pre-wrap;
+      }
+      .status--bad {
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+      .status--ok {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        color: #1d4ed8;
+      }
+      code {
+        font-family: ui-monospace, Consolas, monospace;
+        background: #f4f4f3;
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-size: 13px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 7px 8px;
+        border-bottom: 1px solid var(--line);
+      }
+      th {
+        font-weight: 600;
+        color: var(--text-2);
+        font-size: 13px;
+      }
+      td.num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        color: var(--text-2);
+      }
+      label.pick {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+      }
+      input[type='checkbox'] {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--accent);
+      }
+      input[type='text'] {
+        font: inherit;
+        padding: 6px 10px;
+        border: 1px solid var(--line-strong);
+        border-radius: 6px;
+        width: 160px;
+      }
+      button {
+        font: inherit;
+        padding: 8px 16px;
+        border-radius: 6px;
+        border: 1px solid var(--line-strong);
+        background: var(--bg);
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        background: #f4f4f3;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button.primary:hover:not(:disabled) {
+        background: #1d4ed8;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 16px;
+      }
+      pre {
+        margin: 16px 0 0;
+        padding: 12px;
+        background: #f4f4f3;
+        border-radius: var(--radius);
+        font-size: 13px;
+        white-space: pre-wrap;
+        font-family: ui-monospace, Consolas, monospace;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>给一组分类套一个上级分类</h1>
+      <p class="lead">
+        这是本地开发用的小工具页（不在打包范围里，不会跟着上线）。它改的是
+        <strong>当前网址</strong>下的本地数据：把勾选的顶层分类挂到一个上级分类下面。
+      </p>
+      <p class="hint" id="origin"></p>
+
+      <div id="status" class="status">正在读取本地数据…</div>
+
+      <section id="panel" hidden>
+        <div class="card">
+          <div class="row">
+            <label>
+              上级分类的名字
+              <input id="parent" type="text" value="衣服" />
+            </label>
+          </div>
+          <p class="hint">
+            衣物类的名字已经默认勾上了。勾错了随时改 —— 先点
+            <strong>预演</strong>，它会告诉你结果，反复看几次都行，那时一个字节都还没写。
+          </p>
+        </div>
+
+        <div class="card">
+          <h2 style="margin-top: 0">当前的顶层分类</h2>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 36px"></th>
+                <th>分类</th>
+                <th class="num">直属</th>
+                <th class="num">含子分类</th>
+              </tr>
+            </thead>
+            <tbody id="cats"></tbody>
+          </table>
+          <p class="hint" id="nestedNote" hidden></p>
+        </div>
+
+        <div class="actions">
+          <button id="preview">预演（不改数据）</button>
+          <button id="apply" class="primary" disabled>确认执行</button>
+          <button id="undo" hidden>撤销刚才那次改动</button>
+        </div>
+
+        <pre id="out" hidden></pre>
+      </section>
+    </main>
+
+    <script type="module">
+      /*
+       * 工具页。
+       *
+       * 它自己**不做任何判断** ——「怎么算」全在 scripts/category-parent-fix.ts 里，
+       * 那份逻辑有用例守着（tests/categoryFix.ts）。这里只做三件事：
+       * 读数据、把候选人列出来让人勾、把算好的结果写回去（写之前先存一份快照）。
+       *
+       * 为什么必须在浏览器里跑：分类树存在 IndexedDB 里，而 IndexedDB 是按**网址**
+       * 隔离的，仓库里根本没有你的数据。所以这个页面要和应用开在同一个网址下才有意义。
+       */
+      import { planCategoryParent } from './scripts/category-parent-fix.ts'
+
+      const DB_NAME = 'duansheli'
+      const STORE_APP = 'app'
+      const STORE_SNAPSHOTS = 'snapshots'
+      const APP_DATA_KEY = 'data'
+
+      /** 只是**预勾选**用的候选名单，最后勾哪些完全由你定 */
+      const PRESELECT = ['上衣', '裤子', '外套', '鞋子', '背心运动服', '秋', '睡衣', '其他穿戴']
+
+      const $ = (id) => document.getElementById(id)
+      const statusEl = $('status')
+      const panelEl = $('panel')
+      const catsEl = $('cats')
+      const outEl = $('out')
+      const parentEl = $('parent')
+      const previewBtn = $('preview')
+      const applyBtn = $('apply')
+      const undoBtn = $('undo')
+
+      $('origin').innerHTML = `当前网址：<code>${location.origin}</code>`
+
+      /* ---------------- IndexedDB 三件套 ---------------- */
+
+      const openDb = () =>
+        new Promise((resolve, reject) => {
+          const req = indexedDB.open(DB_NAME)
+          req.onsuccess = () => resolve(req.result)
+          req.onerror = () => reject(req.error)
+        })
+
+      const readRecord = (db, store, key) =>
+        new Promise((resolve, reject) => {
+          const req = db.transaction(store, 'readonly').objectStore(store).get(key)
+          req.onsuccess = () => resolve(req.result)
+          req.onerror = () => reject(req.error)
+        })
+
+      const writeRecord = (db, store, value, key) =>
+        new Promise((resolve, reject) => {
+          const tx = db.transaction(store, 'readwrite')
+          if (key === undefined) tx.objectStore(store).put(value)
+          else tx.objectStore(store).put(value, key)
+          tx.oncomplete = () => resolve()
+          tx.onerror = () => reject(tx.error)
+          tx.onabort = () => reject(tx.error)
+        })
+
+      const uid = () =>
+        crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}`
+
+      /* ---------------- 状态 ---------------- */
+
+      let db = null
+      /** 读进来的整份 AppData */
+      let current = null
+      /** 预演算出来的方案（执行时用它，没预演过就是 null） */
+      let pendingPlan = null
+      /** 改之前那一份，给「撤销」用。刷新页面就没了 —— 那正是想要的 */
+      let beforeFix = null
+
+      const setStatus = (html, tone) => {
+        statusEl.innerHTML = html
+        statusEl.className = `status${tone ? ` status--${tone}` : ''}`
+        statusEl.hidden = false
+      }
+
+      const say = (text) => {
+        outEl.hidden = false
+        outEl.textContent = text
+      }
+
+      const byOrder = (a, b) => a.order - b.order || a.name.localeCompare(b.name, 'zh-CN')
+
+      /* ---------------- 读取与渲染 ---------------- */
+
+      async function boot() {
+        db = await openDb()
+        current = await readRecord(db, STORE_APP, APP_DATA_KEY)
+
+        if (!current || !Array.isArray(current.categories)) {
+          setStatus(
+            `这个网址（<code>${location.origin}</code>）下没有读到数据。<br><br>` +
+              '数据是按<strong>网址</strong>隔离的：你平时在哪个地址上用「断舍离」，就得在哪个地址上开这个工具页。' +
+              '（<code>localhost</code>、<code>127.0.0.1</code>、GitHub Pages 是三个互不相通的数据仓库。）<br><br>' +
+              '如果你的数据在别的地址上：在那个地址里打开「设置 → 导出 JSON」，把文件发我 —— ' +
+              '我用 <code>node scripts/fix-category-parent.mjs 备份.json</code> 改出一份新的，你再导入。',
+            'bad',
+          )
+          return
+        }
+
+        const topCount = current.categories.filter((c) => c.parentId === null).length
+        setStatus(
+          `读到了：<strong>${current.items.length}</strong> 件物品、` +
+            `<strong>${current.categories.length}</strong> 个分类（其中顶层 ${topCount} 个）。<br>` +
+            '⚠️ 执行之前先把「断舍离」那个标签页放着别动 —— 它内存里那份旧数据会把这次改动盖回去。',
+        )
+
+        renderCats()
+        panelEl.hidden = false
+      }
+
+      /** 每个分类：直属几件、含子孙几件（同一件挂在一棵子树的两个节点上只算一次） */
+      function countsFor(rootId) {
+        const ids = new Set([rootId])
+        for (let pass = 0; pass <= current.categories.length; pass++) {
+          let grew = false
+          for (const c of current.categories) {
+            if (c.parentId && ids.has(c.parentId) && !ids.has(c.id)) {
+              ids.add(c.id)
+              grew = true
+            }
+          }
+          if (!grew) break
+        }
+        const directIds = new Set(
+          current.items.flatMap((item) =>
+            new Set(item.categoryIds).has(rootId) ? [item.id] : [],
+          ),
+        )
+        const seen = new Set()
+        let all = 0
+        for (const item of current.items) {
+          if (item.categoryIds.some((id) => ids.has(id)) && !seen.has(item.id)) {
+            seen.add(item.id)
+            all += 1
+          }
+        }
+        return { direct: directIds.size, all }
+      }
+
+      function renderCats() {
+        const tops = current.categories.filter((c) => c.parentId === null).sort(byOrder)
+
+        catsEl.innerHTML = ''
+        for (const c of tops) {
+          const { direct, all } = countsFor(c.id)
+          const tr = document.createElement('tr')
+
+          const tdPick = document.createElement('td')
+          const label = document.createElement('label')
+          label.className = 'pick'
+          const box = document.createElement('input')
+          box.type = 'checkbox'
+          box.value = c.id
+          box.checked = PRESELECT.includes(c.name)
+          box.setAttribute('aria-label', `把「${c.name}」挪到上级分类下面`)
+          box.addEventListener('change', () => {
+            pendingPlan = null
+            applyBtn.disabled = true
+          })
+          label.appendChild(box)
+          tdPick.appendChild(label)
+
+          const tdName = document.createElement('td')
+          tdName.textContent = c.name
+
+          const tdDirect = document.createElement('td')
+          tdDirect.className = 'num'
+          tdDirect.textContent = String(direct)
+
+          const tdAll = document.createElement('td')
+          tdAll.className = 'num'
+          tdAll.textContent = String(all)
+
+          tr.append(tdPick, tdName, tdDirect, tdAll)
+          catsEl.appendChild(tr)
+        }
+
+        const nested = current.categories.filter((c) => c.parentId !== null).sort(byOrder)
+        const note = $('nestedNote')
+        if (nested.length > 0) {
+          note.hidden = false
+          note.textContent =
+            `另外还有 ${nested.length} 个子分类（不列在这里，它们不受影响）：` +
+            nested
+              .slice(0, 12)
+              .map((c) => c.name)
+              .join('、') +
+            (nested.length > 12 ? ' …' : '')
+        } else {
+          note.hidden = true
+        }
+      }
+
+      /* ---------------- 预演 ---------------- */
+
+      previewBtn.addEventListener('click', () => {
+        const childIds = [...catsEl.querySelectorAll('input[type=checkbox]')]
+          .filter((box) => box.checked)
+          .map((box) => box.value)
+
+        const result = planCategoryParent({
+          categories: current.categories,
+          items: current.items,
+          parentName: parentEl.value,
+          childIds,
+          makeId: uid,
+          now: new Date().toISOString(),
+        })
+
+        if (!result.ok) {
+          pendingPlan = null
+          applyBtn.disabled = true
+          say(`✗ 不能这么改：${result.reason}`)
+          return
+        }
+
+        const plan = result.plan
+        const tops = plan.categories.filter((c) => c.parentId === null).sort(byOrder)
+        const children = plan.categories.filter((c) => c.parentId === plan.parentId).sort(byOrder)
+
+        const lines = [
+          plan.parentCreated
+            ? `✓ 将新建顶层分类「${plan.parentName}」`
+            : `✓ 复用已有的顶层分类「${plan.parentName}」`,
+          '',
+          `要挪进去的 ${plan.moved.length} 个分类（结果的先后）：`,
+          `  ${plan.moved.map((c) => c.name).join(' → ')}`,
+        ]
+        if (plan.alreadyUnder.length > 0) {
+          lines.push('', `本来就在它下面、不用动的：${plan.alreadyUnder.map((c) => c.name).join('、')}`)
+        }
+        if (plan.missingIds.length > 0) {
+          lines.push('', `⚠️ 找不到的 id（会跳过）：${plan.missingIds.join('、')}`)
+        }
+        lines.push(
+          '',
+          `「${plan.parentName}」这棵树下会挂着 ${plan.itemsAffected} 件物品（物品本身一件都不动）`,
+          '',
+          `改完之后的顶层：${tops.map((c) => c.name).join(' / ')}`,
+          `「${plan.parentName}」下面：${children.map((c) => c.name).join(' / ')}`,
+        )
+
+        pendingPlan = plan
+        applyBtn.disabled = false
+        say(lines.join('\n'))
+      })
+
+      /* ---------------- 执行 ---------------- */
+
+      applyBtn.addEventListener('click', async () => {
+        if (!pendingPlan) return
+        applyBtn.disabled = true
+
+        const plan = pendingPlan
+        // 改之前那一份单独留一个深拷贝：快照和「撤销」都用它，绝不能被后面的写操作带跑
+        beforeFix = structuredClone(current)
+
+        try {
+          // 先存快照 —— 应用里的「设置 → 快照回退」也能看到这一份
+          await writeRecord(db, STORE_SNAPSHOTS, {
+            id: uid(),
+            at: new Date().toISOString(),
+            reason: 'manual',
+            itemCount: current.items.length,
+            data: beforeFix,
+          })
+
+          await writeRecord(
+            db,
+            STORE_APP,
+            { ...current, categories: plan.categories, updatedAt: new Date().toISOString() },
+            APP_DATA_KEY,
+          )
+
+          // 读回来确认真的写进去了（写完不核对，等于闭着眼改）
+          const check = await readRecord(db, STORE_APP, APP_DATA_KEY)
+          const parent = check.categories.find((c) => c.id === plan.parentId)
+          if (!parent) throw new Error('写完之后读不回来那个上级分类')
+
+          const kids = check.categories.filter((c) => c.parentId === parent.id).sort(byOrder)
+          current = check
+          pendingPlan = null
+          undoBtn.hidden = false
+
+          setStatus(
+            `✅ 改好了：「${parent.name}」下面现在有 ${kids.length} 个子分类。` +
+              '（改之前那一份已经存成快照，随时能回退。）',
+            'ok',
+          )
+          say(
+            [
+              '接下来：',
+              `1. 去应用（${new URL('./', location.href).href}）按 F5 刷新页面`,
+              '2. 打开「分类」页看看层级是不是你要的',
+              '',
+              '不满意的话有两条退路：',
+              '  · 这个页面上的「撤销刚才那次改动」（原样写回改之前那一份）',
+              '  · 应用里「设置 → 快照回退」，选刚才那份「手动」快照',
+            ].join('\n'),
+          )
+          renderCats()
+        } catch (err) {
+          applyBtn.disabled = false
+          setStatus(`✗ 写入失败：${err instanceof Error ? err.message : String(err)}`, 'bad')
+        }
+      })
+
+      /* ---------------- 撤销 ---------------- */
+
+      undoBtn.addEventListener('click', async () => {
+        if (!current || !beforeFix) return
+        undoBtn.disabled = true
+        try {
+          const changed = current
+          await writeRecord(db, STORE_APP, beforeFix, APP_DATA_KEY)
+          current = beforeFix
+          beforeFix = changed
+          setStatus('↩️ 已经写回改之前那一份。去应用按 F5 刷新就能看到。', 'ok')
+          renderCats()
+        } catch (err) {
+          setStatus(`✗ 撤销失败：${err instanceof Error ? err.message : String(err)}`, 'bad')
+        } finally {
+          undoBtn.disabled = false
+        }
+      })
+
+      boot().catch((err) => {
+        setStatus(`✗ 读数据失败：${err instanceof Error ? err.message : String(err)}`, 'bad')
+      })
+    </script>
+  </body>
+</html>
