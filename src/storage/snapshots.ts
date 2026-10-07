@@ -40,7 +40,22 @@ function minuteBucket(iso: string): string {
 export async function listSnapshots(): Promise<SnapshotMeta[]> {
   const all = await idbGetAll<Snapshot>(STORE_SNAPSHOTS)
   return all
-    .map(({ id, at, reason, itemCount }): SnapshotMeta => ({ id, at, reason, itemCount }))
+    .map(({ id, at, reason, itemCount, data }): SnapshotMeta => ({
+      id,
+      at,
+      reason,
+      /*
+       * 物品数**以 data 为准**，存的那份只是缓存。
+       *
+       * 为什么不信缓存：这个数字是用户决定「回退到哪一份」时唯一的依据
+       * （issue 16：「设置里的快照显示的物品数量有误，我点击回退后发现
+       * 物品数量跟上面显示的不一样」）。一个和内容对不上的数字，
+       * 会让他在最需要判断的那一刻判断错。
+       *
+       * 老快照（或者被手工改过的备份）里可能没有 data.items —— 那就只能退回缓存值。
+       */
+      itemCount: Array.isArray(data?.items) ? data.items.length : itemCount,
+    }))
     .sort((a, b) => b.at.localeCompare(a.at))
 }
 
@@ -78,7 +93,12 @@ export async function createSnapshot(
     id: uid(),
     at,
     reason,
-    itemCount: data.items.length,
+    /*
+     * 数一遍再写。**不要在调用方那边算、然后传进来** ——
+     * 传进来的东西迟早会和 data 对不上，而这个数字是用户判断回退目标
+     * 时唯一的依据（见 listSnapshots 里那段说明）。
+     */
+    itemCount: Array.isArray(data.items) ? data.items.length : 0,
     data,
   }
 

@@ -49,6 +49,15 @@ export const settings = {
   importDescSnapshotNote:
     'Either way, a snapshot of your current data is saved automatically before the import.',
   chooseFile: 'Choose file',
+  /*
+   * Drag-and-drop import.
+   *
+   * "onto this page" rather than "into the box": the whole page really is a
+   * drop target, so there is no aim required and nothing to explain about
+   * missing the box.
+   */
+  importDropIdle: 'You can also drag a .json or .csv file straight onto this page — no need to click the button first.',
+  importDropActive: 'Let go to start the import',
 
   /* Toasts after an export / import finishes */
   exportedToast: 'Exported {filename}',
@@ -118,6 +127,52 @@ export const settings = {
   deleteSnapshotTitle: 'Delete this snapshot',
   /* A failed read MUST be reported — "No snapshots yet" would be a lie */
   snapshotsReadFailed: 'Could not read the snapshot list: {message}',
+
+  /* ---------------- Snapshot comparison ---------------- */
+  compareAction: 'Compare',
+  compareTwoAction: 'Compare two snapshots',
+  compareWithCurrentTitle: 'What this snapshot differs from your current data by',
+  compareTitle: 'Snapshot comparison',
+  compareLead:
+    'Here is exactly how the two differ — you decide which one to roll back to. Nothing is changed here.',
+  compareOlder: 'Older: ',
+  compareNewer: '　Newer: ',
+  compareCurrent: 'current data',
+  compareMissing: 'One of the snapshots could not be read (it may have been deleted).',
+  compareUnits: 'Total units',
+  compareBreakdown: 'Breakdown',
+  compareAddedCount: '{count} added',
+  compareRemovedCount: '{count} gone',
+  compareChangedCount: '{count} changed',
+  compareSameCount: '{count} unchanged',
+  compareIdentical:
+    'The two are identical — rolling back to either one makes no difference, so there is nothing to agonise over.',
+  compareRemovedTitle_one: 'Rolling back would LOSE this {count} item (you have it now, the old one did not)',
+  compareRemovedTitle_other:
+    'Rolling back would LOSE these {count} items (you have them now, the old one did not)',
+  compareAddedTitle_one: '{count} item exists only on this side',
+  compareAddedTitle_other: '{count} items exist only on this side',
+  compareChangedTitle_one: 'This {count} item differs',
+  compareChangedTitle_other: 'These {count} items differ',
+  compareStructure: 'Categories / places / fields / tags / collections / lists added or removed',
+  compareConflictsLead: '',
+  compareConflictsTail:
+    ' look like the same thing by name but are two separate records — maybe a duplicate, maybe you really own two. The program will not decide that for you; here they are side by side:',
+  compareConflictLeft: 'this side: ',
+  compareConflictRight: 'that side: ',
+
+  /* ---------------- Merge preview ---------------- */
+  mergeDiffTitle: 'Merge preview: what will happen',
+  /* Split in three so the middle can be bold in JSX — t() does not do markdown */
+  mergeDiffLead: 'This is the difference before and after merging — a merge ',
+  mergeDiffLeadStrong: 'only adds',
+  mergeDiffLeadTail:
+    '; it never deletes anything of yours. Nothing is written until you confirm.',
+  mergeDiffBefore: 'your data now',
+  mergeDiffAfter: 'after merging',
+  mergeDiffConfirm: 'Merge now',
+  reportRemovedLabel: 'Things lost',
+  reportRemovedNone: 'None — merging only ever adds or updates, it never deletes',
 
   /* ---------------- Data health check ---------------- */
   diagnoseTitle: 'Data health check',

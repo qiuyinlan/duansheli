@@ -45,6 +45,14 @@ export const settings = {
   importDescMergeRest: '把备份和当前数据合起来（手机和电脑各录了一半时用这个）。',
   importDescSnapshotNote: '无论选哪种，导入前都会自动为当前数据存一份快照。',
   chooseFile: '选择文件',
+  /*
+   * 拖放导入。
+   *
+   * 写「拖进这个页面」而不是「拖到框里」：落点确实是整页 ——
+   * 少一层「必须瞄准哪个框」的心理负担，也不用解释拖歪了会怎样。
+   */
+  importDropIdle: '也可以把 .json / .csv 文件直接拖进这个页面，不用先点按钮。',
+  importDropActive: '松开，开始导入',
 
   /* 导出 / 导入完成后的小提示 */
   exportedToast: '已导出 {filename}',
@@ -109,6 +117,55 @@ export const settings = {
   deleteSnapshotTitle: '删除这份快照',
   /* 读快照列表失败时**必须**说出来 —— 显示「还没有快照」是在骗人 */
   snapshotsReadFailed: '快照列表读不出来：{message}',
+
+  /*
+   * ---------------- 快照对比（issue 15） ----------------
+   *
+   * 用户的原话：「现在不是有很多快照吗？我希望可以就是我选择两个快照，
+   * 然后帮我对比一下这两个快照的差别是什么，不然这样我不知道到底要恢复哪个快照。」
+   *
+   * 所以这个面板**只摆事实、不给建议** —— 哪一份是他要的，只有他自己知道。
+   */
+  compareAction: '对比',
+  compareTwoAction: '对比两份快照',
+  compareWithCurrentTitle: '这份快照和现在的数据差什么',
+  compareTitle: '快照对比',
+  compareLead: '把两份数据的差别摆出来 —— 你自己决定回退哪一份。这里不会改动任何东西。',
+  compareOlder: '旧：',
+  compareNewer: '　新：',
+  compareCurrent: '现在的数据',
+  compareMissing: '其中一份快照读不出来了（可能已经被删掉）。',
+  compareUnits: '件数合计',
+  compareBreakdown: '明细',
+  compareAddedCount: '新增 {count}',
+  compareRemovedCount: '减少 {count}',
+  compareChangedCount: '改动 {count}',
+  compareSameCount: '未变 {count}',
+  compareIdentical: '两份数据内容完全一致 —— 回退哪一份都一样，不用纠结。',
+  compareRemovedTitle_one: '回退过去会少这 {count} 件（现在有、旧的没有）',
+  compareRemovedTitle_other: '回退过去会少这 {count} 件（现在有、旧的没有）',
+  compareAddedTitle_one: '{count} 件是这一边多出来的',
+  compareAddedTitle_other: '{count} 件是这一边多出来的',
+  compareChangedTitle_one: '这 {count} 件内容不一样',
+  compareChangedTitle_other: '这 {count} 件内容不一样',
+  compareStructure: '分类 / 位置 / 属性 / 标签 / 活动 / 清单的增删',
+  compareConflictsLead: '有 ',
+  compareConflictsTail:
+    ' 条是「名字一样、但两条各有各的记录」—— 可能是同一件东西重复了，也可能你真的有两个。程序不替你判断，你自己看：',
+  compareConflictLeft: '这一边：',
+  compareConflictRight: '那一边：',
+
+  /* ---------------- 合并预览（issue 14） ---------------- */
+  mergeDiffTitle: '合并预览：会发生什么',
+  /* 中间那句要加粗，所以拆成三段在 JSX 里包 <strong> —— t() 不认 markdown */
+  mergeDiffLead: '这是合并前后的差别 —— 合并',
+  mergeDiffLeadStrong: '只做加法',
+  mergeDiffLeadTail: '，不会删掉你任何东西。确认之后才真的写进去。',
+  mergeDiffBefore: '现在的数据',
+  mergeDiffAfter: '合并后的样子',
+  mergeDiffConfirm: '确认合并',
+  reportRemovedLabel: '少了的东西',
+  reportRemovedNone: '一件都没有 —— 合并只会增加或更新，不会删除',
 
   /* ---------------- 数据体检 ---------------- */
   diagnoseTitle: '数据体检',

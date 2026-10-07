@@ -8,6 +8,7 @@ import {
   IconUpload,
 } from '../components/ui/icons'
 import { Button, ConfirmDialog, Modal, Switch } from '../components/ui/primitives'
+import { SnapshotCompareDialog } from '../components/SnapshotCompareDialog'
 import { exportCsv } from '../data/exportCsv'
 import { exportJson } from '../data/exportJson'
 import { parseExportFile } from '../data/validate'
@@ -15,6 +16,7 @@ import { looksLikeCsv, parseCsvToAppData } from '../data/csvImport'
 import { useT } from '../i18n'
 import { formatBytes, readFileAsText } from '../lib/download'
 import { formatDateTime, formatRelative } from '../lib/format'
+import { mergeAppData } from '../data/importData'
 import { estimateUsage } from '../storage/idb'
 import { diagnoseLocalData, type LocalDiagnosis } from '../storage/diagnose'
 import {
@@ -270,14 +272,49 @@ export function Settings() {
   const [importReport, setImportReport] = useState<ImportReport | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
+  /**
+   * 合并前的差异预览（issue 14）。
+   *
+   * 用户的原话：「在选择文件合并的时候要清楚的展示哪些有冲突或者说展现出
+   * 新合并的东西是什么，我发现合并反而会让总东西变少，这是一个bug。」
+   *
+   * 以前唯一的做法是**先合并、再看报告** —— 而报告只有三个数字
+   * （新增 / 更新 / 未变），看不出具体是哪些东西、更看不出「有没有变少」。
+   * 现在合并前先算一份差异摆出来，点确认才真的写。
+   */
+  const [mergePreview, setMergePreview] = useState<{
+    incoming: AppData
+    merged: AppData
+  } | null>(null)
 
   const [restoreTarget, setRestoreTarget] = useState<SnapshotMeta | null>(null)
+  /*
+   * 快照对比（issue 15）。
+   *
+   * `leftId` 是旧的那份、`rightId` 是新的那份（'current' = 现在的数据）。
+   * 默认是「最新一份快照 ↔ 现在」，因为那正是最常见的疑问：
+   * 「刚才那步到底改了什么，我要不要回退？」
+   */
+  const [compare, setCompare] = useState<{ leftId: string; rightId: string } | null>(null)
   const [confirmResetSeed, setConfirmResetSeed] = useState(false)
   const [confirmClearAll, setConfirmClearAll] = useState(false)
   const [confirmPurgeAll, setConfirmPurgeAll] = useState(false)
   const [purgeTarget, setPurgeTarget] = useState<string | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  /** 有文件正拖在这一页上方：拖放区亮起来，给一句「松开就导入」 */
+  const [fileDragActive, setFileDragActive] = useState(false)
+  /*
+   * 拖拽经过时 dragover 是**一直在发**的，所以得挡住重复的 setState ——
+   * 否则整张设置页会跟着每一帧重渲染一次。ref 记住当前值，一样就不 setState。
+   */
+  const fileDragRef = useRef(false)
+  const markFileDrag = useCallback((active: boolean) => {
+    if (fileDragRef.current === active) return
+    fileDragRef.current = active
+    setFileDragActive(active)
+  }, [])
 
   const refresh = useCallback(async () => {
     try {
@@ -333,57 +370,107 @@ export function Settings() {
     notify(t('settings.exportedCsvToast', { filename }), 'success')
   }
 
-  const handleFile = async (file: File) => {
-    try {
-      const text = await readFileAsText(file)
+  const handleFile = useCallback(
+    async (file: File) => {
+      try {
+        const text = await readFileAsText(file)
 
-      /*
-       * CSV 也走这里。
-       *
-       * 不是按扩展名分叉，而是先看内容像不像 JSON ——
-       * 文件名不可信（有人会把 csv 改名成 json，也有人反过来），
-       * 而内容骗不了人。CSV 那条路会被转成一份标准 AppData，
-       * 于是下面的预览、覆盖/合并、快照、报告全都照旧复用。
-       */
-      if (looksLikeCsv(text)) {
-        const csv = parseCsvToAppData(text)
-        if (!csv.ok) {
-          setImportError(csv.error)
+        /*
+         * CSV 也走这里。
+         *
+         * 不是按扩展名分叉，而是先看内容像不像 JSON ——
+         * 文件名不可信（有人会把 csv 改名成 json，也有人反过来），
+         * 而内容骗不了人。CSV 那条路会被转成一份标准 AppData，
+         * 于是下面的预览、覆盖/合并、快照、报告全都照旧复用。
+         */
+        if (looksLikeCsv(text)) {
+          const csv = parseCsvToAppData(text)
+          if (!csv.ok) {
+            setImportError(csv.error)
+            return
+          }
+          setImportStrategy('replace')
+          setImportPreview({
+            fileName: file.name,
+            data: csv.data,
+            warnings: csv.warnings,
+            exportedAt: csv.exportedAt,
+            // 让预览里能明确写出「这是从 CSV 恢复的、不完整」
+            fromCsv: true,
+          })
+          return
+        }
+
+        const result = parseExportFile(text)
+        if (!result.ok) {
+          // JSON 没解析成功、但看着像 CSV 时，给一句更对症的话
+          setImportError(
+            file.name.toLowerCase().endsWith('.csv')
+              ? t('settings.importCsvFailed')
+              : result.error,
+          )
           return
         }
         setImportStrategy('replace')
         setImportPreview({
           fileName: file.name,
-          data: csv.data,
-          warnings: csv.warnings,
-          exportedAt: csv.exportedAt,
-          // 让预览里能明确写出「这是从 CSV 恢复的、不完整」
-          fromCsv: true,
+          data: result.data,
+          warnings: result.warnings,
+          exportedAt: result.exportedAt,
         })
-        return
+      } catch (err) {
+        setImportError(err instanceof Error ? err.message : String(err))
       }
+    },
+    // 报错文案要跟着语言走，所以 handleFile 也会随语言重建
+    [t],
+  )
 
-      const result = parseExportFile(text)
-      if (!result.ok) {
-        // JSON 没解析成功、但看着像 CSV 时，给一句更对症的话
-        setImportError(
-          file.name.toLowerCase().endsWith('.csv')
-            ? t('settings.importCsvFailed')
-            : result.error,
-        )
-        return
-      }
-      setImportStrategy('replace')
-      setImportPreview({
-        fileName: file.name,
-        data: result.data,
-        warnings: result.warnings,
-        exportedAt: result.exportedAt,
-      })
-    } catch (err) {
-      setImportError(err instanceof Error ? err.message : String(err))
+  /*
+   * 把文件拖进来就导入。
+   *
+   * 监听挂在 **window** 上，而不是只挂在那个虚线框上，两个理由：
+   *   1. 设置页很长，框不一定在视野里 —— 想拖的人不该先去找它；
+   *   2. 更要紧的是，**不接住这个事件，浏览器会把 .json 当成一个页面直接打开**，
+   *      整个应用被顶掉。那比「没导入成功」难受得多，而躲是躲不开的。
+   *
+   * 整页都是落点会不会误事？不会：拖进来的文件照样先过 handleFile 的校验，
+   * 再走「确认导入」那一步才可能写数据 —— 落错地方顶多多弹一个预览框。
+   */
+  useEffect(() => {
+    const isFileDrag = (dt: DataTransfer | null) =>
+      dt !== null && Array.from(dt.types).includes('Files')
+
+    const onDragOver = (e: DragEvent) => {
+      if (!isFileDrag(e.dataTransfer)) return
+      // 不 preventDefault 就是「这里不放」，浏览器会画个禁止符号
+      e.preventDefault()
+      markFileDrag(true)
     }
-  }
+
+    // 拖出窗口（relatedTarget 为 null）才收掉高亮；在页面里挪动时不算离开
+    const onDragLeave = (e: DragEvent) => {
+      if (e.relatedTarget === null) markFileDrag(false)
+    }
+
+    const onDrop = (e: DragEvent) => {
+      if (!isFileDrag(e.dataTransfer)) return
+      e.preventDefault()
+      markFileDrag(false)
+      const files = e.dataTransfer?.files
+      const file = files && files.length > 0 ? files[0] : null
+      if (file) void handleFile(file)
+    }
+
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('dragleave', onDragLeave)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [handleFile, markFileDrag])
 
   const doImport = async () => {
     if (!importPreview) return
@@ -392,12 +479,37 @@ export function Settings() {
       if (importStrategy === 'replace') {
         await replaceAll(importPreview.data, 'import')
         notify(tc(importPreview.data.items.length, 'settings.importReplaceDone'), 'success')
-      } else {
-        const report = await mergeAll(importPreview.data)
-        setImportReport(report)
-        notify(t('settings.reportTitle'), 'success')
+        setImportPreview(null)
+        setRefreshKey((k) => k + 1)
+        return
       }
+
+      /*
+       * 合并：**先算一份差异给用户看，点确认才真的写**（issue 14）。
+       *
+       * 这里用 mergeAppData 纯函数先算一遍（它不改任何东西），
+       * 把「合并到底会发生什么」摆在对话框里。用户确认之后才调 mergeAll。
+       * 算两遍的代价可以忽略 —— 相对于「合错了要回退」，这很便宜。
+       */
+      setMergePreview({ incoming: importPreview.data, merged: mergeAppData(data, importPreview.data).data })
       setImportPreview(null)
+    } catch (err) {
+      notify(err instanceof Error ? err.message : t('settings.importFailedToast'), 'error')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  /** 用户看完了合并预览、点了确认 —— 这一步才真的写 */
+  const confirmMerge = async () => {
+    if (!mergePreview) return
+    const incoming = mergePreview.incoming
+    setMergePreview(null)
+    setImporting(true)
+    try {
+      const report = await mergeAll(incoming)
+      setImportReport(report)
+      notify(t('settings.reportTitle'), 'success')
       setRefreshKey((k) => k + 1)
     } catch (err) {
       notify(err instanceof Error ? err.message : t('settings.importFailedToast'), 'error')
@@ -466,36 +578,49 @@ export function Settings() {
               </div>
             </div>
 
-            <div className="action-row">
-              <div className="action-row__text">
-                <div className="action-row__title">{t('settings.importTitle')}</div>
-                <div className="action-row__desc">
-                  {t('settings.importDescLead')}
-                  <strong>{t('settings.overwriteStrong')}</strong>{' '}
-                  {t('settings.importDescReplaceRest')}{' '}
-                  <strong>{t('settings.mergeStrong')}</strong>{' '}
-                  {t('settings.importDescMergeRest')}
-                  <br />
-                  {t('settings.importDescSnapshotNote')}
+            {/*
+              导入这一块整体是个拖放区，而且**整页都是落点** ——
+              落在哪儿都算，不必瞄准这个框（见组件顶部挂在 window 上的那几个监听）。
+              框和那句提示只是用来告诉人「这儿能拖」。
+              「选择文件」按钮保留着，是给键盘和不想拖的人留的路。
+            */}
+            <div className={`dropzone${fileDragActive ? ' is-over' : ''}`}>
+              <div className="action-row">
+                <div className="action-row__text">
+                  <div className="action-row__title">{t('settings.importTitle')}</div>
+                  <div className="action-row__desc">
+                    {t('settings.importDescLead')}
+                    <strong>{t('settings.overwriteStrong')}</strong>{' '}
+                    {t('settings.importDescReplaceRest')}{' '}
+                    <strong>{t('settings.mergeStrong')}</strong>{' '}
+                    {t('settings.importDescMergeRest')}
+                    <br />
+                    {t('settings.importDescSnapshotNote')}
+                  </div>
+                  <div className="dropzone__hint">
+                    {fileDragActive
+                      ? t('settings.importDropActive')
+                      : t('settings.importDropIdle')}
+                  </div>
                 </div>
-              </div>
-              <div className="action-row__buttons">
-                <Button onClick={() => fileInputRef.current?.click()}>
-                  <IconUpload size={14} />
-                  {t('settings.chooseFile')}
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".json,.csv,application/json,text/csv"
-                  className="sr-only"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0]
-                    // 清空 value，这样连续选择同一个文件也能再次触发
-                    e.target.value = ''
-                    if (file) void handleFile(file)
-                  }}
-                />
+                <div className="action-row__buttons">
+                  <Button onClick={() => fileInputRef.current?.click()}>
+                    <IconUpload size={14} />
+                    {t('settings.chooseFile')}
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json,.csv,application/json,text/csv"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      // 清空 value，这样连续选择同一个文件也能再次触发
+                      e.target.value = ''
+                      if (file) void handleFile(file)
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -651,6 +776,23 @@ export function Settings() {
             <div className="row-between wrap">
               <span className="tiny dim">{tc(snapshots.length, 'settings.snapshotsTotal')}</span>
               <div className="row">
+                {/*
+                  任选两份对比（issue 15）。
+                  上面每行那个「对比」按钮是「这份 ↔ 现在」，这里两个下拉
+                  覆盖「两份老快照互相比」—— 两种问题都要能回答。
+                */}
+                <Button
+                  size="sm"
+                  disabled={snapshots.length < 2}
+                  onClick={() => {
+                    const newer = snapshots[0]
+                    const older = snapshots[1]
+                    if (!newer || !older) return
+                    setCompare({ leftId: older.id, rightId: newer.id })
+                  }}
+                >
+                  {t('settings.compareTwoAction')}
+                </Button>
                 <Button
                   size="sm"
                   onClick={() => {
@@ -695,6 +837,18 @@ export function Settings() {
                     <Button size="sm" onClick={() => setRestoreTarget(snap)}>
                       <IconUndo size={12} />
                       {t('settings.restoreAction')}
+                    </Button>
+                    {/*
+                      对比（issue 15）：光看时间和物品数决定不了回退到哪一份，
+                      得看见「里面差了什么」。
+                    */}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title={t('settings.compareWithCurrentTitle')}
+                      onClick={() => setCompare({ leftId: snap.id, rightId: 'current' })}
+                    >
+                      {t('settings.compareAction')}
                     </Button>
                     <Button
                       size="sm"
@@ -768,6 +922,12 @@ export function Settings() {
                       >
                         {t('settings.restoreItemAction')}
                       </Button>
+                      {/*
+                        回收站里的东西**已经在**回收站了，所以这里不再放
+                        「舍弃」按钮 —— 那是别处那些页面的动作（放进去之前
+                        先让人勾一遍，issue 3）。这一页剩两件事：恢复，或者
+                        彻底删掉（那条不可撤销，所以保留单独的确认框）。
+                      */}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -823,6 +983,57 @@ export function Settings() {
       <div className="row" style={{ marginTop: 'var(--gap-5)' }}>
         <span className="tiny dim">{t('settings.footerNote')}</span>
       </div>
+
+      {/* ================= 合并预览（issue 14） ================= */}
+      {/*
+        合并之前先把「会发生什么」摆出来 —— 新增了哪些、改动了哪些、
+        有哪几件内容冲突（同一件东西两边不一样）。点确认才真的写。
+      */}
+      {mergePreview ? (
+        <SnapshotCompareDialog
+          open
+          onClose={() => setMergePreview(null)}
+          snapshots={[]}
+          current={data}
+          leftId="current"
+          rightId="merge"
+          leftData={data}
+          rightData={mergePreview.merged}
+          leftLabel={t('settings.mergeDiffBefore')}
+          rightLabel={t('settings.mergeDiffAfter')}
+          title={t('settings.mergeDiffTitle')}
+          lead={
+            <>
+              {t('settings.mergeDiffLead')}
+              <strong>{t('settings.mergeDiffLeadStrong')}</strong>
+              {t('settings.mergeDiffLeadTail')}
+            </>
+          }
+          footer={
+            <>
+              <Button onClick={() => setMergePreview(null)} disabled={importing}>
+                {t('common.cancel')}
+              </Button>
+              <Button variant="primary" onClick={() => void confirmMerge()} disabled={importing}>
+                {importing ? t('settings.importing') : t('settings.mergeDiffConfirm')}
+              </Button>
+            </>
+          }
+        />
+      ) : null}
+
+      {/* ================= 快照对比 ================= */}
+      {compare ? (
+        <SnapshotCompareDialog
+          open
+          onClose={() => setCompare(null)}
+          snapshots={snapshots}
+          current={data}
+          leftId={compare.leftId}
+          rightId={compare.rightId}
+          lead={t('settings.compareLead')}
+        />
+      ) : null}
 
       {/* ================= 导入预览 ================= */}
       <Modal
@@ -951,6 +1162,16 @@ export function Settings() {
                   {t('settings.reportUpdated', { count: importReport.items.updated })} ·{' '}
                   {t('settings.reportUnchanged', { count: importReport.items.unchanged })}
                 </span>
+              </div>
+              {/*
+                明说「一件都没少」。
+                用户报过「我发现合并反而会让总东西变少，这是一个bug」——
+                报告里只列「新增/更新/未变」时，他并不知道有没有东西被丢掉。
+                这一行把那个承诺摆出来，而且它背后有测试钉着（removed 恒为 0）。
+              */}
+              <div className="report__row">
+                <span>{t('settings.reportRemovedLabel')}</span>
+                <span>{t('settings.reportRemovedNone')}</span>
               </div>
               <div className="report__row">
                 <span>{t('nav.locations')}</span>

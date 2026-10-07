@@ -330,7 +330,21 @@ export type ImportStrategy = 'replace' | 'merge'
 
 export interface ImportReport {
   strategy: ImportStrategy
-  items: { added: number; updated: number; unchanged: number }
+  items: {
+    added: number
+    updated: number
+    unchanged: number
+    /**
+     * 合并时**永远是 0**。
+     *
+     * 合并的定义就是只做加法 —— 本地有、导入那份没有的东西一律留着
+     * （唯一例外是修悬空引用，那不是删东西）。
+     * 把它放进报告里是为了让界面能明说「不会少任何东西」，也为了让
+     * 测试能直接断言这一条 —— 用户报过「我发现合并反而会让总东西变少，
+     * 这是一个 bug」，这条承诺必须是可验证的。
+     */
+    removed: number
+  }
   categories: { added: number; updated: number }
   locations: { added: number; updated: number; created: number }
   attributeDefs: { added: number; updated: number }

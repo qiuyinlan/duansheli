@@ -360,7 +360,17 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
 
   const report: ImportReport = {
     strategy: 'merge',
-    items: { added, updated, unchanged },
+    /*
+     * `removed: 0` 是**写死的**，不是算出来的。
+     *
+     * 合并的**定义**就是「只做加法」：本地有而导入那份没有的东西一律留着
+     * （唯一例外是引用了不存在的活动时把那个引用摘掉，那是修悬空引用，
+     * 不是删东西）。写死在这里是为了让它能被断言 ——
+     * 「合并之后东西反而变少了」是这个功能最不可接受的失败方式
+     * （用户报过：「我发现合并反而会让总东西变少，这是一个bug」），
+     * 所以这一条要有测试钉住，而不是靠读代码的人相信。
+     */
+    items: { added, updated, unchanged, removed: 0 },
     categories: { added: categoryMerge.added, updated: categoryMerge.matched },
     locations: {
       added: locationMerge.added,
