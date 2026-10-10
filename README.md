@@ -1,4 +1,4 @@
-# 断舍离 · 个人物品整理
+﻿# 断舍离 · 个人物品整理
 
 > 录入你的所有物品，给它们指定位置，按分类随时回看。
 > 目标只有一个：**让你看清自己到底有多少东西，然后扔掉该扔的。**
@@ -55,7 +55,7 @@ npm run dev     # 启动开发服务器，打开提示的地址即可
 ```bash
 npm run build      # 类型检查 + 打包到 dist/
 npm run preview    # 本地预览打包结果
-npm test           # 运行测试（684 项）
+npm test           # 运行测试（699 项）
 npm run typecheck  # 只做类型检查
 npm run audit:i18n # 检查有没有漏翻的中文、两份词典是否对齐
 npm run check      # 上面三样一起跑（提交前跑这个）
@@ -865,13 +865,13 @@ UI 组件全部手写 —— 因为「极简无彩色」的风格自己写反而
 │  ├─ components/                外壳、位置树、物品行、选择器、AI 预览、语言开关、UI 基础件
 │  ├─ pages/                     15 个页面
 │  └─ styles/                    global / layout / components / pages
-└─ tests/                        684 项测试
+└─ tests/                        699 项测试
 ```
 
 ### 测试
 
 ```bash
-npm test            # 684 项
+npm test            # 699 项
 npm run audit:i18n  # 漏翻的中文与词典对齐
 npm run check       # 类型检查 + 上面两样，提交前跑这个
 ```
