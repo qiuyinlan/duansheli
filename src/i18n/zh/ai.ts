@@ -78,6 +78,76 @@ export const ai = {
   placeholderWithDraft: '继续说（右边草稿 {count} 条）。Enter 发送，Shift+Enter 换行',
   send: '发送',
 
+  /*
+   * ---- 输入框旁边的快捷指令 ----
+   *
+   * 按钮的字和插进输入框的字**是同一句**，而且都存在 src/ai/commandVocab.ts 里
+   * （那里是「要被模型认出来的输入词汇」）—— 所以这里只有周围那些说明文字。
+   */
+  chipsLabel: '快捷指令',
+  chipsHint: '点一下就插在光标处，不会覆盖你已经写的东西',
+
+  /* ---- 槽位补全弹层 ---- */
+  slotLocationTitle: '选择位置',
+  slotCategoryTitle: '选择分类',
+  slotQuantityTitle: '几件',
+  slotExpiryTitle: '什么时候过期',
+  slotEmpty: '库里没有对得上的，接着打或者换几个字',
+  slotPrefixUnknown: '「/」前面那几段在库里对不上，下面按末级名字找',
+  slotDeeperHint: '底下还有层级 —— 选中它就能接着往下钻',
+  slotNowAt: '已经到「{path}」这一级了，下面这几层可以直接选',
+  slotLevelHint: '库里还没有这几层 —— 选中哪一层，收下并采纳时就把那一层建出来',
+  slotWillCreateLocation: '库里没有这一条 —— 这么写会被当成新位置（采纳时要勾一下）',
+  slotWillCreateCategory: '库里没有这一条 —— 这么写会被当成新分类（采纳时要勾一下）',
+  slotKeyboardHint: '↑↓ 选 · Enter 选中 · Esc 关掉',
+
+  /*
+   * ---- 发出前预检 ----
+   *
+   * 这一行是**拿你库里的东西对一遍**，用的就是程序真正在用的那套匹配规则，
+   * 所以它说的「对得上」和采纳时会发生的事是一致的。
+   */
+  checkLead: '预检：',
+  checkItems_one: '看到 {count} 处「新建物品」',
+  checkItems_other: '看到 {count} 处「新建物品」',
+  checkJoin: ' · ',
+  checkPlaceOk: '位置「{path}」✓',
+  /*
+   * 「没完全对上、但库里有一条很近的」这一档是用户实测报回来的。
+   *
+   * 他打「蓝柜」、库里那条叫「蓝色柜」：程序的三级降级确实对不上，
+   * 可模型会拿它当「蓝色柜」处理，结果是对的 —— 而原来那行黄字说
+   * 「库里没有，会被当成新位置」，成了假警报。假警报比不提示更糟：
+   * 用户会开始不信这一行。所以这一档照实说两边，并让他看一眼草稿。
+   */
+  checkPlaceNear:
+    '位置「{query}」没完全对上库里任何一条；最接近的是「{path}」—— 模型多半按它处理，落上没落上看一眼右边草稿（没落上就会被当成新位置）',
+  checkPlaceNew: '位置「{query}」库里没有，会被当成新位置（采纳时要勾一下）',
+  checkCategoryOk: '分类「{path}」✓',
+  checkCategoryNear:
+    '分类「{query}」没完全对上库里任何一条；最接近的是「{path}」—— 模型多半按它处理，落上没落上看一眼右边草稿',
+  checkCategoryNew: '分类「{query}」库里没有，会被当成新分类（采纳时要勾一下）',
+  checkOrphanNewPlace: '「新建位置」得有一件东西「放在」它里面才建得出来',
+  checkFootnote: '这一行只是拿你库里的位置和分类对一下，不拦你发送',
+
+  /* ---- 速录面板（一行一件） ---- */
+  quickToggle: '速录',
+  quickTitle: '速录：一行一件',
+  quickHint:
+    '填完点「生成到输入框」—— 它只是把话写好放进左边的对话框，不会直接写进数据库。你还是先过一眼、再发送、再采纳。',
+  quickName: '名称',
+  quickLocation: '位置',
+  quickCategory: '分类',
+  quickExpiry: '过期',
+  quickStatus: '状态',
+  quickAddRow: '加一行',
+  quickRemoveAria: '删掉第 {index} 行',
+  quickGenerate: '生成到输入框',
+  quickClear: '清空',
+  quickDatePlaceholder: '2026-11-30',
+  quickGenerated_one: '已把 {count} 条写进输入框，检查一下再发送',
+  quickGenerated_other: '已把 {count} 条写进输入框，检查一下再发送',
+
   resetTitle: '重新开一个对话？',
   resetConfirm: '开始新对话',
   resetCancel: '继续当前对话',
@@ -292,8 +362,40 @@ export const ai = {
   categoryChangesUnread:
     'AI 这一轮说了要改分类（{count} 处），但我没读懂它给的格式，所以一处都没执行。换个说法再说一次通常就好了。',
 
-  catAccept: '采纳分类改动',
-  catDone: '已',
+  /*
+   * ---- AI 新建位置 ----
+   *
+   * 用户的原话：「在 左边小小型一号白色四层收纳/顶层，新建这个位置」+
+   * 「需要可以新建位置」。以前位置只能跟着物品一起产生，而他的用法是
+   * 先把架子搭好、再往格子里放东西 —— 那条限制对他是挡路的。
+   *
+   * 说辞的重点是**把要建的每一级都摆出来**：他写的是路径，中间缺的那几级
+   * 会一起建出来，那件事必须看得见（位置是结构，多出几级得一眼看到）。
+   */
+  locLead: 'AI 想新建 ',
+  locLeadTail: ' 个位置（取消勾选就不建）：',
+  locKindCreate: '新建',
+  locFromNew: '（新位置）',
+  locAlsoLevels_one: '（顺带把中间那 {count} 级也建出来）',
+  locAlsoLevels_other: '（顺带把中间那 {count} 级也建出来）',
+  locOnlyItself: '（只建它自己这一级）',
+  locNoteDuplicate: '库里已经有这个位置了，不用建',
+  locProblemsLead: '其中有 ',
+  locProblemsTail: ' 个不用做 —— 它们本来就存在，不是出错。',
+  locIncludeAria: '是否新建位置「{name}」',
+  locWillApply_one: '将新建 {count} 个位置',
+  locWillApply_other: '将新建 {count} 个位置',
+  locNothingApply: '没有要新建的位置',
+  locAccept: '采纳新建的位置',
+  locDone: '已',
+  locResultCreated_one: '新建 {count} 个位置',
+  locResultCreated_other: '新建 {count} 个位置',
+  locResultNothing: '没有新建任何位置',
+  /* AI 说了要建位置，但一条都没解析出来 —— 必须说出来，不许静默丢掉 */
+  locationChangesUnread:
+    'AI 这一轮说了要新建位置（{count} 处），但我没读懂它给的格式，所以一个都没建。换个说法再说一次通常就好了。',
+
+  catAccept: '采纳分类改动',  catDone: '已',
   catResultCreated_one: '新建 {count} 个分类',
   catResultCreated_other: '新建 {count} 个分类',
   catResultRenamed_one: '改名 {count} 个',

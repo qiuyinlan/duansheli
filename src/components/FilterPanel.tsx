@@ -10,6 +10,7 @@ import {
   statusLabel,
 } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
+import { compareTreeNodes } from '../lib/tree'
 import { TreeView } from './TreeView'
 import { Button, Modal, Switch } from './ui/primitives'
 import type { DictKey } from '../i18n'
@@ -411,10 +412,8 @@ export function FilterPanel({ open, onClose, filter, onApply, ctx, counts }: Fil
 
 function useAppStoreCategories() {
   const categories = useAppStore((s) => s.data.categories)
-  return useMemo(
-    () => [...categories].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'zh-CN')),
-    [categories],
-  )
+  /* 顺序用树上那一套（编号兄弟按数字排）—— 同一个分类在哪一页都该在同一个位置 */
+  return useMemo(() => [...categories].sort(compareTreeNodes), [categories])
 }
 
 function useAppStoreAttributeDefs() {

@@ -9,6 +9,29 @@ export const locations = {
   subtitle_one: '共 {count} 个位置，层级不限，想加多深都行',
   subtitle_other: '共 {count} 个位置，层级不限，想加多深都行',
   newTop: '新建位置',
+  /*
+   * 搜索 + 展开控制。
+   * 用户的原话：「这么多折叠层级，怎么看最清晰呢」——
+   * 层级一深，最有效的一招是**直接跳到某个位置**，而不是让眼睛顺着一棵树爬。
+   */
+  searchPlaceholder: '搜位置（打「顶层」就能找到）',
+  searchAria: '搜索位置',
+  searchFound_one: '找到 {count} 个位置（浅色的是它在哪一层）',
+  searchFound_other: '找到 {count} 个位置（浅色的是它在哪一层）',
+  searchNone: '没有匹配的位置',
+  expandHint: '默认只展开顶层 —— 想一次看全就点「全部展开」',
+  expandAll: '全部展开',
+  collapseAll: '全部折叠',
+  /*
+   * 「名字里写着几层」时才出现的那一项。
+   *
+   * 位置是结构：一口气多出四个位置，得是用户看得见、点得掉的一步 ——
+   * 所以它是一个默认勾上、但摆在眼前的开关，而不是默默建出来的。
+   */
+  alsoLevels: '同时把 {count} 层都建好',
+  alsoLevelsHint:
+    '你起的名字里写着「{count} 层」。一起建好的话，之后往里放东西就不用再新建了；不想建就把这个勾去掉。',
+  addWithLevelsDone: '已新建位置「{name}」和它下面的 {count} 层',
 
   /* 空状态 */
   empty: '还没有创建任何位置',

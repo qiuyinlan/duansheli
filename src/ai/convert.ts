@@ -112,8 +112,12 @@ function buildCollectionMatcher(data: AppData): Map<string, string> {
  * 悄悄挪到储物间去。宁可标成新建让你自己决定，也不要猜。
  *
  * 第 2 条之所以敢做，是因为它要求「唯一」：有歧义的一律不猜。
+ *
+ * 导出给 src/ai/commands.ts 的「发出前体检」用：输入框下面那行提示说的
+ * 「对得上 / 会被当成新位置」必须和这里**同一把尺子** ——
+ * 界面说的和真正发生的不一样，比不说还糟。
  */
-function matchPath(path: string[], matcher: PathMatcher): string | null {
+export function matchPath(path: string[], matcher: PathMatcher): string | null {
   // 跟 buildPathMatcher 用同一套归一化，否则「 衣物 」这种带空格的就对不上
   const normalized = path.map(norm).filter((part) => part !== '')
   if (normalized.length === 0) return null

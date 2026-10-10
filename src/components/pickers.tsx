@@ -4,11 +4,72 @@ import { UNASSIGNED_ID } from '../types'
 import type { DerivedContext } from '../store/selectors'
 import { countByCategoryIncludingDescendants, liveItems } from '../store/selectors'
 import { expandAncestorsOf, filterTreeByIds, searchTreeIds } from '../lib/tree'
+import { pinnedNodes, togglePinned } from '../lib/pins'
 import { useAppStore } from '../store/useAppStore'
 import { useT } from '../i18n'
 import { TreeView } from './TreeView'
-import { IconClose, IconPlus, IconSuitcase } from './ui/icons'
-import { Button, Modal, SearchInput } from './ui/primitives'
+import { IconClose, IconPlus, IconStar, IconSuitcase } from './ui/icons'
+import { Button, Modal, PinButton, SearchInput } from './ui/primitives'
+
+/* ------------------------------------------------------------------ */
+/* 「置顶」那一小块                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 弹窗顶上那一块「置顶」。
+ *
+ * ── 为什么要有它，而不是只把置顶的排到树的最前面 ──────────────────
+ * 位置和分类都是**树**：把一条挪到最前面，就等于把它从它的父子关系里
+ * 拎出来（「衣柜 / 2层」跑到根上，看着像顶层位置）。所以树本身不动，
+ * 置顶的那几条另外摆一块 —— 每条都写着**完整路径**，
+ * 点一下就能选中，不用先一层层展开去找。
+ *
+ * 点它的行为和点树里那一行**完全一样**（由调用方决定是选中还是切换勾选），
+ * 星星则是取消置顶。
+ */
+function PinnedBlock({
+  nodes,
+  pathOf,
+  isActive,
+  onPick,
+  onUnpin,
+}: {
+  nodes: Array<{ id: string; name: string }>
+  pathOf: (id: string) => string
+  isActive: (id: string) => boolean
+  onPick: (id: string) => void
+  onUnpin: (id: string) => void
+}) {
+  const { t } = useT()
+  if (nodes.length === 0) return null
+
+  return (
+    <div className="picker-pinned">
+      <div className="picker-pinned__head tiny">
+        <IconStar size={11} filled />
+        {t('common.pinnedTitle')}
+      </div>
+      <div className="picker-pinned__list">
+        {nodes.map((node) => {
+          const path = pathOf(node.id)
+          return (
+            <div key={node.id} className="picker-pinned__row">
+              <button
+                type="button"
+                className={`tree-node__label grow${isActive(node.id) ? ' is-picked' : ''}`}
+                onClick={() => onPick(node.id)}
+                aria-pressed={isActive(node.id)}
+              >
+                <span className="truncate">{path === '' ? node.name : path}</span>
+              </button>
+              <PinButton pinned name={path === '' ? node.name : path} onClick={() => onUnpin(node.id)} />
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 /* ------------------------------------------------------------------ */
 /* 位置选择器                                                          */
@@ -36,6 +97,13 @@ export function LocationPicker({
   const { t, tc } = useT()
   /** 搜索词 —— 位置多了之后，滚动找一层抽屉是很费劲的事（issue 4） */
   const [query, setQuery] = useState('')
+
+  /*
+   * 置顶（星星）。存在界面偏好里、跟着这台设备走 ——
+   * 「我常把东西放在哪个抽屉」是使用习惯，不是数据。
+   */
+  const pinnedLocationIds = useAppStore((s) => s.ui.pinnedLocationIds)
+  const setUi = useAppStore((s) => s.setUi)
 
   // 打开时展开顶层 + 当前选中项的祖先路径，让人一眼看到自己在哪
   const initialExpanded = useMemo(() => {
@@ -65,6 +133,14 @@ export function LocationPicker({
   }, [open, initialExpanded])
 
   const currentPath = value ? ctx.index.pathString(value, ' / ') : t('status.unassigned')
+
+  /** 置顶的那几条（按他点星星的顺序），已经删掉的位置自动跳过 */
+  const pinnedLocations = useMemo(
+    () => pinnedNodes(pinnedLocationIds, [...ctx.index.byId.values()]),
+    [pinnedLocationIds, ctx],
+  )
+  const togglePin = (id: string) =>
+    setUi({ pinnedLocationIds: togglePinned(pinnedLocationIds, id) })
 
   /*
    * 搜索：命中的位置**连同祖先**一起显示（祖先淡一档）。
@@ -115,7 +191,27 @@ export function LocationPicker({
             ? tc(matchedIds.size, 'itemEdit.locationSearchFound')
             : t('itemEdit.locationSearchNone')}
         </div>
-      ) : null}
+      ) : (
+        <>
+          {/* 没在搜索时才摆出来 —— 搜索时用户要的是结果，不是捷径 */}
+          <PinnedBlock
+            nodes={pinnedLocations}
+            pathOf={(id) => ctx.index.pathString(id, ' / ')}
+            isActive={(id) => id === value}
+            onPick={(id) => {
+              onSelect(id)
+              onClose()
+            }}
+            onUnpin={togglePin}
+          />
+          {/* 一次都没置顶过时提一句，怎么用一眼就能看懂；钉了之后就不念了 */}
+          {pinnedLocations.length === 0 ? (
+            <div className="tiny dim" style={{ marginBottom: 'var(--gap-2)' }}>
+              {t('common.pinHint')}
+            </div>
+          ) : null}
+        </>
+      )}
 
       <TreeView
         nodes={view ? view.roots : ctx.tree}
@@ -132,6 +228,8 @@ export function LocationPicker({
         }}
         counts={counts}
         expanded={effectiveExpanded}
+        pinnedIds={new Set(pinnedLocationIds)}
+        onTogglePin={togglePin}
         onToggle={(id) =>
           setExpanded((prev) => {
             const next = new Set(prev)
@@ -179,6 +277,10 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
   const [newName, setNewName] = useState('')
   /** 搜索词 —— 分类多了之后，滚动找一个分类是很费劲的事（issue 4） */
   const [query, setQuery] = useState('')
+
+  /* 置顶（星星），和位置选择器同一套规矩：存界面偏好、跟着这台设备走 */
+  const pinnedCategoryIds = useAppStore((s) => s.ui.pinnedCategoryIds)
+  const setUi = useAppStore((s) => s.setUi)
 
   // 分类树一般不大，打开时全展开
   useEffect(() => {
@@ -230,6 +332,14 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
     )
   }
 
+  /** 置顶的那几个分类（按他点星星的顺序），已经删掉的自动跳过 */
+  const pinnedCategories = useMemo(
+    () => pinnedNodes(pinnedCategoryIds, [...derived.categoryIndex.byId.values()]),
+    [pinnedCategoryIds, derived],
+  )
+  const togglePin = (id: string) =>
+    setUi({ pinnedCategoryIds: togglePinned(pinnedCategoryIds, id) })
+
   const createTopLevel = () => {
     const name = newName.trim()
     if (name === '') return
@@ -277,7 +387,23 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
             ? tc(matchedIds.size, 'itemEdit.categorySearchFound')
             : t('itemEdit.categorySearchNone')}
         </div>
-      ) : null}
+      ) : (
+        <>
+          {/* 置顶的几个分类单独摆一块（点一下 = 勾上 / 取消，和树里那一行一样） */}
+          <PinnedBlock
+            nodes={pinnedCategories}
+            pathOf={(id) => derived.categoryIndex.pathString(id, ' / ')}
+            isActive={(id) => selectedIds.includes(id)}
+            onPick={toggle}
+            onUnpin={togglePin}
+          />
+          {pinnedCategories.length === 0 ? (
+            <div className="tiny dim" style={{ marginBottom: 'var(--gap-2)' }}>
+              {t('common.pinHint')}
+            </div>
+          ) : null}
+        </>
+      )}
 
       <div
         style={{
@@ -305,6 +431,8 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
             })
           }
           dimmedIds={pathOnlyIds}
+          pinnedIds={new Set(pinnedCategoryIds)}
+          onTogglePin={togglePin}
           emptyText={
             searching ? t('itemEdit.categorySearchNone') : t('itemEdit.categoriesEmpty')
           }

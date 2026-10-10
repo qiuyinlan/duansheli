@@ -11,9 +11,54 @@ import type { TreeItem } from '../types'
 /** 任何能构成树的东西：位置、分类，以及将来的其他层级数据 */
 export type { TreeItem }
 
-function compareNodes<T extends TreeItem>(a: T, b: T): number {
+/**
+ * 名字里只有编号不同的兄弟，拆成「前半段 / 编号 / 后半段」。
+ *
+ *   「1层」          → （''、1、'层'）
+ *   「2层」          → （''、2、'层'）
+ *   「第12层抽屉」    → （'第'、12、'层抽屉'）
+ *   「白色三层收纳」  → null（没有阿拉伯数字）
+ *   「2024年账本」    → （''、2024、'年账本'）
+ *
+ * 两半都一样才算「同一个东西的第几号」—— 「1层」和「1楼」不是一回事，
+ * 不该被拿来比数字（那样会得到一个看着有道理其实瞎猜的顺序）。
+ */
+function splitNumbered(name: string): { head: string; num: number; tail: string } | null {
+  const match = /^(.*?)(\d+)(\D*)$/.exec(name.trim())
+  if (match === null) return null
+  return { head: match[1].toLowerCase(), num: Number(match[2]), tail: match[3].toLowerCase() }
+}
+
+/**
+ * 兄弟节点的显示顺序。
+ *
+ * ── 两条规矩，按先后 ────────────────────────────────────────────
+ * 1. **名字里只有编号不同的，按编号排**（1层 < 2层 < 3层 < 10层）。
+ *    这条排在 `order` 前面，是因为 `order` 只是**创建顺序**：
+ *    用户先点了「3层」、后来又补上「2层」，库里就是
+ *    1层(order 0)、3层(order 1)、2层(order 2) —— 于是整棵树显示成 1、3、2。
+ *    用户报的就是这个（「先显示1层，再3，再2」）。
+ *    而这几个名字本身已经把顺序写清楚了，再按创建顺序排就是明着跟名字作对。
+ * 2. 其余按 `order`、再按名字。名字比较用**数字感知**的口语序
+ *    （`10层` 排在 `2层` 后面，而不是按字符一个一个比）。
+ */
+export function compareTreeNodes<T extends TreeItem>(a: T, b: T): number {
+  if (a.id === b.id) return 0
+
+  const na = splitNumbered(a.name)
+  const nb = splitNumbered(b.name)
+  if (
+    na !== null &&
+    nb !== null &&
+    na.head === nb.head &&
+    na.tail === nb.tail &&
+    na.num !== nb.num
+  ) {
+    return na.num - nb.num
+  }
+
   if (a.order !== b.order) return a.order - b.order
-  return a.name.localeCompare(b.name, 'zh-CN')
+  return a.name.localeCompare(b.name, 'zh-CN', { numeric: true })
 }
 
 export interface TreeNode<T> {
@@ -62,7 +107,7 @@ export function buildTree<T extends TreeItem>(nodes: T[]): TreeNode<T>[] {
   }
 
   const sortRec = (list: TreeNode<T>[], depth: number) => {
-    list.sort((a, b) => compareNodes(a.node, b.node))
+    list.sort((a, b) => compareTreeNodes(a.node, b.node))
     for (const node of list) {
       node.depth = depth
       sortRec(node.children, depth + 1)

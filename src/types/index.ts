@@ -429,6 +429,44 @@ export interface UiPrefs {
    * 所以第一次选完就记住，下次自动填上，但**每次都还能改**。
    */
   spareLocationId: string | null
+  /**
+   * 位置页：用户手动展开过的那几级（位置 id）。
+   *
+   * ── 为什么要记住它 ────────────────────────────────────────────
+   * 以前这一页**进来就把整棵树全部展开**（`Locations.tsx` 里那行
+   * `new Set(derived.flat.map(...))`）。用户的说法是「这么多折叠层级，
+   * 怎么看最清晰」—— 一进来所有层级同时铺开，就是最坏的第一眼；
+   * 而他手动收好之后，切到别的页面再回来又全展开了，白收。
+   *
+   * ── 为什么不复用 expandedGroups ───────────────────────────────
+   * 那是**物品列表按分组**的展开状态（分组 key 是分类/位置的 id，
+   * 但语义是「那个分组块铺开没有」）。两件事的默认值不一样：
+   * 分组默认折叠，而位置树默认**只展开顶层**。混在一起记，
+   * 收起一个分组会顺手把位置树里的某一级也收掉。
+   *
+   * 存的是 id 列表：位置被删掉之后里面的 id 只是永远匹配不上，无害。
+   */
+  expandedLocations: string[]
+  /**
+   * 位置页有没有「用户已经调过展开状态」。
+   *
+   * 用来区分「第一次进来（给个默认视角）」和「他调过了（照他调的来）」——
+   * 和 expandedGroups 那条注释里讲的「展开要单独记一份」是同一个道理。
+   */
+  locationsExpandedTouched: boolean
+  /**
+   * 用户点了星星「置顶」的位置 id，**顺序就是置顶顺序**。
+   *
+   * 用户的用法：「我点击就可以置顶，下次更方便选到我常选择的那个」——
+   * 一阵子集中整理一处地方（这几天都在整同一个柜子），补全列表里
+   * 那一条永远排在第一个，比每次打两个字再找一遍省事得多。
+   *
+   * 它是**使用习惯**，不是数据：存 localStorage、跟着这台设备走，
+   * 不进备份文件。位置被删掉后留下的 id 只是永远匹配不上，无害。
+   */
+  pinnedLocationIds: string[]
+  /** 同上，分类的置顶（星标在「分类」候选和分类选择弹窗里） */
+  pinnedCategoryIds: string[]
 }
 
 export const EXPIRY_SOON_DEFAULT_DAYS = 30
@@ -450,4 +488,8 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
   hideIdle: true,
   hideSpare: true,
   spareLocationId: null,
+  expandedLocations: [],
+  locationsExpandedTouched: false,
+  pinnedLocationIds: [],
+  pinnedCategoryIds: [],
 }

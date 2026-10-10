@@ -29,6 +29,10 @@ import {
   applyCategoryPlan as applyCategoryPlanPure,
   type CategoryPlanEntry,
 } from '../ai/categoryEdit'
+import {
+  applyLocationPlan as applyLocationPlanPure,
+  type LocationPlanEntry,
+} from '../ai/locationEdit'
 import type { DerivedContext } from './selectors'
 import { createDerived } from './selectors'
 import { clearAiSession, useAiSessionStore } from './useAiSessionStore'
@@ -563,6 +567,17 @@ export interface AppState {
    * 所以「算」必须能被逐条测试。这里只做搬运。
    */
   applyCategoryPlan: (entries: CategoryPlanEntry[]) => CategoryApplyStats
+  /**
+   * 把 AI 提议的**新建位置**落到数据上（一次提交）。
+   *
+   * 用户要的能力：「在 A/B，新建这个位置」+「需要可以新建位置」。
+   * 以前位置只能跟着物品一起产生，而他的用法是先搭架子再放东西。
+   *
+   * 和分类那边同一个分工：传进来的是**已经算好的计划**
+   * （`planLocationChanges` 的产物），算法在 `ai/locationEdit.ts` 的纯函数里、
+   * 有用例钉着；这里只负责 commit 一次（只留一份快照、只写一次盘）。
+   */
+  applyLocationPlan: (entries: LocationPlanEntry[]) => { created: number }
 
   setUi: (patch: Partial<UiPrefs>) => void
   /** 展开 / 收起某个分组。展开和折叠分别记录，因为默认值会随分组维度变化。 */
@@ -611,6 +626,22 @@ export interface AppState {
 
   /* 位置 */
   addLocation: (name: string, parentId: string | null) => Location | null
+  /**
+   * 建一个位置，顺手把它下面那几层也建好（层名由调用方给）。
+   *
+   * 为什么要这个动作：用户的原话是「我输入 xxx4层xxx 这个新位置，
+   * 那么就可以自动建立子位置，自动有对应的 1-4 层位置，方便我后续存东西」。
+   * 层数由 `lib/levels.ts` 从名字里认（「四层 → 4」），层名叫什么由界面决定
+   * （跟着界面语言，但和用户自己那套命名一致）。
+   *
+   * 为什么不让界面连着调 N+1 次 `addLocation`：那样「建了几个」这件事
+   * 在页面上说不清，也没法单独测。这里一次性做完、把建了什么原样报回去。
+   */
+  addLocationWithLevels: (
+    name: string,
+    parentId: string | null,
+    levelNames: readonly string[],
+  ) => { created: Location; levels: Location[] } | null
   renameLocation: (id: string, name: string) => void
   updateLocationNote: (id: string, note: string) => void
   moveLocation: (id: string, newParentId: string | null) => { ok: boolean; reason?: string }
@@ -1201,10 +1232,25 @@ export const useAppStore = create<AppState>()((set, get) => {
       }
     },
 
+    applyLocationPlan: (entries) => {
+      const data = get().data
+      const result = applyLocationPlanPure(data, entries)
+
+      /* 一个位置都没建 → 不 commit（不然白留一份快照、白写一次盘） */
+      if (result.created === 0) return { created: 0 }
+
+      /*
+       * `auto` 快照 —— 和别的结构性改动一个待遇。
+       * 建完界面上有明确的报告（气泡里说「已新建位置…」），
+       * 所以不需要更重的 `destructive`。
+       */
+      commit(result.data, 'auto')
+      return { created: result.created }
+    },
+
     /* ---------------- 界面偏好 ---------------- */
 
-    setUi: (patch) => {
-      const next = { ...get().ui, ...patch }
+    setUi: (patch) => {      const next = { ...get().ui, ...patch }
       persistUiPrefs(next)
       set({ ui: next })
     },
@@ -1506,6 +1552,23 @@ export const useAppStore = create<AppState>()((set, get) => {
       }
       commit({ ...data, locations: [...data.locations, location], updatedAt: data.updatedAt })
       return location
+    },
+
+    addLocationWithLevels: (name, parentId, levelNames) => {
+      const created = get().addLocation(name, parentId)
+      if (created === null) return null
+
+      /*
+       * 逐层建。每次都重新取一次 data：`addLocation` 里算 order 用的是
+       * **当时**那份数据，缓存下来会造出几个 order 一模一样的位置
+       * （界面上顺序就随缘了）。
+       */
+      const levels: Location[] = []
+      for (const levelName of levelNames) {
+        const child = get().addLocation(levelName, created.id)
+        if (child !== null) levels.push(child)
+      }
+      return { created, levels }
     },
 
     renameLocation: (id, name) => {

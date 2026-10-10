@@ -951,11 +951,31 @@ function botReply(
   removedIds: string[] = [],
   reply = '改好了',
 ): ParsedChatResponse {
-  return { reply, items, removedIds, loadScope: null, noChanges: false, categoryChanges: [], ignoredCategoryChanges: 0 }
+  return {
+    reply,
+    items,
+    removedIds,
+    loadScope: null,
+    noChanges: false,
+    categoryChanges: [],
+    ignoredCategoryChanges: 0,
+    locationChanges: [],
+    ignoredLocationChanges: 0,
+  }
 }
 
 function loadRequest(reply: string, scope: LoadScopeRequest): ParsedChatResponse {
-  return { reply, items: [], removedIds: [], loadScope: scope, noChanges: false, categoryChanges: [], ignoredCategoryChanges: 0 }
+  return {
+    reply,
+    items: [],
+    removedIds: [],
+    loadScope: scope,
+    noChanges: false,
+    categoryChanges: [],
+    ignoredCategoryChanges: 0,
+    locationChanges: [],
+    ignoredLocationChanges: 0,
+  }
 }
 
 /* ---- 合并 ---- */

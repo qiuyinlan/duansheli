@@ -4,6 +4,7 @@ import type { TreeItem } from '../types'
 import type { TreeNode } from '../lib/tree'
 import { t, useT } from '../i18n'
 import { IconChevronRight, IconFolder } from './ui/icons'
+import { PinButton } from './ui/primitives'
 
 /**
  * 「别处拖过来的东西可以落在这棵树上」。
@@ -66,10 +67,38 @@ export interface TreeViewProps<T extends TreeItem> {
    *   变颜色统一绿色。」
    *
    * 所以规则很短：**第一层（大标题）保持原样，第二层及以下统一绿色。**
-   * 只有目录名（这一行的文字）上色，行里的数量、按钮一概不动 ——
-   * 这是一棵目录树，「我在第几层」才是这里唯一要用颜色表达的信息。
+   *
+   * ⚠️ 这条规则在层级深了以后变成了**一堵绿墙**（用户第二次的反馈：
+   * 「感觉现在pc端，看那个位置，全是绿的，还是不好看，这么多折叠层级，
+   * 怎么看最清晰呢」）。原因很清楚：颜色同时承担了「这是目录」和
+   * 「这是第几层」两个意思，而「第几层」缩进已经说清了 —— 颜色是冗余的，
+   * 越深重复越多。
+   *
+   * 现在这个开关只留给还想要旧行为的地方；位置页改用 `colors`（按分支上色）。
    */
   tintDepth?: boolean
+  /**
+   * 每个节点一个色（顶层色条 + 子层极淡），按**分支**上色而不是按层级。
+   *
+   * 颜色从 `lib/palette.ts` 来：顶层一份色板（相邻色相拉开），子层继承
+   * 所属顶层的色相并逐层变淡（`depthColor`）。于是它表达的是
+   * 「你在哪一支」，而不是「这是第几层」—— 层级交给缩进去说。
+   *
+   * 传进来的表由调用方算（`assignTreeColors`），因为同一个「规范顶层列表」
+   * 要在列表页、概览页、这里**共用一份**，否则会出现
+   * 「列表里这一支是蓝的、这里却是绿的」。
+   */
+  colors?: ReadonlyMap<string, { bar: string; line: string }>
+  /**
+   * 已经置顶（点过星星）的节点 id。
+   *
+   * 只填这张表**不会**长出星星来 —— 还得给 `onTogglePin`。
+   * 两件事分开是因为位置页那棵树不该多出一列星星（那里有新建 / 移动 /
+   * 改名 / 删除四个按钮，再塞一颗星就挤成一团了）。
+   */
+  pinnedIds?: ReadonlySet<string>
+  /** 那一行的星星被点了。给回调才会画星星。 */
+  onTogglePin?: (id: string) => void
 }
 
 export function TreeView<T extends TreeItem>({
@@ -85,6 +114,9 @@ export function TreeView<T extends TreeItem>({
   dropTarget = null,
   dimmedIds,
   tintDepth = false,
+  colors,
+  pinnedIds,
+  onTogglePin,
 }: TreeViewProps<T>) {
   // 订阅语言：展开 / 折叠的读屏标签和兜底的空状态文字要跟着切
   useT()
@@ -145,6 +177,7 @@ export function TreeView<T extends TreeItem>({
       const isOpen = expanded.has(id)
       const isActive = selected.has(id)
       const count = counts.get(id) ?? 0
+      const barColors = colors?.get(id) ?? { bar: 'transparent', line: 'transparent' }
 
       return (
         <div key={id}>
@@ -155,6 +188,19 @@ export function TreeView<T extends TreeItem>({
             style={{ paddingLeft: `calc(${depth} * 14px + var(--gap-2))` }}
             {...dropProps(id, id)}
           >
+            {/*
+              左边那根色条：**顶层实、子层极淡**。它表达的是「你在哪一支」
+              （同一个顶层下面的每一级都是同一个色相），而不是「这是第几层」——
+              层级由缩进说。这样一屏里就不会出现「全是绿的」。
+            */}
+            {colors ? (
+              <span
+                className={`tree-node__bar${depth > 0 ? ' tree-node__bar--sub' : ''}`}
+                style={{ background: depth > 0 ? barColors.line : barColors.bar }}
+                aria-hidden="true"
+              />
+            ) : null}
+
             {hasChildren ? (
               <button
                 type="button"
@@ -191,6 +237,15 @@ export function TreeView<T extends TreeItem>({
             </button>
 
             <span className="tree-node__count">{count > 0 ? count : ''}</span>
+
+            {onTogglePin ? (
+              <PinButton
+                pinned={pinnedIds?.has(id) === true}
+                name={node.node.name}
+                className="tree-node__pin"
+                onClick={() => onTogglePin(id)}
+              />
+            ) : null}
 
             {renderActions ? (
               <div className="tree-node__actions">{renderActions(node.node)}</div>

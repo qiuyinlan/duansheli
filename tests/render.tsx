@@ -24,7 +24,11 @@ import { flushWrites, useAppStore } from '../src/store/useAppStore'
 import { clearAiSession, useAiSessionStore } from '../src/store/useAiSessionStore'
 import { setLang } from '../src/i18n'
 import { ConfirmDialog } from '../src/components/ui/primitives'
+import { LocationPicker } from '../src/components/pickers'
+import { DraftCheckLine } from '../src/components/AiQuickBar'
+import type { DraftCheck } from '../src/ai/commands'
 import type { AppData, Item } from '../src/types'
+import { DEFAULT_UI_PREFS } from '../src/types'
 import { contains, eq, fail, fixture, must, ok, suite, test } from './harness'
 
 /** React 18.3 起 act 也挂在 React 上；两个入口都兼容一下 */
@@ -189,26 +193,34 @@ await test('物品列表页显示物品名与位置路径', () => {
   })
 })
 
-await test('位置页那棵目录树：子目录统一绿色，大标题保持原样', () => {
+await test('位置页那棵目录树：按分支上色（顶层实、子层极淡），不再是一堵绿墙', () => {
   withPage('/locations', data, (_container, html) => {
     /*
-     * 用户要的是这个：目录有多层时，「是子目录的那几行」变绿，
-     * 顶层大标题不动。断言的是 TreeView 给出的那个层级类名
-     * （`tree-node__label--sub`），它只在 depth > 0 的行上加。
+     * ── 这条用例为什么改过 ────────────────────────────────────────
+     * 它原来断言的是「子目录统一绿色」（`tree-node__label--sub`），
+     * 那是用户**第一次**的诉求（「目录和子目录要分得开」）。
+     * 层级深了以后那一版变成了一堵绿墙，用户第二次的说法是：
+     * 「感觉现在pc端，看那个位置，全是绿的，还是不好看，
+     * 这么多折叠层级，怎么看最清晰呢」。
+     *
+     * 所以颜色改了意思：不再按**层级**上色，而是按**分支**上色 ——
+     * 每个顶层一根色条，子层继承同一个色相并逐层变淡。
+     * 这条用例现在守的是这个新意图（回头改回绿墙也会被它抓住）。
      */
-    contains(html, 'tree-node__label--sub', '子目录必须有层级配色')
+    contains(html, 'tree-node__bar', '顶层要有分支色条')
+    contains(html, 'tree-node__bar--sub', '子层要有极淡的那一档色条')
 
-    const treeLabels = html.match(/class="tree-node__label[^"]*"/g) ?? []
-    ok(treeLabels.length > 0, '应该能抓到树里的行')
-    const subCount = treeLabels.filter((l) => l.includes('--sub')).length
+    const labels = html.match(/class="tree-node__label[^"]*"/g) ?? []
+    ok(labels.length > 0, '应该能抓到树里的行')
     ok(
-      subCount > 0,
-      `应该有子目录被标成绿色那一档。实际抓到 ${treeLabels.length} 行，其中 ${subCount} 行是子目录`,
+      labels.every((label) => !label.includes('--sub')),
+      '位置页的目录名不该再按层级染绿了 —— 那正是「全是绿的」的来源',
     )
-    ok(
-      subCount < treeLabels.length,
-      '不能所有行都算子目录 —— 大标题（第 0 层）必须保持原样，否则等于没上色',
-    )
+
+    const bars = html.match(/class="tree-node__bar[^"]*"/g) ?? []
+    ok(bars.length > 0, '每一行都该有色条（分支归属），实际一行都没有')
+    const faded = bars.filter((bar) => bar.includes('--sub')).length
+    ok(faded > 0 && faded < bars.length, '顶层实、子层淡 —— 两档都要出现，否则等于没分档')
   })
 })
 
@@ -1624,12 +1636,37 @@ function treeRow(container: HTMLElement, name: string): HTMLElement {
   return must(label.closest<HTMLElement>('.tree-node__row'), `「${name}」那一行没找到容器`)
 }
 
-/** 位置树里某个名字的那个按钮 */
+/**
+ * 位置树里某个名字的那个按钮。
+ *
+ * ⚠️ 位置页现在**默认只展开顶层**（用户的原话：「这么多折叠层级，怎么看最清晰呢」），
+ * 所以深层的行（「衣柜」在「家 / 卧室」下面）要先展开才在 DOM 里。
+ * 需要深层行的用例，请在挂载**之前**调 `expandAllLocationsForTest()` ——
+ * 不要在 `act()` 里面点展开再读 DOM：**act 套 act 时内层不会立刻 flush**，
+ * 读到的还是展开之前的 DOM（这一条是踩过坑才写下来的）。
+ */
 function treeLabel(container: HTMLElement, name: string): HTMLButtonElement {
   const label = Array.from(
     container.querySelectorAll<HTMLButtonElement>('.tree-node__label'),
   ).find((button) => (button.textContent ?? '').trim() === name)
   return must(label, `位置树里找不到「${name}」`)
+}
+
+/**
+ * 让位置页一挂载就是「整棵树全展开」的样子。
+ *
+ * 走的是**真的那个偏好**（`ui.expandedLocations`）—— 也就是用户手动展开之后
+ * 被记住的那份状态。所以这不是在测试里开后门，而是「用户上次把树都展开了」
+ * 这个真实情形。
+ */
+function expandAllLocationsForTest(data: AppData): void {
+  useAppStore.setState({
+    ui: {
+      ...useAppStore.getState().ui,
+      expandedLocations: data.locations.map((location) => location.id),
+      locationsExpandedTouched: true,
+    },
+  })
 }
 
 /** 右边列表里名字含某个词的那一行 */
@@ -1674,8 +1711,15 @@ async function settleWrites(): Promise<void> {
 
 suite('位置页：把物品拖到位置上')
 
+/*
+ * ⚠️ 这一组用例要拖的是**深层的**位置（「衣柜」在「家 / 卧室」下面）。
+ * 位置页现在默认只展开顶层（用户嫌「这么多折叠层级看不清晰」），
+ * 所以挂载前先把「用户上次全展开了」这个状态摆进偏好里 ——
+ * 走的是真的那个偏好，不是在测试里开后门。
+ */
 await test('拖到另一个位置：归位跟着变，而且会出声', async () => {
   const data = fixture()
+  expandAllLocationsForTest(data)
   const wardrobe = locationIdOf(data, '衣柜')
   const cupboard = locationIdOf(data, '橱柜')
 
@@ -1701,6 +1745,7 @@ await test('拖到另一个位置：归位跟着变，而且会出声', async ()
 await test('拖到「未归位」＝把位置撤掉（不是「没有动作」）', async () => {
   // null 和「不调用」是两件事：少了这条路径，东西拖出去就再也拖不回来了。
   const data = fixture()
+  expandAllLocationsForTest(data)
 
   withPage('/locations', data, (container) => {
     act(() => {
@@ -1722,6 +1767,7 @@ await test('拖回原地：数据一动不动，但要说一声', () => {
    * 然后反复拖，或者干脆改用手动路径。
    */
   const data = fixture()
+  expandAllLocationsForTest(data)
   const wardrobe = locationIdOf(data, '衣柜')
 
   withPage('/locations', data, (container) => {
@@ -1740,6 +1786,7 @@ await test('拖回原地：数据一动不动，但要说一声', () => {
 await test('不是给这棵树的拖拽类型，一概不接', () => {
   // 拖文字、拖文件从这里经过时不能把物品挪走 —— 认 MIME 就是为了这个。
   const data = fixture()
+  expandAllLocationsForTest(data)
   const wardrobe = locationIdOf(data, '衣柜')
 
   withPage('/locations', data, (container) => {
@@ -1759,7 +1806,9 @@ await test('物品行上挂着「移到…」，给拖不了的设备留了路',
    * HTML5 拖放在触屏上根本不触发，键盘也拖不了。
    * 这个按钮不是可有可无的备胎 —— 没有它，位置页在手机上就是「看得见、改不动」。
    */
-  withPage('/locations', fixture(), (container) => {
+  const data = fixture()
+  expandAllLocationsForTest(data)
+  withPage('/locations', data, (container) => {
     act(() => {
       treeLabel(container, '衣柜').click()
     })
@@ -1767,6 +1816,97 @@ await test('物品行上挂着「移到…」，给拖不了的设备留了路',
       (button) => (button.textContent ?? '').trim() === '移到…',
     )
     ok(fallback, '每个物品行上都要有一条不用拖的入口')
+  })
+})
+
+suite('位置页：层级深了怎么看最清晰（用户的原话）')
+
+/** 清掉「用户调过展开状态」的痕迹 —— 也就是第一次进这一页的样子 */
+function resetLocationExpansionPrefs(): void {
+  useAppStore.setState({
+    ui: {
+      ...useAppStore.getState().ui,
+      expandedLocations: [],
+      locationsExpandedTouched: false,
+    },
+  })
+}
+
+/** 树里当前渲染出来的那些行（位置名） */
+function visibleLocationNames(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll<HTMLButtonElement>('.tree-node__label')).map(
+    (button) => (button.textContent ?? '').trim(),
+  )
+}
+
+function buttonWithText(container: HTMLElement, text: string): HTMLButtonElement {
+  return must(
+    Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => (button.textContent ?? '').trim() === text,
+    ),
+    `应该找得到「${text}」按钮`,
+  )
+}
+
+await test('★ 默认只展开顶层 —— 进来不再是一屏铺满的层级', () => {
+  /*
+   * 用户的原话：「这么多折叠层级，怎么看最清晰呢」。
+   * 以前这一页**一进来就把整棵树全部展开**（`new Set(derived.flat.map(...))`），
+   * 那等于一进门就给他最坏的第一眼。
+   */
+  resetLocationExpansionPrefs()
+  withPage('/locations', fixture(), (container) => {
+    const names = visibleLocationNames(container)
+    ok(names.includes('家'), '顶层要看得到')
+    ok(names.includes('卧室'), '顶层是展开的，第二层（家里各个房间）一眼看得到')
+    ok(!names.includes('衣柜'), `更深的先不铺出来 —— 这就是「不再一屏全是层级」，实际：${names.join('/')}`)
+
+    // 「全部展开」是给「我就是要一次看全」的那条路
+    act(() => {
+      buttonWithText(container, '全部展开').click()
+    })
+    const expanded = visibleLocationNames(container)
+    ok(expanded.includes('衣柜'), `点「全部展开」之后深层要出来，实际：${expanded.join('/')}`)
+  })
+})
+
+await test('★ 展开状态会被记住 —— 收好的不再白收', () => {
+  const data = fixture()
+  resetLocationExpansionPrefs()
+
+  withPage('/locations', data, (container) => {
+    act(() => {
+      buttonWithText(container, '全部折叠').click()
+    })
+  })
+
+  const prefs = useAppStore.getState().ui
+  eq(prefs.expandedLocations.length, 0, '全折叠要记下来')
+  ok(prefs.locationsExpandedTouched, '要标记「用户调过」，这样下次进来才照他的来')
+
+  /* 再进一次这一页：应该还是折叠的样子（以前切页回来又全展开了） */
+  withPage('/locations', data, (container) => {
+    const names = visibleLocationNames(container)
+    ok(names.includes('家'), '顶层总要看得到')
+    ok(!names.includes('卧室'), '上次收起来了，这次进来也该是收着的')
+  })
+})
+
+await test('位置页有搜索框（层级深了要能直接跳过去）', () => {
+  /*
+   * ⚠️ 搜索的**行为**在这里测不了：jsdom 里给输入框派发 input 事件到不了
+   * React 的 onChange（见 tests/dom.ts）。所以：
+   *   · 这里只验「入口在」这一半
+   *   · 匹配规则那一半由 tests/smoke.ts 里 `searchTreeIds` 那两条钉着，
+   *     而它和分类页、两个选择器用的是**同一个函数**
+   */
+  resetLocationExpansionPrefs()
+  withPage('/locations', fixture(), (container) => {
+    const input = must(
+      container.querySelector<HTMLInputElement>('input[type="search"]'),
+      '位置页要有一个搜索框',
+    )
+    ok((input.getAttribute('placeholder') ?? '').length > 0, '搜索框要有提示文字')
   })
 })
 
@@ -2438,6 +2578,365 @@ await test('★ 点「采纳」之后那几件**真的**进了回收站（不是
         !useAiSessionStore.getState().removedKeys.includes('i3'),
         '删过的要从待删清单里剔掉，免得下次采纳再删一遍',
       )
+    } finally {
+      page.unmount()
+      clearAiSession()
+    }
+  })()
+})
+
+/* ------------------------------------------------------------------ */
+/* AI 输入框旁边那套：按钮 / 补全 / 预检 / 速录                        */
+/* ------------------------------------------------------------------ */
+
+suite('AI 输入框：快捷指令与补全')
+
+await test('★ 点「新建物品」和「放在」，短语插进输入框、库里的位置铺出来', () => {
+  /*
+   * 这一条验的是「点击 → 插到光标处」这条真路。
+   *
+   * jsdom 里没法模拟打字（见 tests/dom.ts 的说明），所以「打字触发补全」那一半
+   * 只能靠 tests/aiCommands.ts 的纯函数测；这里能测的是**点击**这一半 ——
+   * 而它恰好也是用户最常用的入口（那排按钮）。
+   */
+  clearAiSession()
+  const page = mountForSwitch('/ai', fixture())
+  try {
+    const textarea = must(
+      page.container.querySelector<HTMLTextAreaElement>('textarea'),
+      'AI 页应该有一个输入框',
+    )
+    const chip = (label: string) =>
+      must(
+        [...page.container.querySelectorAll<HTMLButtonElement>('.composer-chip')].find(
+          (button) => (button.textContent ?? '').trim() === label,
+        ),
+        `应该找得到「${label}」这个快捷按钮`,
+      )
+
+    act(() => {
+      chip('新建物品').click()
+    })
+    eq(textarea.value, '新建物品 ', '点一下就该把短语插进输入框')
+
+    act(() => {
+      chip('放在').click()
+    })
+    eq(textarea.value, '新建物品，放在 ', '第二段前面要补一个连接符，而不是直接接上去')
+
+    const pop = must(
+      page.container.querySelector<HTMLElement>('.slot-pop'),
+      '点了「放在」之后应该弹出位置候选 —— 这正是这个按钮存在的意义',
+    )
+    ok(
+      pop.querySelectorAll('.slot-pop__row').length > 0,
+      '候选列表不该是空的（夹具里有一整棵位置树）',
+    )
+    contains(pop.textContent ?? '', '卧室', '应该把库里已有的位置铺出来，而不是让用户凭空打')
+  } finally {
+    page.unmount()
+    clearAiSession()
+  }
+})
+
+await test('★ 预检那行：位置对得上是一种说法，对不上是另一种（说错了就是在骗人）', () => {
+  const render = (check: DraftCheck): string => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      act(() => {
+        root.render(<DraftCheckLine check={check} />)
+      })
+      return container.textContent ?? ''
+    } finally {
+      act(() => {
+        root.unmount()
+      })
+      container.remove()
+    }
+  }
+
+  const matched = render({
+    newItemCount: 1,
+    places: [{ query: '蓝柜', id: 'l-blue', pathText: '家 / 卧室 / 蓝柜', near: null }],
+    categories: [],
+    orphanNewPlaces: [],
+  })
+  contains(matched, '家 / 卧室 / 蓝柜', '对上了就要把完整路径说出来，用户才知道落到哪儿')
+  contains(matched, '1', '要说出识别到几件')
+  ok(!matched.includes('新位置'), '对得上的时候绝不能说「会被当成新位置」')
+
+  const fresh = render({
+    newItemCount: 1,
+    places: [{ query: '阳台/柜子上层', id: null, pathText: null, near: null }],
+    categories: [],
+    orphanNewPlaces: [],
+  })
+  contains(fresh, '阳台/柜子上层', '对不上时要说清是哪一串字对不上')
+  contains(fresh, '新位置', '而且要提前告诉他会被当成新位置（那种条默认不勾选）')
+
+  const orphan = render({
+    newItemCount: 1,
+    places: [],
+    categories: [],
+    orphanNewPlaces: ['阳台/柜子上层'],
+  })
+  contains(orphan, '新建位置', '光说「新建位置」而没有东西放进去时，必须提醒 —— 不然它什么都不会发生')
+
+  const nothing = render({
+    newItemCount: 0,
+    places: [],
+    categories: [],
+    orphanNewPlaces: [],
+  })
+  eq(nothing.trim(), '', '一个字都没写的时候这一行不该出现（平时别在用户旁边念）')
+})
+
+await test('速录面板：点得开、加得了行、什么都没填时不让生成', () => {
+  clearAiSession()
+  const page = mountForSwitch('/ai', fixture())
+  try {
+    const button = (match: (label: string) => boolean) =>
+      must(
+        [...page.container.querySelectorAll<HTMLButtonElement>('button')].find((each) =>
+          match((each.textContent ?? '').trim()),
+        ),
+        '应该找得到那个按钮',
+      )
+
+    act(() => {
+      button((label) => label === '速录').click()
+    })
+
+    const panel = must(
+      page.container.querySelector<HTMLElement>('.quick-entry__body'),
+      '点开「速录」之后该有面板主体',
+    )
+    eq(panel.querySelectorAll('.quick-entry__row').length, 1, '默认给一行')
+    eq(
+      panel.querySelectorAll('.quick-entry__row input, .quick-entry__row select').length,
+      5,
+      '一行里要有：名称 / 位置 / 分类 / 过期 / 状态',
+    )
+
+    const generate = button((label) => label.startsWith('生成到输入框'))
+    ok(generate.disabled, '一个字都没填的时候不该能点「生成到输入框」')
+
+    act(() => {
+      button((label) => label.includes('加一行')).click()
+    })
+    eq(
+      page.container.querySelectorAll('.quick-entry__row').length,
+      2,
+      '点「加一行」应该真的多出一行',
+    )
+  } finally {
+    page.unmount()
+    clearAiSession()
+  }
+})
+
+/* ------------------------------------------------------------------ */
+/* 置顶那颗星（点一下钉上、排到最前面）                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 用户的原话：
+ *   「我希望右边可以加一个星星符号，这样我点击就可以置顶，下次更方便选到我常选择的那个」
+ *
+ * 纯逻辑（钉上 / 摘掉 / 排最前面）在 tests/aiCommands.ts 里钉过了。
+ * 这里验的是**点击真的能走到那条路上**：星星点得到、点了不选中这一条、
+ * 点了弹层也不关、而且落进了这台设备的偏好里（下次打开还认得）。
+ */
+suite('AI 输入框：置顶那颗星（真实点击）')
+
+await test('★ 点候选行右边那颗星：钉上、排到第一个，而且不选中也不关弹层', () => {
+  clearAiSession()
+  localStorage.removeItem('duansheli:ui')
+  useAppStore.setState({ ui: { ...DEFAULT_UI_PREFS } })
+  const page = mountForSwitch('/ai', fixture())
+
+  try {
+    const textarea = must(page.container.querySelector<HTMLTextAreaElement>('textarea'), '输入框')
+    const chip = (label: string) =>
+      must(
+        [...page.container.querySelectorAll<HTMLButtonElement>('.composer-chip')].find(
+          (button) => (button.textContent ?? '').trim() === label,
+        ),
+        `应该找得到「${label}」这个快捷按钮`,
+      )
+
+    act(() => {
+      chip('放在').click()
+    })
+    const pop = must(page.container.querySelector<HTMLElement>('.slot-pop'), '点「放在」该弹出候选')
+    const typed = textarea.value
+
+    const star = must(
+      [...pop.querySelectorAll<HTMLButtonElement>('.slot-pop__pin')].find((button) =>
+        (button.getAttribute('aria-label') ?? '').includes('卧室'),
+      ),
+      '每一行右边都该有一颗星（「卧室」那一行要找得到）',
+    )
+    eq(star.getAttribute('aria-pressed'), 'false', '没钉过的时候是空心星')
+    contains(star.getAttribute('aria-label') ?? '', '置顶', '读屏软件要念得出来它是干什么的')
+
+    act(() => {
+      star.click()
+    })
+
+    const pinned = useAppStore.getState().ui.pinnedLocationIds
+    eq(pinned.length, 1, '点一下就该钉上')
+    const name = useAppStore.getState().derived.index.byId.get(pinned[0] ?? '')?.name
+    eq(name, '卧室', '钉的是他点的那一条')
+
+    eq(textarea.value, typed, '★ 点星星不能把候选填进输入框（那会覆盖他正在写的话）')
+    ok(page.container.querySelector('.slot-pop') !== null, '★ 点星星不该把弹层关掉')
+
+    const first = must(
+      page.container.querySelector<HTMLElement>('.slot-pop__item'),
+      '候选列表还在',
+    )
+    contains(first.textContent ?? '', '卧室', '★ 钉完它必须排到第一个')
+    const firstStar = must(first.querySelector<HTMLButtonElement>('.slot-pop__pin'), '星星')
+    eq(firstStar.getAttribute('aria-pressed'), 'true', '排第一的那颗星要是实心的')
+
+    ok(
+      (localStorage.getItem('duansheli:ui') ?? '').includes(pinned[0] ?? '@'),
+      '★ 要落进这台设备的偏好里 —— 不然「下次」还是得重新找一遍',
+    )
+  } finally {
+    page.unmount()
+    clearAiSession()
+    useAppStore.setState({ ui: { ...DEFAULT_UI_PREFS } })
+    localStorage.removeItem('duansheli:ui')
+  }
+})
+
+await test('★ 位置选择弹窗：每行一颗星，钉了顶上就单列一块「置顶」', () => {
+  /*
+   * 用户选的是「录入物品时的分类/位置选择弹窗也要」。
+   *
+   * 那里是一棵树，所以置顶的**不能**被拎到树的最前面（「衣柜 / 2层」
+   * 跑到根上看着就像个顶层位置）；改成在树上面单列一块，带完整路径。
+   */
+  const data = fixture()
+  useAppStore.setState({
+    status: 'ready',
+    error: null,
+    data,
+    derived: createDerived(data),
+    aiApiKey: '',
+    ui: { ...DEFAULT_UI_PREFS },
+  })
+  const ctx = createDerived(data)
+
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  try {
+    act(() => {
+      root.render(
+        <LocationPicker
+          open
+          onClose={() => {}}
+          value={null}
+          onSelect={() => {}}
+          ctx={ctx}
+          counts={new Map()}
+        />,
+      )
+    })
+
+    /* 弹窗是 portal 到 document.body 的，所以要查 body 而不是容器 */
+    ok(document.querySelector('.picker-pinned') === null, '一次都没钉过时不摆置顶区')
+
+    const star = must(
+      document.querySelector<HTMLButtonElement>('.modal .tree-node__pin'),
+      '位置树每一行右边都该有一颗星',
+    )
+    contains(star.getAttribute('aria-label') ?? '', '置顶', '读屏软件要念得出来')
+
+    act(() => {
+      star.click()
+    })
+
+    const pinned = useAppStore.getState().ui.pinnedLocationIds
+    eq(pinned.length, 1, '点一下就该钉上')
+    const block = must(document.querySelector<HTMLElement>('.picker-pinned'), '钉过之后要摆出置顶区')
+    contains(block.textContent ?? '', '置顶', '那一块要说清自己是「置顶」')
+    ok(
+      (block.textContent ?? '').includes(
+        useAppStore.getState().derived.index.byId.get(pinned[0] ?? '')?.name ?? '@',
+      ),
+      '置顶区里要能看到他钉的那一条',
+    )
+
+    /* 再点一下那块里的星就是摘掉 */
+    act(() => {
+      must(
+        document.querySelector<HTMLButtonElement>('.picker-pinned .pin-btn'),
+        '置顶区里那颗星',
+      ).click()
+    })
+    eq(useAppStore.getState().ui.pinnedLocationIds.length, 0, '再点一下要能摘掉')
+    ok(document.querySelector('.picker-pinned') === null, '摘完之后那一块就该收起来')
+  } finally {
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+    useAppStore.setState({ ui: { ...DEFAULT_UI_PREFS } })
+  }
+})
+
+/* ------------------------------------------------------------------ */
+/* AI 采纳之后停在原地                                                 */
+/* ------------------------------------------------------------------ */
+
+await test('★ 采纳完停在 AI 对话页，不会把人送回物品列表', () => {
+  /*
+   * 用户的原话：「ai 新建确认完，会自动回到物品页面，我不希望这样，
+   * 我希望还停留在 ai 对话页面」。
+   *
+   * 原来那句是 `if (result.added > 0 && result.updated === 0) navigate('/items')` ——
+   * 只在「这次全是新建」时跳页。所以这里就摆一条**纯新建**的草稿，
+   * 正好踩在那个条件上：改回旧行为的话，这一条会立刻变红。
+   */
+  clearAiSession()
+  useAiSessionStore.setState({
+    bubbles: [{ id: 'b1', role: 'user', text: '厨房里有个新买的咖啡壶' }],
+    drafts: [{ ...contextDraft('fresh-1', '新买的咖啡壶'), sourceItemId: undefined }],
+    touchedKeys: [],
+    changedKeys: [],
+    removedKeys: [],
+  })
+  const page = mountForSwitch('/ai', fixture())
+
+  return (async () => {
+    try {
+      const accept = must(
+        [...page.container.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
+          (b.textContent ?? '').trim().startsWith('采纳'),
+        ),
+        '应该找得到「采纳」按钮',
+      )
+
+      await act(async () => {
+        accept.click()
+        await flushWrites()
+      })
+
+      ok(
+        useAppStore.getState().data.items.some((i) => i.name === '新买的咖啡壶'),
+        '前提：这一下确实把它建出来了（不然这条用例什么都没验到）',
+      )
+      ok(
+        page.container.querySelector('.chat-panel') !== null,
+        '★ 采纳之后必须还停在 AI 对话页 —— 跳走的话这里就找不到对话框了',
+      )
+      contains(page.html(), '和 AI 商量', '对话面板还在，他可以接着让 AI 改')
     } finally {
       page.unmount()
       clearAiSession()

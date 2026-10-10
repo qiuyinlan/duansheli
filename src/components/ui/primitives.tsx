@@ -7,7 +7,7 @@ import {
 import { createPortal } from 'react-dom'
 import { useAppStore } from '../../store/useAppStore'
 import { useT } from '../../i18n'
-import { IconAlert, IconCheck, IconClose, IconSearch } from './icons'
+import { IconAlert, IconCheck, IconClose, IconSearch, IconStar } from './icons'
 
 /* ------------------------------------------------------------------ */
 /* 按钮                                                                */
@@ -60,6 +60,51 @@ export function IconButton({ label, className, children, ...rest }: IconButtonPr
       {...rest}
     >
       {children}
+    </button>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* 置顶（那颗星）                                                      */
+/* ------------------------------------------------------------------ */
+
+interface PinButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
+  /** 已经置顶了 —— 实心星 */
+  pinned: boolean
+  /** 给读屏软件念的名字（位置 / 分类名） */
+  name: string
+}
+
+/**
+ * 「置顶」那颗星。
+ *
+ * ── 为什么单独做一个组件 ────────────────────────────────────────
+ * 它出现在三个地方（AI 输入框的候选、位置选择弹窗、分类选择弹窗），
+ * 而它有三个容易写错的地方：
+ *   1. `aria-pressed` 必须跟着状态走 —— 否则读屏软件念不出「已置顶」
+ *   2. 鼠标**按下**时不能把焦点抢走（AI 补全那里，失焦就等于光标丢了）
+ *   3. 点它**不能**顺带把这一条选中（那会把用户正打的位置覆盖掉）
+ * 前两条在这里一次做对；第三条由调用方在 onClick 里 stopPropagation。
+ *
+ * 星星的实心 / 空心是唯一的状态区分 —— 加个「已置顶」小字会把
+ * 弹层里的候选挤得看不清。
+ */
+export function PinButton({ pinned, name, className, ...rest }: PinButtonProps) {
+  const { t } = useT()
+  const label = t(pinned ? 'common.unpinAria' : 'common.pinAria', { name })
+
+  return (
+    <button
+      type="button"
+      className={['pin-btn', pinned ? 'is-on' : '', className ?? ''].filter(Boolean).join(' ')}
+      aria-pressed={pinned}
+      aria-label={label}
+      title={label}
+      /* 不让输入框失焦：失焦了光标位置就没了，用户接着打字会跳回去 */
+      onMouseDown={(e) => e.preventDefault()}
+      {...rest}
+    >
+      <IconStar size={13} filled={pinned} />
     </button>
   )
 }

@@ -376,6 +376,22 @@ export interface CategoryChangeIntent {
   newParentPath?: string[]
 }
 
+/**
+ * AI 想新建的位置（这一版只有 `create`，见 `ai/locationEdit.ts` 顶部）。
+ *
+ * 为什么和分类分开成两个字段、而不是共用一个「结构改动」：
+ * 两棵树是两回事 —— 位置挂在物品上，分类可以有多个；位置的一个名字
+ * 同级不许重（`addLocation` 至今没查，得在计划那一层查），
+ * 而分类删除要连带处理子分类和物品归属。共用一个字段的话，
+ * 「这条到底是动哪棵树」得靠猜。
+ */
+export interface LocationChangeIntent {
+  kind: 'create'
+  path: string[]
+  newName?: string
+  parentPath?: string[]
+}
+
 export interface ParsedChatResponse {
   reply: string
   /** 只有**新增或改动过**的条目 */
@@ -416,6 +432,24 @@ export interface ParsedChatResponse {
    * 而不是让用户和 AI 互相怀疑。
    */
   ignoredCategoryChanges: number
+  /**
+   * AI 想**新建的位置**。
+   *
+   * 用户的原话：「在 左边小小型一号白色四层收纳/顶层，新建这个位置」
+   * +「需要可以新建位置」。以前位置只能跟着物品一起产生
+   * （`convert.ts` 里 `newLocationPath` 的唯一来源是物品的 location），
+   * 而他的用法是「先把架子搭好、再往格子里放东西」—— 那条限制对他是挡路的。
+   *
+   * 和分类改动一样：这一层只做**形状**解析，
+   * 「缺哪几级、是不是已经有了」要在**当时的位置树**上算（`ai/locationEdit.ts`）。
+   */
+  locationChanges: LocationChangeIntent[]
+  /**
+   * 说了要新建位置，但一条都没解析出来 —— 条数。0 = 一切正常。
+   *
+   * 和 `ignoredCategoryChanges` 同一个用途：**不许静默丢弃**。
+   */
+  ignoredLocationChanges: number
 }
 
 /**
@@ -437,6 +471,41 @@ const KEY_ALREADY_HANDLED = new Set([
   'loadScope',
   '拉取范围',
 ])
+
+/**
+ * 位置新建可能出现在哪些键名上。
+ *
+ * ⚠️ 名单要够宽（漏一个键 = 整批新建被静默丢掉，和分类那边同一个教训），
+ * 但**刻意不收 `locations` / `位置` 这两个裸词** —— 它们在 `loadScope` 里
+ * 已经是「按位置路径取物品」的别名（`{ locations: [["家","卧室"]] }`），
+ * 收进来会把一条拉取请求当成新建请求，凭空建出一堆位置。
+ */
+const LOCATION_CHANGE_KEYS = [
+  'locationChanges',
+  'location_changes',
+  'locationEdits',
+  'location_edits',
+  'editLocations',
+  'locations_edit',
+  'placeChanges',
+  'place_changes',
+  'newLocations',
+  '位置改动',
+  '位置调整',
+  '位置变更',
+  '新建位置',
+] as const
+
+/** 键名里带这些字样的，看着就是在说位置 */
+function looksLikeLocationKey(key: string): boolean {
+  const lower = key.toLowerCase()
+  return (
+    lower.includes('location') ||
+    lower.includes('place') ||
+    key.includes('位置') ||
+    key.includes('地点')
+  )
+}
 
 /**
  * 分类改动可能出现在哪些键名上。
@@ -544,8 +613,55 @@ function normalizeCategoryChanges(raw: unknown): CategoryChangeIntent[] {
   return out
 }
 
-function normalizeRevisedItem(raw: unknown): RawRevisedItem | null {
-  const base = normalizeExtractedItem(raw)
+/**
+ * 位置新建的形状解析（宽容，和分类那边一致）。
+ *
+ * 认这些写法：
+ *   `{ kind: 'create', path: ['左边小小型一号白色四层收纳','顶层'] }`
+ *   `{ kind: '新建', 位置: '左边小小型一号白色四层收纳 / 顶层' }`
+ *   `{ 名称: '顶层', 父级: '左边小小型一号白色四层收纳' }`
+ *   `{ name: '顶层', parentPath: ['左边小小型一号白色四层收纳'] }`
+ *
+ * 只认「新建」这一种 kind：别的动作（改名/移动/删除）在这一版**没有实现**，
+ * 认了就会走到「算了半天做不了」那条路上去。不认 → 计入
+ * `ignoredLocationChanges`，界面照实说「它说了、我没做」。
+ */
+function normalizeLocationChanges(raw: unknown): LocationChangeIntent[] {
+  if (!Array.isArray(raw)) return []
+  const out: LocationChangeIntent[] = []
+
+  for (const entry of raw) {
+    if (!isRecord(entry)) continue
+
+    const kindText = asString(entry.kind ?? entry.action ?? entry.操作 ?? entry.动作).toLowerCase()
+    /* 空 kind 也认：只支持新建时，模型经常干脆不写这个字段 */
+    const isCreate =
+      kindText === '' || kindText === 'create' || kindText === '新建' || kindText === 'add'
+    if (!isCreate) continue
+
+    let path = asPathList(entry.path ?? entry.位置 ?? entry.路径 ?? entry.name ?? entry.名称)
+    const newName = asString(entry.newName ?? entry.新名字 ?? entry.名字)
+    if (path.length === 0 && newName !== '') path = [newName]
+    if (path.length === 0) continue
+
+    const parentRaw = entry.parentPath ?? entry.newParentPath ?? entry.父级 ?? entry.上级位置
+    const parentPresent = parentRaw !== undefined && parentRaw !== null
+    const parentPath = parentPresent
+      ? asPathList(parentRaw).filter((part) => part !== '')
+      : undefined
+
+    out.push({
+      kind: 'create',
+      path,
+      ...(newName !== '' ? { newName } : {}),
+      ...(parentPath !== undefined ? { parentPath } : {}),
+    })
+  }
+
+  return out
+}
+
+function normalizeRevisedItem(raw: unknown): RawRevisedItem | null {  const base = normalizeExtractedItem(raw)
   if (!base || !isRecord(raw)) return null
 
   const id = asString(raw.id ?? raw.标识)
@@ -630,10 +746,28 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
    * 「已把 X 改名成 Y」而树一个字没动，然后他只能说「你根本没改」，
    * 两个人都不知道为什么。
    */
+  /*
+   * 位置新建：按名单逐个键找。
+   *
+   * 找到之后还要**把它们从分类改动的兜底扫描里排除掉** —— 两个协议的形状
+   * 一样（都有 kind 和 path），不排除的话 `locationChanges` 会被
+   * `looksLikeCategoryEdit` 认成分类改动，于是「新建一个位置」变成
+   * 「新建一个同名分类」：界面上一句错话都不会说，树却动错了地方。
+   */
+  let rawLocationChanges: unknown = undefined
+  for (const key of LOCATION_CHANGE_KEYS) {
+    const candidate = payload[key]
+    if (Array.isArray(candidate)) {
+      rawLocationChanges = candidate
+      break
+    }
+  }
+
   let fallbackRaw: unknown = undefined
   if (rawCategoryChanges === undefined) {
     for (const [key, value] of Object.entries(payload)) {
       if (KEY_ALREADY_HANDLED.has(key)) continue
+      if (rawLocationChanges !== undefined && LOCATION_CHANGE_KEYS.includes(key as never)) continue
       if (looksLikeCategoryEdit(value)) {
         fallbackRaw = value
         break
@@ -662,18 +796,47 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
     }
   }
 
+  const locationChanges = normalizeLocationChanges(rawLocationChanges)
+
+  /*
+   * 位置新建「没看懂」的判定。
+   *
+   * 只在**键名看得出来是在说位置**（含 location / place / 位置）却一条都没解析出来
+   * 时才是非零。为什么不学分类那样扫「所有剩下的键」：两个协议的形状一样，
+   * 认不出来的数组到底该算分类还是位置，**没法从形状上分辨** ——
+   * 猜错就是把位置建成分类。所以这里宁可窄一点，并把这个边界写在注释里。
+   */
+  let ignoredLocationChanges = 0
+  if (locationChanges.length === 0) {
+    for (const [key, value] of Object.entries(payload)) {
+      if (KEY_ALREADY_HANDLED.has(key)) continue
+      if (LOCATION_CHANGE_KEYS.includes(key as never)) continue
+      if (!looksLikeLocationKey(key)) continue
+      if (looksLikeCategoryEdit(value) && Array.isArray(value)) {
+        ignoredLocationChanges = value.length
+        break
+      }
+    }
+  }
+
   const removedIds = Array.isArray(rawRemoved)
     ? rawRemoved.map(asString).filter((id) => id !== '')
     : []
 
   /*
-   * 「什么都没做」的判定要把分类改动算进去。
+   * 「什么都没做」的判定要把两种结构改动都算进去。
    *
    * 漏了它的话，「只整理分类」那一轮会被当成纯问答（noChanges），
-   * 界面上只会显示一句话，分类改动**被默默丢掉** ——
-   * 用户看到的是「AI 说改好了、但树没变」。
+   * 界面上只会显示一句话，改动**被默默丢掉** ——
+   * 用户看到的是「AI 说改好了、但树没变」。（位置新建同理：
+   * 用户就说了一句「新建这个位置」，别的什么都没有。）
    */
-  if (!Array.isArray(rawItems) && removedIds.length === 0 && categoryChanges.length === 0) {
+  if (
+    !Array.isArray(rawItems) &&
+    removedIds.length === 0 &&
+    categoryChanges.length === 0 &&
+    locationChanges.length === 0
+  ) {
     if (loadScope) {
       return {
         reply,
@@ -683,6 +846,8 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
         noChanges: false,
         categoryChanges,
         ignoredCategoryChanges,
+        locationChanges,
+        ignoredLocationChanges,
       }
     }
     if (reply !== '') {
@@ -694,6 +859,8 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
         noChanges: true,
         categoryChanges,
         ignoredCategoryChanges,
+        locationChanges,
+        ignoredLocationChanges,
       }
     }
     throw new AiError('bad_response', t('data.ai.noReplyOrItems'))
@@ -715,5 +882,7 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
     noChanges: false,
     categoryChanges,
     ignoredCategoryChanges,
+    locationChanges,
+    ignoredLocationChanges,
   }
 }

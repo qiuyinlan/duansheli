@@ -89,6 +89,77 @@ export const ai = {
     'Keep going ({count} drafts on the right). Enter sends, Shift+Enter makes a new line',
   send: 'Send',
 
+  /*
+   * ---- Quick commands next to the input ----
+   *
+   * The button text and the text inserted into the box are the same phrase, and
+   * both live in src/ai/commandVocab.ts (that file holds the wording the model
+   * is expected to recognise). Only the surrounding copy is translated here.
+   */
+  chipsLabel: 'Quick commands',
+  chipsHint: 'Inserts at the cursor — nothing you have already written gets replaced',
+
+  /* ---- Slot suggestions ---- */
+  slotLocationTitle: 'Pick a place',
+  slotCategoryTitle: 'Pick a category',
+  slotQuantityTitle: 'How many',
+  slotExpiryTitle: 'When does it expire',
+  slotEmpty: 'Nothing matches — keep typing, or try another word',
+  slotPrefixUnknown: 'The part before the slash matches nothing — matching the last segment instead',
+  slotDeeperHint: 'It has levels under it — pick it again to go deeper',
+  slotNowAt: 'You are at “{path}” — pick one of its levels below',
+  slotLevelHint: 'These levels do not exist yet — pick one and it is created when you accept',
+  slotWillCreateLocation: 'Not in your data — this becomes a new place (tick it when accepting)',
+  slotWillCreateCategory: 'Not in your data — this becomes a new category (tick it when accepting)',
+  slotKeyboardHint: '↑↓ to move · Enter to pick · Esc to close',
+
+  /*
+   * ---- Pre-send check ----
+   *
+   * This line compares what you wrote against your own data using the very same
+   * matching rules the program uses, so "matches" here means the same thing it
+   * will mean when you accept.
+   */
+  checkLead: 'Pre-check: ',
+  checkItems_one: '{count} “Add item”',
+  checkItems_other: '{count} “Add item”',
+  checkJoin: ' · ',
+  checkPlaceOk: 'place “{path}” ✓',
+  /*
+   * See the Chinese comment: the user typed “蓝柜” while the stored place is
+   * “蓝色柜”. The strict matcher genuinely fails, the model still resolves it,
+   * and a hard “not in your data” warning there is a false alarm — worse than
+   * saying nothing, because people stop trusting the line.
+   */
+  checkPlaceNear:
+    'place “{query}” matches nothing exactly; closest is “{path}” — the model will most likely use it, so check the draft on the right (if it misses, this becomes a new place)',
+  checkPlaceNew: 'place “{query}” is not in your data — it becomes a new place (tick it when accepting)',
+  checkCategoryOk: 'category “{path}” ✓',
+  checkCategoryNear:
+    'category “{query}” matches nothing exactly; closest is “{path}” — the model will most likely use it, so check the draft on the right',
+  checkCategoryNew:
+    'category “{query}” is not in your data — it becomes a new category (tick it when accepting)',
+  checkOrphanNewPlace: '“New place” only gets created when something is “placed in” it',
+  checkFootnote: 'This line only compares against your places and categories — it never blocks sending',
+
+  /* ---- Quick entry (one item per line) ---- */
+  quickToggle: 'Quick entry',
+  quickTitle: 'Quick entry: one item per line',
+  quickHint:
+    '“Write it into the box” only writes the sentence into the chat panel — nothing reaches the database until you send it and accept the drafts.',
+  quickName: 'Name',
+  quickLocation: 'Place',
+  quickCategory: 'Category',
+  quickExpiry: 'Expiry',
+  quickStatus: 'Status',
+  quickAddRow: 'Add a row',
+  quickRemoveAria: 'Remove row {index}',
+  quickGenerate: 'Write it into the box',
+  quickClear: 'Clear',
+  quickDatePlaceholder: '2026-11-30',
+  quickGenerated_one: '{count} item written into the box — give it a look before sending',
+  quickGenerated_other: '{count} items written into the box — give them a look before sending',
+
   resetTitle: 'Start a new conversation?',
   resetConfirm: 'Start a new one',
   resetCancel: 'Keep this one',
@@ -304,6 +375,39 @@ export const ai = {
    */
   categoryChangesUnread:
     'The AI said it would change categories this round ({count} of them), but I could not read its format, so nothing was applied. Rephrasing usually fixes it.',
+
+  /*
+   * ---- Creating places ----
+   *
+   * The user asked for this in so many words: places used to only come into
+   * existence alongside an item, which blocks the "build the shelving first,
+   * then file things into it" way of working.
+   *
+   * The copy makes a point of listing *every* level that will be created,
+   * because the user gives a path and the missing middle levels come with it —
+   * and that has to be visible before anything is written.
+   */
+  locLead: 'The AI wants to create ',
+  locLeadTail: ' place(s) — untick any you do not want:',
+  locKindCreate: 'New',
+  locFromNew: '(new place)',
+  locAlsoLevels_one: '(the {count} missing level above it is created too)',
+  locAlsoLevels_other: '(the {count} missing levels above it are created too)',
+  locOnlyItself: '(only this level itself)',
+  locNoteDuplicate: 'Already in your data — nothing to create',
+  locProblemsLead: 'Of those, ',
+  locProblemsTail: ' need nothing — they already exist. That is not a failure.',
+  locIncludeAria: 'Create the place “{name}”?',
+  locWillApply_one: 'Creates {count} place',
+  locWillApply_other: 'Creates {count} places',
+  locNothingApply: 'No places to create',
+  locAccept: 'Accept the new places',
+  locDone: 'Done — ',
+  locResultCreated_one: '{count} place created',
+  locResultCreated_other: '{count} places created',
+  locResultNothing: 'No places were created',
+  locationChangesUnread:
+    'The AI said it wanted to create places ({count} of them), but I could not read the format it used, so nothing was created. Saying it again usually works.',
 
   catAccept: 'Accept category changes',
   catDone: 'Done: ',

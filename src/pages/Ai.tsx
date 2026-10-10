@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { buildAiContext, buildInventoryDigest } from '../ai/prompts'
 import {
   createMatchContext,
@@ -23,15 +22,21 @@ import {
   planCategoryChanges,
   type CategoryChange,
 } from '../ai/categoryEdit'
+import { countLocationChanges, planLocationChanges } from '../ai/locationEdit'
+import type { LocationChangeIntent } from '../ai/parse'
 import { AiChatPanel } from '../components/AiChatPanel'
 import { AiExtractPreview } from '../components/AiExtractPreview'
 import { AiKeyPanel } from '../components/AiKeyPanel'
 import { CategoryChangePreview } from '../components/CategoryChangePreview'
+import { LocationChangePreview } from '../components/LocationChangePreview'
+import type { ComposerContext } from '../components/AiQuickBar'
 import { Button, EmptyState } from '../components/ui/primitives'
 import { IconAlert } from '../components/ui/icons'
 import { uid } from '../lib/id'
+import { togglePinned } from '../lib/pins'
 import { useT } from '../i18n'
 import { useAppStore } from '../store/useAppStore'
+import { countByLocationIncludingDescendants } from '../store/selectors'
 import {
   addUsage,
   appendBubble,
@@ -69,13 +74,14 @@ function errorText(err: unknown): string {
  * 「新对话」。详见 useAiSessionStore.ts 顶部的说明。
  */
 export function Ai() {
-  const navigate = useNavigate()
-
   const data = useAppStore((s) => s.data)
   const derived = useAppStore((s) => s.derived)
   const aiApiKey = useAppStore((s) => s.aiApiKey)
+  const ui = useAppStore((s) => s.ui)
+  const setUi = useAppStore((s) => s.setUi)
   const applyDraftItems = useAppStore((s) => s.applyDraftItems)
   const applyCategoryPlan = useAppStore((s) => s.applyCategoryPlan)
+  const applyLocationPlan = useAppStore((s) => s.applyLocationPlan)
   const notify = useAppStore((s) => s.notify)
 
   // send/apply 里要拼提示文案，所以 t 从这里拿；
@@ -95,6 +101,7 @@ export function Ai() {
   const removedKeys = useAiSessionStore((s) => s.removedKeys)
   const staleSourceCount = useAiSessionStore((s) => s.staleSourceCount)
   const categoryPlan = useAiSessionStore((s) => s.categoryPlan)
+  const locationPlan = useAiSessionStore((s) => s.locationPlan)
   const error = useAiSessionStore((s) => s.error)
   const running = useAiSessionStore((s) => s.running)
   const usage = useAiSessionStore((s) => s.usage)
@@ -185,6 +192,45 @@ export function Ai() {
   const newCount = drafts.filter((d) => !d.sourceItemId).length
   const selectedCount = drafts.filter((d) => d.include).length
 
+  /**
+   * 输入框旁边那套（按钮 / 补全 / 预检）要用的数据。
+   *
+   * 在这里一次性备好往下传，而不是让 AiChatPanel 自己去 store 里取：
+   * 那个组件只该管「这一段话」；而这几样都是**跟着 data/derived 走的**，
+   * 摆在这里正好一起 memo，不必每次打字重算。
+   *
+   * ⚠️ `matchContext` 和 send() 里那份必须是同一个函数算出来的：
+   * 预检说的「这个位置对得上你库里那一条」，和采纳时真正会发生的事，
+   * 绝不能是两套判断 —— 界面说的和做的不一样，比不说还糟。
+   */
+  const composer = useMemo<ComposerContext>(
+    () => ({
+      locations: data.locations,
+      locationIndex: derived.index,
+      categories: data.categories,
+      categoryIndex: derived.categoryIndex,
+      locationUsage: countByLocationIncludingDescendants(data.items, derived),
+      matchContext: createMatchContext(data, derived),
+      pinnedLocationIds: ui.pinnedLocationIds,
+      pinnedCategoryIds: ui.pinnedCategoryIds,
+    }),
+    [data, derived, ui.pinnedLocationIds, ui.pinnedCategoryIds],
+  )
+
+  /**
+   * 点候选行右边那颗星。
+   *
+   * 存进界面偏好（localStorage），跟着这台设备走 —— 「我常选哪个抽屉」
+   * 是使用习惯，不是数据，所以不进备份、也不会跟着导出跑到别的设备上。
+   */
+  const togglePin = (id: string, kind: 'location' | 'category') => {
+    setUi(
+      kind === 'location'
+        ? { pinnedLocationIds: togglePinned(ui.pinnedLocationIds, id) }
+        : { pinnedCategoryIds: togglePinned(ui.pinnedCategoryIds, id) },
+    )
+  }
+
   const reset = () => {
     clearAiSession()
     setDuplicatePicks({})
@@ -240,6 +286,8 @@ export function Ai() {
       let touchedNow = new Set(session.touchedKeys)
       /** 会话里已有的分类计划 —— 这一轮新提的追加在后面 */
       let categoryPlanNow = session.categoryPlan
+      /** 会话里已有的「新建位置」计划 —— 这一轮新提的追加在后面（和分类同规矩） */
+      let locationPlanNow = session.locationPlan
       /*
        * 这一轮**真正完成**的对话轮次。
        *
@@ -378,6 +426,27 @@ export function Ai() {
             id: uid(),
             role: 'note',
             text: t('ai.categoryChangesUnread', { count: parsed.ignoredCategoryChanges }),
+          })
+        }
+
+        /*
+         * ---- 新建位置 ----
+         *
+         * 用户的原话：「在 左边小小型一号白色四层收纳/顶层，新建这个位置」
+         * +「需要可以新建位置」。位置是结构，所以走和分类一样的那套：
+         * 先算计划、单独摆一块、点采纳才落库。
+         */
+        if (parsed.locationChanges.length > 0) {
+          const plan = planLocationChanges(fresh.data, parsed.locationChanges as LocationChangeIntent[])
+          const merged = [...locationPlanNow, ...plan.entries]
+          locationPlanNow = merged
+          useAiSessionStore.setState({ locationPlan: merged })
+        } else if (parsed.ignoredLocationChanges > 0) {
+          /* 说了要建位置而我没看懂 —— 必须说出来，不许静默丢掉 */
+          appendBubble({
+            id: uid(),
+            role: 'note',
+            text: t('ai.locationChangesUnread', { count: parsed.ignoredLocationChanges }),
           })
         }
 
@@ -549,7 +618,16 @@ export function Ai() {
       parts.length > 0 ? t('ai.appliedPrefix') + summary : t('ai.noChangesToast'),
       'success',
     )
-    if (result.added > 0 && result.updated === 0) navigate('/items')
+    /*
+     * ⚠️ 采纳之后**不跳页**。
+     *
+     * 这里原来有一句 `if (result.added > 0 && result.updated === 0) navigate('/items')`：
+     * 只新建物品时把人送到物品列表去看结果。想法不算错，但用户的原话是
+     * 「ai 新建确认完，会自动回到物品页面，我不希望这样，我希望还停留在 ai 对话页面」——
+     * 而他说得对：一轮整理常常要**连着采纳几次**（先落一批、再让 AI 接着改），
+     * 跳走一次就得自己走回来，还会以为「刚才那轮是不是没成」。
+     * 落库了哪几条，气泡和提示里本来就写得清清楚楚，不需要靠跳页来证明。
+     */
   }
 
   /**
@@ -598,6 +676,29 @@ export function Ai() {
     notify(text, 'success')
   }
 
+  /**
+   * 采纳「新建位置」。
+   *
+   * 和物品、分类一样只结算这一批：气泡和对话都留着，没采纳的草稿也不动 ——
+   * 用户可能还想接着让 AI 调。
+   *
+   * 落库是**一次提交**（`applyLocationPlan` 内部 commit 一次），
+   * 所以只留一份快照、只写一次盘。
+   */
+  const acceptLocationPlan = () => {
+    const result = applyLocationPlan(locationPlan)
+    useAiSessionStore.setState({ locationPlan: [] })
+
+    appendBubble({
+      id: uid(),
+      role: 'note',
+      text:
+        result.created > 0
+          ? t('ai.locDone') + tc(result.created, 'ai.locResultCreated')
+          : t('ai.locResultNothing'),
+    })
+  }
+
   const cancel = () => cancelAiRequest()
 
   return (
@@ -622,6 +723,8 @@ export function Ai() {
           onSend={(text) => void send(text)}
           onCancel={cancel}
           onReset={reset}
+          composer={composer}
+          onTogglePin={togglePin}
         />
 
         <div className="chat-layout__draft">
@@ -652,6 +755,40 @@ export function Ai() {
                 <Button
                   size="lg"
                   onClick={() => useAiSessionStore.setState({ categoryPlan: [] })}
+                  disabled={running}
+                >
+                  {t('ai.discardAll')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {/*
+            「新建位置」也单独摆一块、单独一个采纳按钮 —— 和分类同一条理由：
+            位置是结构，多建了几级你只会看到「树变了样子」。而且用户写的是
+            **路径**，中间缺的那几级会一起建出来，那件事必须让他过一眼。
+          */}
+          {locationPlan.length > 0 ? (
+            <div className="stack" style={{ marginBottom: 'var(--gap-5)' }}>
+              <LocationChangePreview
+                entries={locationPlan}
+                onChange={(next) => useAiSessionStore.setState({ locationPlan: next })}
+              />
+              <div className="row wrap">
+                <Button
+                  variant="primary"
+                  size="lg"
+                  onClick={acceptLocationPlan}
+                  disabled={running || countLocationChanges(locationPlan) === 0}
+                >
+                  {t('ai.locAccept')}
+                  {countLocationChanges(locationPlan) > 0
+                    ? ` （${countLocationChanges(locationPlan)}）`
+                    : ''}
+                </Button>
+                <Button
+                  size="lg"
+                  onClick={() => useAiSessionStore.setState({ locationPlan: [] })}
                   disabled={running}
                 >
                   {t('ai.discardAll')}

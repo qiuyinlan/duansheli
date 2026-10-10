@@ -9,6 +9,27 @@ export const locations = {
   subtitle_one: '{count} place — nest it as deep as you like',
   subtitle_other: '{count} places — nest them as deep as you like',
   newTop: 'New place',
+  /*
+   * Search + expand controls. When the tree gets deep, jumping straight to a
+   * place beats scrolling down a hierarchy with your eyes.
+   */
+  searchPlaceholder: 'Search places (type “top tier”)',
+  searchAria: 'Search places',
+  searchFound_one: '{count} place found (faded rows show where it sits)',
+  searchFound_other: '{count} places found (faded rows show where they sit)',
+  searchNone: 'No matching places',
+  expandHint: 'Only the top level is expanded — use “Expand all” to see everything',
+  expandAll: 'Expand all',
+  collapseAll: 'Collapse all',
+  /*
+   * Only shown when the typed name actually says how many levels it has.
+   * Creating four places at once is a structural change, so it stays a visible,
+   * checked-by-default switch the user can turn off — never silent magic.
+   */
+  alsoLevels: 'Create all {count} levels as well',
+  alsoLevelsHint:
+    'The name you typed says it has {count} levels. Creating them now means you can file things into them later without adding them one by one. Untick to skip.',
+  addWithLevelsDone: 'Created “{name}” and its {count} levels',
 
   /* Empty state */
   empty: 'No places yet',

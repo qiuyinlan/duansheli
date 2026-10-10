@@ -1139,6 +1139,265 @@
   font-size: var(--fs-sm);
 }
 
+/* ------------------------------------------------------------------ */
+/* 输入框旁边那套：快捷指令 / 补全 / 预检 / 速录                       */
+/* ------------------------------------------------------------------ */
+
+.composer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-1) var(--gap-2);
+}
+
+.composer-chip {
+  padding: 2px var(--gap-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: 1.7;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.composer-chip:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+
+.composer-chip:disabled {
+  opacity: 0.45;
+}
+
+/*
+ * 补全弹层要**贴着输入框往上弹**，所以这一层得是定位父级。
+ * 往上而不是往下：输入框下面就是发送按钮和速录面板，往下弹会把它顶出屏幕。
+ */
+.composer-field {
+  position: relative;
+}
+
+.slot-pop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 4px);
+  z-index: 5;
+  /*
+   * ⚠️ 高度必须跟着**面板**走，不是跟着窗口走。
+   *
+   * `.chat-panel` 是 `overflow: hidden`，手机端整块只有 62vh；
+   * 弹层是从输入框往上弹的，太高就会被面板顶端裁掉 ——
+   * 而裁掉的是「越靠后越可能是他要的那条」的候选，很难自己发现。
+   * 所以给一个和视口挂钩的上限，百分比留足给输入框那一块。
+   */
+  max-height: min(264px, 38vh);
+  overflow-y: auto;
+  padding: var(--gap-1) 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+.slot-pop__head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  padding: var(--gap-1) var(--gap-3);
+}
+
+.slot-pop__foot {
+  padding: var(--gap-2) var(--gap-3) var(--gap-1);
+  border-top: 1px solid var(--line);
+  line-height: 1.6;
+}
+
+.slot-pop__empty {
+  padding: var(--gap-2) var(--gap-3);
+  line-height: 1.6;
+}
+
+.slot-pop__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * 一行 = 两个按钮（点文字选中 / 点星星置顶）。
+ *
+ * 高亮挂在**这一行**上，不挂在里面那个按钮上 —— 否则鼠标移到星星上时，
+ * 文字那一半的底色会突然消失（看着像「鼠标一动选中就变了」）。
+ */
+.slot-pop__item {
+  display: flex;
+  align-items: center;
+}
+
+.slot-pop__item:hover,
+.slot-pop__item.is-active {
+  background: var(--accent-soft);
+}
+
+.slot-pop__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--gap-3);
+  flex: 1;
+  min-width: 0;
+  padding: var(--gap-1) var(--gap-2) var(--gap-1) var(--gap-3);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.slot-pop__pin {
+  margin-right: var(--gap-2);
+}
+
+/* 没有星星的行留一个同宽的坑，免得两行的文字长度对不齐 */
+.slot-pop__pin--empty {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.slot-pop__item:hover .slot-pop__pin,
+.slot-pop__item.is-active .slot-pop__pin {
+  opacity: 1;
+}
+
+.slot-pop__hit {
+  color: var(--accent-text);
+}
+
+/* 库里没有的那一条：它是「会被当成新的」，得看得出来，不能和命中的混在一起 */
+.slot-pop__row.is-new .slot-pop__label {
+  color: var(--danger);
+}
+
+.slot-pop__hint {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+
+.slot-pop__row.is-new .slot-pop__hint {
+  color: var(--danger);
+}
+
+/* 「几层」那种顺手给的子层：虚线，表示它和「库里已有的一条」不是一回事 */
+.slot-pop__row.is-level .slot-pop__label {
+  color: var(--accent-text);
+}
+
+.slot-pop__row.is-level .slot-pop__hint {
+  color: var(--text-3);
+}
+
+/* 发出前预检：没事的时候安静，有事的时候才出声 */
+.ai-check {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--gap-1);
+  color: var(--text-3);
+  line-height: 1.7;
+}
+
+.ai-check--warn {
+  color: var(--danger);
+}
+
+.ai-check__lead {
+  color: var(--text-3);
+}
+
+.ai-check--warn .ai-check__lead {
+  color: var(--danger);
+}
+
+/* ---- 速录面板 ---- */
+
+.quick-entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.quick-entry__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--gap-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sub);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.quick-entry__head,
+.quick-entry__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 132px 96px 32px;
+  gap: var(--gap-2);
+  align-items: start;
+}
+
+.quick-entry__head {
+  padding: 0 var(--gap-1);
+}
+
+.quick-entry__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.quick-entry__suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--gap-1);
+}
+
+.quick-entry__chip {
+  padding: 0 var(--gap-2);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  text-align: left;
+}
+
+.quick-entry__chip:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+@media (max-width: 720px) {
+  .quick-entry__head {
+    display: none;
+  }
+
+  .quick-entry__row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  /* 手机上输入框上面只剩这么点地方，弹层要再矮一档（理由见 .slot-pop 上面那段） */
+  .slot-pop {
+    max-height: min(180px, 26vh);
+  }
+}
+
 /* 这一轮刚被改过的草稿行：左侧主色竖条 + 浅底色 */
 .ai-row--changed {
   background: var(--accent-soft);

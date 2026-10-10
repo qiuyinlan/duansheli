@@ -4,15 +4,19 @@ import { ItemRow } from '../components/ItemRow'
 import { TreeView } from '../components/TreeView'
 import { LocationPicker } from '../components/pickers'
 import { IconPencil, IconPlus, IconTrash } from '../components/ui/icons'
-import { Button, ConfirmDialog, EmptyState, Modal, Switch } from '../components/ui/primitives'
+import { Button, ConfirmDialog, EmptyState, Modal, SearchInput, Switch } from '../components/ui/primitives'
 import { useT } from '../i18n'
+import { commandVocab } from '../ai/commandVocab'
+import { levelNames, levelsFromName } from '../lib/levels'
+import { assignTreeColors, topLevelColorMap, type ColorTreeNode } from '../lib/palette'
+import { expandAncestorsOf, filterTreeByIds, searchTreeIds, type TreeNode } from '../lib/tree'
 import {
   countByLocationIncludingDescendants,
   itemsInLocation,
   liveItems,
 } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
-import type { Item } from '../types'
+import type { Item, Location } from '../types'
 import { UNASSIGNED_ID } from '../types'
 
 /**
@@ -48,6 +52,7 @@ export function Locations() {
   const ui = useAppStore((s) => s.ui)
   const setUi = useAppStore((s) => s.setUi)
   const addLocation = useAppStore((s) => s.addLocation)
+  const addLocationWithLevels = useAppStore((s) => s.addLocationWithLevels)
   const renameLocation = useAppStore((s) => s.renameLocation)
   const deleteLocation = useAppStore((s) => s.deleteLocation)
   const moveLocation = useAppStore((s) => s.moveLocation)
@@ -67,6 +72,8 @@ export function Locations() {
 
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null)
   const [nameDraft, setNameDraft] = useState('')
+  /** 「同时把 1~N 层也建好」——只在名字里写了层数时才出现 */
+  const [alsoBuildLevels, setAlsoBuildLevels] = useState(true)
   const [moveTarget, setMoveTarget] = useState<string | null>(null)
   /** 正在被拖着的物品（只为把那一行画淡一点） */
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -90,12 +97,105 @@ export function Locations() {
     itemCount: number
   } | null>(null)
 
-  // 首次拿到位置数据后，默认把整棵树展开
+  /*
+   * 展开状态：**先照用户上次调好的来**，没有记录才给默认视角。
+   *
+   * 用户的原话：「感觉现在pc端，看那个位置，全是绿的，还是不好看，
+   * 这么多折叠层级，怎么看最清晰呢」。
+   *
+   * 以前是「进来就把整棵树全部展开」—— 那等于一进门就给他最坏的第一眼：
+   * 所有层级同时铺开。现在的默认是**只展开顶层**（看得见有哪几个大标题，
+   * 点一下再往下走），而且他手动调过的状态**会被记住**（切页回来不再重来）。
+   */
   useEffect(() => {
-    if (expandInit || derived.flat.length === 0) return
-    setExpanded(new Set(derived.flat.map((n) => n.node.id)))
+    if (expandInit || derived.tree.length === 0) return
+    setExpanded(
+      ui.locationsExpandedTouched
+        ? new Set(ui.expandedLocations)
+        : new Set(derived.tree.map((node) => node.node.id)),
+    )
     setExpandInit(true)
-  }, [derived.flat, expandInit])
+  }, [
+    derived.tree,
+    expandInit,
+    ui.locationsExpandedTouched,
+    ui.expandedLocations,
+  ])
+
+  /**
+   * 展开状态一变就记住（跟着这台设备走）。
+   *
+   * 注意这里记的是 `expanded`（**用户自己的选择**），不是 `effectiveExpanded`
+   * （那个还掺了「搜索时临时展开的祖先」）—— 搜索不该改写他的偏好。
+   */
+  useEffect(() => {
+    if (!expandInit) return
+    setUi({ expandedLocations: [...expanded], locationsExpandedTouched: true })
+  }, [expanded, expandInit, setUi])
+
+  /**
+   * 点开 / 收起一级。
+   *
+   * 用**函数式更新**而不是读当前渲染里的那份：同一批里连点两下
+   * （测试里一次 act 点多个、用户手快也一样）时，读闭包的那版会让
+   * 前一下的展开丢掉 —— 表现是「点两个，只有一个开了」。
+   */
+  const toggleExpanded = (id: string) => {
+    setExpandInit(true)
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const expandAll = () => {
+    setExpandInit(true)
+    setExpanded(new Set(derived.flat.map((node) => node.node.id)))
+  }
+
+  const collapseAll = () => {
+    setExpandInit(true)
+    setExpanded(new Set())
+  }
+
+  /* ---- 搜索：和分类页、选择器**同一套**函数，行为必然一致 ---- */
+  const [query, setQuery] = useState('')
+  const searching = query.trim() !== ''
+  const matchedIds = useMemo(
+    () => (searching ? searchTreeIds(derived.flat.map((node) => node.node), query) : new Set<string>()),
+    [searching, derived.flat, query],
+  )
+  const searchView = useMemo(
+    () => (searching ? filterTreeByIds(derived.flat.map((node) => node.node), matchedIds) : null),
+    [searching, derived.flat, matchedIds],
+  )
+  /** 搜索结果里「只是路径」的祖先节点 —— 淡一档，别看起来像命中 */
+  const dimmedIds = useMemo(() => {
+    if (!searching || searchView === null) return new Set<string>()
+    return new Set([...searchView.keptIds].filter((id) => !matchedIds.has(id)))
+  }, [searching, searchView, matchedIds])
+  /** 搜索时把命中项的祖先展开（但不动用户调过的展开状态） */
+  const effectiveExpanded = useMemo(() => {
+    if (!searching || searchView === null) return expanded
+    return new Set([...expanded, ...expandAncestorsOf(derived.flat.map((node) => node.node), matchedIds)])
+  }, [searching, searchView, expanded, derived.flat, matchedIds])
+
+  /**
+   * 顶层分支一份色板，子层继承它并逐层变淡（`assignTreeColors`）。
+   *
+   * 顶层 key 用**完整的顶层列表**（含没有东西的）算，和物品列表、概览图表
+   * 共用同一份规则 —— 否则会出现「列表里这一支是蓝的、这里却是绿的」。
+   */
+  const branchColors = useMemo(() => {
+    const toColorNodes = (nodes: TreeNode<Location>[]): ColorTreeNode[] =>
+      nodes.map((node) => ({ key: node.node.id, children: toColorNodes(node.children) }))
+    return assignTreeColors(
+      toColorNodes(derived.tree),
+      topLevelColorMap(derived.tree.map((node) => node.node.id)),
+    )
+  }, [derived.tree])
 
   const live = useMemo(() => liveItems(data), [data])
   const counts = useMemo(
@@ -132,8 +232,16 @@ export function Locations() {
             })
           : t('locations.addTopTitle')
 
+  /**
+   * 正在打的名字里写着几层（「白色四层收纳架」→ 4），认不出来就是 null。
+   *
+   * 现推、不存 state：存了就会在用户接着打字之后变成一个过期的数字。
+   */
+  const levelCountOfDraft = nameDraft.trim() === '' ? null : levelsFromName(nameDraft)
+
   const openAddDialog = (parentId: string | null) => {
     setNameDraft('')
+    setAlsoBuildLevels(true)
     setNameDialog({ mode: 'add', parentId, initial: '' })
   }
 
@@ -149,7 +257,21 @@ export function Locations() {
     const name = nameDraft.trim()
     if (name === '') return
     if (nameDialog.mode === 'add') {
-      const created = addLocation(name, nameDialog.parentId)
+      /*
+       * 名字里写着「几层」时，可以顺手把 1~N 层一起建好。
+       *
+       * 为什么要有这个勾（而不是自动建）：位置是**结构**，一口气多出四个位置
+       * 得是用户看得见、点得掉的一步。默认勾上，但摆在他眼前 ——
+       * 他打「茶话弄奶茶保温袋」这种名字时，这里根本不会出现（认不出层数）。
+       */
+      const levelCount = levelsFromName(name)
+      const names = levelCount === null ? [] : levelNames(levelCount, commandVocab().levelLabel)
+
+      const result =
+        alsoBuildLevels && names.length > 0
+          ? addLocationWithLevels(name, nameDialog.parentId, names)
+          : null
+      const created = result !== null ? result.created : addLocation(name, nameDialog.parentId)
       if (!created) {
         notify(t('locations.addFailed'), 'error')
         return
@@ -157,7 +279,13 @@ export function Locations() {
       if (nameDialog.parentId) {
         setExpanded((prev) => new Set(prev).add(nameDialog.parentId as string))
       }
-      notify(t('locations.addDone'), 'success')
+      setExpanded((prev) => new Set(prev).add(created.id))
+      notify(
+        result !== null && result.levels.length > 0
+          ? t('locations.addWithLevelsDone', { name, count: result.levels.length })
+          : t('locations.addDone'),
+        'success',
+      )
     } else if (nameDialog.targetId) {
       renameLocation(nameDialog.targetId, name)
       notify(t('locations.renameDone'), 'success')
@@ -286,37 +414,67 @@ export function Locations() {
         <div className="split">
           {/* ---------------- 左：位置树 ---------------- */}
           <div className="split__side">
+            {/*
+              搜索 + 展开控制。
+              用户要的是「这么多折叠层级，怎么看最清晰」—— 层级一深，
+              最有效的一招其实是**直接跳到某个位置**，而不是让眼睛顺着树爬。
+              搜索用的是分类页/选择器**同一套**函数，所以行为必然一致。
+            */}
+            <div className="stack-sm" style={{ marginBottom: 'var(--gap-3)' }}>
+              <SearchInput
+                value={query}
+                onValueChange={setQuery}
+                placeholder={t('locations.searchPlaceholder')}
+                aria-label={t('locations.searchAria')}
+              />
+              <div className="row-between wrap">
+                <span className="tiny dim">
+                  {searching
+                    ? matchedIds.size > 0
+                      ? tc(matchedIds.size, 'locations.searchFound')
+                      : t('locations.searchNone')
+                    : t('locations.expandHint')}
+                </span>
+                <span className="row" style={{ gap: 'var(--gap-2)' }}>
+                  <Button size="sm" onClick={expandAll} disabled={searching}>
+                    {t('locations.expandAll')}
+                  </Button>
+                  <Button size="sm" onClick={collapseAll} disabled={searching}>
+                    {t('locations.collapseAll')}
+                  </Button>
+                </span>
+              </div>
+            </div>
+
             <TreeView
-              nodes={derived.tree}
+              nodes={searchView ? searchView.roots : derived.tree}
               selectedIds={activeId ? [activeId] : [UNASSIGNED_ID]}
               /*
-               * 目录层级配色：大标题保持原样，子目录统一绿色。
+               * 按**分支**上色（顶层色条 + 子层极淡），不再按层级上色。
                *
-               * 用户的原话是「显示位置的时候，它不是会有文件大标题，
-               * 然后里面有子文件夹吗？……身为子目录、子大标题而非物品的，
-               * 变颜色统一绿色」。所以这一页（这是一棵**目录树**）上色，
-               * 物品行那边照旧是普通文字 —— 见 ItemRow 里那段注释。
+               * 用户第二次的反馈：「全是绿的，还是不好看，这么多折叠层级」。
+               * 原因是颜色当时同时表达「这是目录」和「这是第几层」，
+               * 而层级缩进已经说清了 —— 越深重复越多，就成了绿墙。
+               * 现在颜色只说一件事：**你在哪一支**。
                */
-              tintDepth
+              colors={branchColors}
+              dimmedIds={dimmedIds}
               onSelect={(id) => {
                 setSelected(id)
                 setTouched(true)
               }}
               counts={counts}
-              expanded={expanded}
-              onToggle={(id) =>
-                setExpanded((prev) => {
-                  const next = new Set(prev)
-                  if (next.has(id)) next.delete(id)
-                  else next.add(id)
-                  return next
-                })
+              expanded={effectiveExpanded}
+              onToggle={toggleExpanded}
+              virtualRoot={
+                searching
+                  ? null
+                  : {
+                      id: UNASSIGNED_ID,
+                      label: t('status.unassigned'),
+                      count: counts.get(UNASSIGNED_ID) ?? 0,
+                    }
               }
-              virtualRoot={{
-                id: UNASSIGNED_ID,
-                label: t('status.unassigned'),
-                count: counts.get(UNASSIGNED_ID) ?? 0,
-              }}
               /*
                * 落点：从右边列表把物品拖到任意一个位置上。
                *
@@ -540,6 +698,21 @@ export function Locations() {
             }
           }}
         />
+        {/*
+          只在名字里真的写了「几层」时才出现 —— 平时这个对话框和以前一模一样。
+        */}
+        {nameDialog !== null && nameDialog.mode === 'add' && levelCountOfDraft !== null ? (
+          <div className="stack-sm" style={{ marginTop: 'var(--gap-3)' }}>
+            <Switch
+              checked={alsoBuildLevels}
+              onChange={setAlsoBuildLevels}
+              label={t('locations.alsoLevels', { count: levelCountOfDraft })}
+            />
+            <div className="tiny dim">
+              {t('locations.alsoLevelsHint', { count: levelCountOfDraft })}
+            </div>
+          </div>
+        ) : null}
       </Modal>
 
       {/* ---------------- 移动位置 ---------------- */}

@@ -659,6 +659,55 @@
   color: var(--text-3);
 }
 
+/* ---------------- 置顶那颗星（位置树 / 补全候选 / 选择器都用它） ---------------- */
+
+/*
+ * 一颗星，两种状态：空心 = 没置顶，实心 = 置顶了。
+ *
+ * 平时压到很淡（0.35），鼠标扫过这一行或者已经置顶时才亮起来 ——
+ * 理由是它每一行都出现：全亮的话，一屏树里会多出一列同样抢眼的星星，
+ * 而它只是个「顺手可以钉一下」的入口，不该跟位置名字抢注意力。
+ */
+.pin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-3);
+  opacity: 0.35;
+  cursor: pointer;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.pin-btn:hover,
+.pin-btn:focus-visible {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.pin-btn.is-on {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* 触屏没有「鼠标扫过」，淡星星就等于看不见了 —— 那就一直亮着 */
+@media (hover: none) {
+  .pin-btn {
+    opacity: 0.75;
+  }
+}
+
+.tree-node__row:hover .pin-btn,
+.tree-node__row:focus-within .pin-btn {
+  opacity: 1;
+}
+
 /* ---------------- 位置树 ---------------- */
 
 .tree {
@@ -749,14 +798,38 @@
 }
 
 /*
+ * 左边那根分支色条：**顶层实、子层极淡**。
+ *
+ * 它表达的是「你在哪一支」（同一个顶层下面各级同色相），而不是「这是第几层」——
+ * 层级由缩进表达就够了。为什么不再给文字上色：用户第一次的诉求是
+ * 「目录和子目录要分得开」，那一版把子目录**文字**统一染绿；层级深了之后
+ * 就成了一堵绿墙（他第二次的原话：「全是绿的，还是不好看」）。
+ * 颜色现在只说一件事：分支归属。
+ */
+.tree-node__bar {
+  width: 3px;
+  align-self: stretch;
+  margin: 2px var(--gap-1) 2px 0;
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+}
+
+/* 子层：更细一点，视觉上让「这一支」是背景，不跟当前这一行抢注意力 */
+.tree-node__bar--sub {
+  width: 2px;
+}
+
+/* 空位置：色条更淡（它只是「这一格没东西」的提示，不值得抢眼） */
+.tree-node__row:has(.tree-node__label--empty-loc) .tree-node__bar {
+  opacity: 0.35;
+}
+
+/*
  * 子目录（第 1 层及更深）统一绿色。
  *
- * 用的就是这一页的主色（`--accent` = #0d9488 青绿），所以「这一屏的颜色」
- * 和「子目录的颜色」是同一个色系，不会显得像是另加了一层装饰。
- *
- * 为什么只给子目录上色、大标题保持原样：这一棵树里唯一需要一眼读出来的
- * 信息是「我翻到第几层了」。全上色等于没上色；只给子级上色，眼睛扫下来
- * 就能看出哪一段是「收在里面的」，而顶层那几项仍然是中性的锚点。
+ * ⚠️ 位置页已经**不用**这个了（改用按分支上色的色条，见 `.tree-node__bar`）。
+ * 留着是因为 `tintDepth` 这个开关本身没删：以后哪棵树需要「按层级上色」
+ * 还能用上。新代码优先用 `colors`。
  */
 .tree-node__label--sub {
   color: var(--accent-text);
@@ -780,6 +853,45 @@
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
   padding-left: var(--gap-2);
+}
+
+/* 选择器里那一小块「置顶」：置顶的那几条单独摆着，带完整路径 */
+.picker-pinned {
+  margin-bottom: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+}
+
+.picker-pinned__head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-1);
+  color: var(--text-3);
+  margin-bottom: var(--gap-1);
+}
+
+.picker-pinned__head svg {
+  color: var(--accent);
+}
+
+.picker-pinned__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.picker-pinned__row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-1);
+}
+
+/* 置顶区里「已经被选中」的那一条（位置是单选、分类是多选，两边都标出来） */
+.tree-node__label.is-picked {
+  color: var(--accent-text);
+  font-weight: 600;
 }
 
 .tree-node__actions {

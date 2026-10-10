@@ -6,13 +6,18 @@ interface IconProps {
   className?: string
 }
 
-function Svg({ size = 16, className, children }: IconProps & { children: ReactNode }) {
+function Svg({
+  size = 16,
+  className,
+  fill = 'none',
+  children,
+}: IconProps & { fill?: string; children: ReactNode }) {
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 16 16"
-      fill="none"
+      fill={fill}
       stroke="currentColor"
       strokeWidth={1.5}
       strokeLinecap="round"
@@ -256,3 +261,20 @@ export const IconSparkle = (p: IconProps) => (
     <path d="M8 1.75 9.35 6.15 13.75 7.5 9.35 8.85 8 13.25 6.65 8.85 2.25 7.5 6.65 6.15z" />
   </Svg>
 )
+
+/**
+ * 五角星 —— 「置顶」那颗星。
+ *
+ * ⚠️ 和上面的 IconSparkle（四角星、AI 的标记）**必须长得不一样**：
+ * 四角星在这个站里已经等于「AI」，再用它当置顶按钮，用户分不清
+ * 哪个是「AI 干的」哪个是「我自己钉的」。
+ *
+ * `filled` 是唯一的状态区分（置顶 = 实心、没置顶 = 空心），
+ * 因为这一列要够窄 —— 弹层里它紧挨着候选文字。
+ */
+export const IconStar = ({ filled = false, ...p }: IconProps & { filled?: boolean }) => (
+  <Svg {...p} fill={filled ? 'currentColor' : 'none'}>
+    <path d="M8 2.4l1.72 3.48 3.84.56-2.78 2.71.66 3.83L8 11.17l-3.44 1.81.66-3.83L2.44 6.44l3.84-.56z" />
+  </Svg>
+)
+

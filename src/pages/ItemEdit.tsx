@@ -6,7 +6,7 @@ import { Button, EmptyState, Switch } from '../components/ui/primitives'
 import type { DictKey } from '../i18n'
 import { useT } from '../i18n'
 import { isExpired } from '../lib/expiry'
-import { todayISODate } from '../lib/format'
+import { todayISODate, addDaysToISODate } from '../lib/format'
 import {
   countByLocationIncludingDescendants,
   liveItems,
@@ -31,8 +31,6 @@ const EXPIRY_QUICK_CHOICES: Array<{ days: number; labelKey: DictKey }> = [
   { days: 365, labelKey: 'expiry.fieldQuickYear' },
 ]
 
-const pad2 = (n: number) => String(n).padStart(2, '0')
-
 /**
  * 表单里能选的三个状态。
  *
@@ -51,17 +49,11 @@ const STATUS_OPTIONS: Array<{
 ]
 
 /**
- * 在 `YYYY-MM-DD` 上加减天数，返回同样格式的串。
+ * 在 `YYYY-MM-DD` 上加减天数 —— 搬到 src/lib/format.ts 了。
  *
- * 用**本地日期**算术（`new Date(y, m, d)`）：绝不能走 `toISOString()`，
- * 那会先把日期当成 UTC 再换算回来，在东八区晚上会差一天。
- * 日期只有「天」没有「时刻」，所以加减也用日期构造器，不碰毫秒。
+ * 理由：AI 输入框旁边那排「一周后 / 一个月后」的补全也要用同一个算术。
+ * 两份日期算术迟早会漂，而漂了就是「差一天」这种最难发现的错。
  */
-function addDaysToISODate(iso: string, days: number): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  const shifted = new Date(y, m - 1, d + days)
-  return `${shifted.getFullYear()}-${pad2(shifted.getMonth() + 1)}-${pad2(shifted.getDate())}`
-}
 
 /* ------------------------------------------------------------------ */
 /* 单个属性输入控件                                                    */

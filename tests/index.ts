@@ -18,8 +18,12 @@ import './collections'
 import './spare'
 import './csv'
 import './aiVocab'
+// AI 输入框旁边那套（快捷指令 / 补全 / 预检）的规则 —— 纯逻辑，jsdom 没法打字
+import './aiCommands'
 // AI 整理分类（新建/改名/移动/删除）—— 纯逻辑，算和写分开
 import './categoryEdit'
+// AI 新建位置（用户报的「需要可以新建位置」）—— 同一套分工
+import './locationEdit'
 import './storage'
 // 数据丢失：init 不能把还没落盘的新东西冲掉（issue 10）
 import './dataLoss'

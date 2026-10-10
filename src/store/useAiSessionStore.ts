@@ -48,6 +48,7 @@ import { create } from 'zustand'
 import type { ChatTurn, ChatBubble } from '../ai/chat'
 import type { ItemDraft } from '../ai/convert'
 import type { CategoryPlanEntry } from '../ai/categoryEdit'
+import type { LocationPlanEntry } from '../ai/locationEdit'
 import type { AiUsage } from '../ai/deepseek'
 import { uid } from '../lib/id'
 
@@ -118,6 +119,13 @@ export interface AiSessionState {
    * 里面的 id 都是当时那份数据的。所以 `invalidateAiSession` 也要清它。
    */
   categoryPlan: CategoryPlanEntry[]
+  /**
+   * AI 提议**新建的位置**（计划，不是原始意图）。
+   *
+   * 和 `categoryPlan` 完全同构，也同一条理由：位置是结构，
+   * 改错了你只会看到「树变了样子」。所以它单独一块、单独一个采纳按钮。
+   */
+  locationPlan: LocationPlanEntry[]
   error: string | null
   running: boolean
   /** 本次会话累计消耗 */
@@ -137,6 +145,7 @@ function emptySession(): AiSessionState {
     appliedSummary: '',
     staleSourceCount: 0,
     categoryPlan: [],
+    locationPlan: [],
     error: null,
     running: false,
     usage: EMPTY_USAGE,

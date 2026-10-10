@@ -54,6 +54,23 @@ export function todayISODate(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
+/**
+ * 在 `YYYY-MM-DD` 上加减天数，返回同样格式的串。
+ *
+ * 用**本地日期**算术（`new Date(y, m, d)`）：绝不能走 `toISOString()`，
+ * 那会先把日期当成 UTC 再换算回来，在东八区晚上会差一天。
+ * 日期只有「天」没有「时刻」，所以加减也用日期构造器，不碰毫秒。
+ *
+ * ⚠️ 「多久之后过期」这类按钮（录入表单、AI 输入框旁边的补全）都要用它 ——
+ * 以前它只在 ItemEdit 里私有一份，第二处要用的时候必须**搬到这里**，
+ * 而不是再抄一份：两份日期算术迟早会漂，而漂了就是差一天这种最难发现的错。
+ */
+export function addDaysToISODate(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const shifted = new Date(y, m - 1, d + days)
+  return `${shifted.getFullYear()}-${pad(shifted.getMonth() + 1)}-${pad(shifted.getDate())}`
+}
+
 /** 从某个时间到现在经过了多少天（向下取整，最小 0） */
 export function daysSince(iso: string | null | undefined): number {
   const d = toDate(iso)

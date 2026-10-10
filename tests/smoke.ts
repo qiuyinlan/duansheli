@@ -16,7 +16,7 @@ import { buildCsv } from '../src/data/exportCsv'
 import { buildExportFile } from '../src/data/exportJson'
 import { mergeAppData } from '../src/data/importData'
 import { parseExportFile } from '../src/data/validate'
-import { buildTree, canReparent, createTreeIndex, flattenTree } from '../src/lib/tree'
+import { buildTree, canReparent, createTreeIndex, expandAncestorsOf, filterTreeByIds, flattenTree, searchTreeIds } from '../src/lib/tree'
 import { SECTION_THEMES, themeForPath } from '../src/lib/sections'
 import { NEUTRAL_GROUP_COLOR, assignGroupColors, assignTreeColors, colorForKey, mixWithWhite, topLevelColorMap } from '../src/lib/palette'
 import { LocalRepository } from '../src/storage/localRepository'
@@ -76,8 +76,46 @@ await test('数据里即使有环，也不会死循环或让节点消失', () =>
   eq(flat.length, broken.length, '环被拆掉之后节点数应保持不变')
 })
 
-await test('禁止把位置移动到它自己的子孙下', () => {
+await test('★ 搜「衣柜」能直接定位到它，而且要把祖先带出来', () => {
+  /*
+   * 用户的原话：「这么多折叠层级，怎么看最清晰呢」。
+   * 层级一深，最有效的一招是**直接跳过去**，而不是让眼睛顺着一棵树爬 ——
+   * 所以位置页加了搜索（用的是分类页/选择器那**同一套**函数）。
+   *
+   * 这一条验的是那套函数在位置树上的行为：命中 + **祖先必须跟着留**。
+   * 祖先掉了的话，被搜出来的节点会显示成顶层（`buildTree` 会把找不到父级的
+   * 当根），用户会以为它是第一层，从而归错地方。
+   */
   const seed = createSeedData()
+  const index = createTreeIndex(seed.locations)
+  const wardrobe = must(
+    seed.locations.find((location) => location.name === '衣柜'),
+    '找不到衣柜',
+  )
+  eq(index.pathNames(wardrobe.id).join('/'), '家/卧室/衣柜', '前提：它在第三层')
+
+  const matched = searchTreeIds(seed.locations, '衣柜')
+  eq(matched.has(wardrobe.id), true, '搜名字要命中它')
+
+  const view = filterTreeByIds(seed.locations, matched)
+  eq(view.keptIds.size, 3, '命中它自己 + 家 + 卧室，一共三条')
+  eq(view.roots.length, 1, '留在树里之后仍然只有「家」一个根')
+  eq(view.roots[0]?.node.name, '家')
+
+  /* 搜索时自动展开的是**祖先**，命中项自己不动（它底下没命中的不该铺开） */
+  const expanded = expandAncestorsOf(seed.locations, matched)
+  eq(expanded.size, 2, '家 + 卧室')
+  eq(expanded.has(wardrobe.id), false, '命中的那个不算「祖先」，不该被自动展开')
+})
+
+await test('搜索匹配的是节点自己的名字，不是整条路径（和分类页同一口径）', () => {
+  const seed = createSeedData()
+  /* 「家」在每一条路径里都出现，但只有顶层那个节点自己叫「家」 */
+  const matched = searchTreeIds(seed.locations, '家')
+  eq(matched.size, 1, `只有名字真的含这两个字的那一条，实际 ${matched.size} 条`)
+})
+
+await test('禁止把位置移动到它自己的子孙下', () => {  const seed = createSeedData()
   const index = createTreeIndex(seed.locations)
   const home = must(seed.locations.find((l) => l.name === '家'), '找不到家')
   const wardrobe = must(seed.locations.find((l) => l.name === '衣柜'), '找不到衣柜')
@@ -86,6 +124,70 @@ await test('禁止把位置移动到它自己的子孙下', () => {
   eq(canReparent(index, home.id, home.id).ok, false, '不能移动到自己下面')
   eq(canReparent(index, wardrobe.id, home.id).ok, true, '正常的父子关系应该允许')
   eq(canReparent(index, wardrobe.id, null).ok, true, '提升为顶层应该允许')
+})
+
+/* ------------------------------------------------------------------ */
+/* 1b. 兄弟的显示顺序                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 用户报的原话：「我发现位置顺序，没有按照123这样的次序来，是先显示1层，再3，再2」。
+ *
+ * 根因是 `order` 只是**创建顺序**：他先点了「3层」、后来又补上「2层」，
+ * 库里就是 1层(order 0)、3层(order 1)、2层(order 2)，整棵树照着 order 排，
+ * 于是显示成 1、3、2 —— 名字本身已经把顺序写清楚了，程序却在跟它作对。
+ * 所以：**名字里只有编号不同的兄弟，按编号排。**
+ */
+suite('位置树：兄弟的显示顺序')
+
+function node(id: string, name: string, parentId: string | null, order: number) {
+  return { id, name, parentId, order }
+}
+
+await test('★ 只有编号不同的兄弟按数字排（先建 3层、后来又补 2层，也必须是 1、2、3）', () => {
+  const flat = flattenTree(
+    buildTree([
+      node('rack', '四层收纳架', null, 0),
+      node('r1', '1层', 'rack', 0),
+      node('r3', '3层', 'rack', 1),
+      node('r2', '2层', 'rack', 2),
+    ]),
+  )
+  const names = flat.filter((n) => n.node.parentId === 'rack').map((n) => n.node.name)
+  eq(names.join('、'), '1层、2层、3层', `编号兄弟必须按数字排，实际：${names.join('、')}`)
+})
+
+await test('★ 十层排在二层后面（数字当数字比，不是按字符一个一个比）', () => {
+  const flat = flattenTree(
+    buildTree([
+      node('rack', '收纳架', null, 0),
+      node('r10', '10层', 'rack', 0),
+      node('r2', '2层', 'rack', 1),
+    ]),
+  )
+  const names = flat.filter((n) => n.node.parentId === 'rack').map((n) => n.node.name)
+  eq(names.join('、'), '2层、10层', `「10」要排在「2」后面，实际：${names.join('、')}`)
+})
+
+await test('名字里没有编号的兄弟，仍然按 order 排（不能把用户排的顺序推翻）', () => {
+  const flat = flattenTree(
+    buildTree([
+      node('wardrobe', '衣柜', null, 0),
+      node('desk', '书桌', null, 1),
+    ]),
+  )
+  eq(flat.map((n) => n.node.name).join('、'), '衣柜、书桌', 'order 说了算的时候不能被名字顶掉')
+})
+
+await test('只有编号差、但前后缀不一样的，不算同一组（1层 和 1楼 不该互相比数字）', () => {
+  const flat = flattenTree(
+    buildTree([
+      node('f1', '1层', null, 0),
+      node('f2', '2楼', null, 1),
+      node('f3', '3号', null, 2),
+    ]),
+  )
+  eq(flat.map((n) => n.node.name).join('、'), '1层、2楼、3号', '不同名字的东西按 order 排，别硬凑成一组')
 })
 
 /* ------------------------------------------------------------------ */
@@ -644,8 +746,38 @@ await test('录入的物品真的写进了 IndexedDB', async () => {
   ok(persisted.items[1].idleAt !== null, '标为闲置时应记录闲置起始时间')
 })
 
-await test('导出的数据能原样导入回来', () => {
-  const data = useAppStore.getState().data
+await test('★ 新建位置时可以把 1~N 层一起建好（用户要的「方便我后续存东西」）', () => {
+  /*
+   * 用户的原话：「我输入 xxx4层xxx 这个新位置，那么就可以自动建立子位置，
+   * 自动有对应的 1-4 层位置，这个逻辑，方便我后续存东西。」
+   *
+   * 层数从名字里认（`lib/levels.ts`），层名叫什么由界面给（跟着界面语言，
+   * 但和用户自己那套「1层/2层」一致）。这里验的是**落库那一半**：
+   * 一次调用之后库里真有一棵树，而不是只有一个空名字。
+   */
+  const store = useAppStore.getState()
+  const before = store.data.locations.length
+
+  const result = must(
+    store.addLocationWithLevels('独立白色四层收纳架', null, ['1层', '2层', '3层', '4层']),
+    '应该建得出来',
+  )
+
+  const after = useAppStore.getState()
+  eq(after.data.locations.length, before + 5, '四个层 + 它自己，一个都不能少')
+  eq(result.levels.length, 4)
+
+  const index = createDerived(after.data).index
+  eq(index.pathString(result.created.id, ' / '), '独立白色四层收纳架')
+  eq(index.pathString(result.levels[0]?.id ?? '', ' / '), '独立白色四层收纳架 / 1层')
+  eq(index.pathString(result.levels[3]?.id ?? '', ' / '), '独立白色四层收纳架 / 4层')
+
+  /* 同级的 order 不能撞：撞了界面上顺序就随缘了 */
+  const orders = result.levels.map((l) => l.order)
+  eq(new Set(orders).size, 4, `四个层的 order 必须互不相同，实际：${orders.join(',')}`)
+})
+
+await test('导出的数据能原样导入回来', () => {  const data = useAppStore.getState().data
   const parsed = mustParse(parseExportFile(JSON.stringify(buildExportFile(data))))
   deepEq(parsed.data.items, data.items)
   deepEq(parsed.data.locations, data.locations)

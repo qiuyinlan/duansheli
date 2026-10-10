@@ -1,4 +1,4 @@
-﻿/** Shared buttons, units, confirmations, toasts. */
+/** Shared buttons, units, confirmations, toasts. */
 
 export const common = {
   /* Buttons */
@@ -58,6 +58,12 @@ export const common = {
 
   /* Accessibility */
   selectItemAria: 'Select “{name}”',
+
+  /* Pinning (the star) — what it does and what changes once it is on */
+  pinAria: 'Pin “{name}” to the top (it comes first next time)',
+  unpinAria: 'Unpin “{name}”',
+  pinnedTitle: 'Pinned',
+  pinHint: 'Tap the star on the right to pin it — next time it comes first',
 
   /* Language switcher */
   language: 'Language',
