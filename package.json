@@ -13,9 +13,11 @@
     "audit:i18n": "node scripts/audit-i18n.mjs",
     "check": "node node_modules/typescript/bin/tsc --noEmit && node scripts/audit-i18n.mjs && node scripts/run-tests.mjs",
     "sample": "node scripts/make-sample-backup.mjs",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "check:supabase": "node scripts/check-supabase.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2",

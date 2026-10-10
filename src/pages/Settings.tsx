@@ -8,6 +8,7 @@ import {
   IconUpload,
 } from '../components/ui/icons'
 import { Button, ConfirmDialog, Modal, Switch } from '../components/ui/primitives'
+import { CloudSyncPanel } from '../components/CloudSyncPanel'
 import { SnapshotCompareDialog } from '../components/SnapshotCompareDialog'
 import { exportCsv } from '../data/exportCsv'
 import { exportJson } from '../data/exportJson'
@@ -734,6 +735,14 @@ export function Settings() {
             </div>
           </div>
         </div>
+
+        {/*
+          云端同步。
+          放在「存储状态」紧后面，是因为它回答的是同一类问题：
+          我的数据现在到底在哪几个地方各存了一份。
+          上面那块讲清楚了「按网址隔离」，这块接着说「跨设备怎么办」。
+        */}
+        <CloudSyncPanel />
       </section>
 
       {/* ================= 数据体检 ================= */}

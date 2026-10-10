@@ -216,6 +216,20 @@ export const IconUndo = (p: IconProps) => (
   </Svg>
 )
 
+/**
+ * 云 —— 云端同步用。
+ *
+ * 一朵两段弧的云，下半截是一条平线（像托着它的那一层）。
+ * 刻意不画云里的箭头：同步是双向的，画成单向箭头反而会让人以为
+ * 数据只往一个方向走。
+ */
+export const IconCloud = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4.6 11.5a2.85 2.85 0 0 1-.35-5.68 3.6 3.6 0 0 1 6.9-.6 2.6 2.6 0 0 1 .35 6.28z" />
+    <path d="M4.75 13.75h6.5" />
+  </Svg>
+)
+
 export const IconFolder = (p: IconProps) => (
   <Svg {...p}>
     <path d="M1.75 4.25a1 1 0 0 1 1-1h3l1.25 1.5h6.25a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-10.5a1 1 0 0 1-1-1z" />

@@ -7,6 +7,7 @@ import { applySectionTheme, themeForPath } from '../lib/sections'
 import type { DictKey } from '../i18n'
 import { useT } from '../i18n'
 import { LanguageSwitch } from './LanguageSwitch'
+import { CloudStatusNotice } from './CloudSyncPanel'
 import { Button, ToastStack } from './ui/primitives'
 import {
   IconAlert,
@@ -325,6 +326,12 @@ export function AppShell() {
               </span>
             </div>
           ) : null}
+
+          {/*
+            云端同步的状态条。
+            它自己决定显不显示 —— 一切正常时它什么都不渲染（见那个组件的说明）。
+          */}
+          <CloudStatusNotice />
 
           <Outlet />
         </div>

@@ -34,6 +34,15 @@ jobs:
         run: npm ci
 
       - name: 类型检查 + 构建
+        # 云端同步的两个值从仓库 Secrets 来（Settings → Secrets and variables → Actions）。
+        # Vite 只把 VITE_ 开头的变量打进了前端，所以这两个值在构建时就固定进产物里了
+        # —— 换 Supabase 项目要重新部署一次，而不是改了就生效。
+        #
+        # 没配 Secrets 也不会失败：构建照常，只是产出的应用里云端同步整体关掉
+        # （设置页会说明怎么配）。本地功能和以前一模一样。
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
 
       # 构建通过之后才跑测试；测试里包含「导出 → 导入 数据一致」这条硬门禁

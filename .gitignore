@@ -26,6 +26,15 @@ pnpm-debug.log*
 断舍离-物品清单-*.csv
 duansheli-items-*.csv
 
+# 本地环境变量：Supabase 的地址与 anon key。
+#
+# 这两个值本身不算秘密（anon key 会被打进前端 JS，谁都能看到），
+# 但**每个项目的不一样**，而且提交上去会让人以为「这个仓库连的就是这个库」。
+# 线上部署走仓库 Secrets（见 .env.example 末尾），所以这里忽略掉最省事。
+.env
+.env.local
+.env.*.local
+
 # 测试基础设施的临时产物
 .test-build
 .audit-build

@@ -1655,3 +1655,119 @@
   align-items: center;
   margin-top: 1px;
 }
+
+/* ---------------- 云端同步（设置页那块） ---------------- */
+
+/*
+ * 四个步骤的清单。用 ol + 有序列表而不是手写编号：
+ * 这几步是有先后顺序的（先建项目才能拿 key），编号是内容的一部分。
+ */
+.cloud-steps {
+  margin: var(--gap-3) 0 0;
+  padding-left: 1.5em;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  line-height: 1.9;
+}
+
+.cloud-steps li {
+  margin-bottom: 2px;
+}
+
+/*
+ * 首次绑定时的三个选项（合并 / 覆盖云端 / 覆盖本机）。
+ * 整块是可点的 label —— 只有小圆点能点的话，在手机上很难点中，
+ * 而这个选择正是「一不小心就覆盖掉一边」的地方，不能让人点不中。
+ */
+.cloud-choice {
+  display: flex;
+  gap: var(--gap-3);
+  align-items: flex-start;
+  padding: var(--gap-3) var(--gap-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  line-height: 1.7;
+}
+
+.cloud-choice:hover {
+  border-color: var(--line-strong);
+}
+
+.cloud-choice:has(input:checked) {
+  border-color: var(--text);
+}
+
+.cloud-choice input {
+  margin-top: 3px;
+  flex: none;
+}
+
+/* 看起来像链接的按钮（「展开技术细节」）。真链接会跳页面，这里只是展开一段文字 */
+.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--text-2);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.linklike:hover {
+  color: var(--text);
+}
+
+/* 中性提示徽章：状态还没同步完，但也不是错误 */
+.badge--warn {
+  background: var(--bg-sub);
+  border-color: var(--line-strong);
+  color: var(--text-2);
+}
+
+/* ---------------- 连接自检（「测试连接」那几行结果） ---------------- */
+
+.cloud-probe {
+  margin-top: var(--gap-5);
+  padding-top: var(--gap-4);
+  border-top: 1px dashed var(--line);
+}
+
+.cloud-probe__list {
+  list-style: none;
+  margin: var(--gap-4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.cloud-probe__row {
+  display: flex;
+  gap: var(--gap-3);
+  align-items: flex-start;
+  line-height: 1.7;
+}
+
+/*
+ * 三种结果的颜色只落在图标上，正文保持中性。
+ * 整行都染红的话，一段「去这里点这个」的说明文字会变得很难读，
+ * 而这行字存在的意义就是让人照着做。
+ */
+.cloud-probe__icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--text-3);
+}
+
+.cloud-probe__row--ok .cloud-probe__icon {
+  color: var(--text);
+}
+
+.cloud-probe__row--fail .cloud-probe__icon {
+  color: var(--danger);
+}
+
+.cloud-probe__body {
+  min-width: 0;
+}

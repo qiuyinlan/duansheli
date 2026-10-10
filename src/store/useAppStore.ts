@@ -723,6 +723,21 @@ export interface AppState {
   clearEverything: () => Promise<void>
   backupNow: () => Promise<void>
   restoreFromSnapshot: (snapshotId: string) => Promise<boolean>
+  /**
+   * **云端同步**的结果落地。
+   *
+   * 和 replaceAll 的区别（这两件事看起来像，但不是一回事）：
+   *   · replaceAll 是**用户主动**换掉整份数据（导入 / 清空 / 回退），
+   *     所以要留快照、要弹提示、要把 AI 会话作废。
+   *   · 这个是**后台**把「和另一台设备合并之后」的结果写回来。
+   *     为了它生成快照会把 30 份快照的名额迅速吃光
+   *     （每次同步都可能写一次，而快照列表是用户判断「回退到哪一份」的依据）；
+   *     为了它弹提示则会在用户什么都没做的时候一直弹。
+   *
+   * 但落盘和失败提示完全走同一条路 —— 「没存进去」这件事不管是谁引起的，
+   * 都必须挂着横幅（见 AppShell），不然刷新就没了。
+   */
+  applySyncedData: (next: AppData, opts?: { aiSessionStale?: boolean }) => Promise<void>
 }
 
 /* ------------------------------------------------------------------ */
@@ -732,6 +747,24 @@ export interface AppState {
 const initialData = createEmptyData()
 
 export const useAppStore = create<AppState>()((set, get) => {
+  /**
+   * 落盘失败了 —— 记下那次失败。
+   *
+   * 落盘失败是最危险的**静默失败**：界面已经按新数据渲染了，看起来一切正常，
+   * 但刷新就没了。所以除了弹一条会消失的提示，还要留下一个**持久的状态**，
+   * 让界面上一直挂着横幅（见 AppShell）——「没存进去」这件事
+   * 不能让用户三秒之后就忘了。
+   *
+   * 抽成函数是因为现在有两个入口会写盘（用户改动、云端同步落地），
+   * 两边的处理必须一模一样：漏掉一处就会出现「同步过来的东西没存住，
+   * 但界面一句提醒都没有」。
+   */
+  const reportSaveFailure = (err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err)
+    set({ error: message, saveFailure: { message, at: new Date().toISOString() } })
+    get().notify(t('data.storage.saveFailed', { message }), 'error')
+  }
+
   /**
    * 提交一次数据变更。
    * 先同步更新界面（保证手感跟手），再把「快照 + 落盘」排进写入队列。
@@ -766,17 +799,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         // 存成功就把「上次没存进去」的横幅撤掉
         if (get().saveFailure !== null) set({ saveFailure: null, error: null })
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        /*
-         * 落盘失败是最危险的**静默失败**：界面已经按新数据渲染了，
-         * 看起来一切正常，但刷新就没了。
-         *
-         * 所以除了弹一条会消失的提示，还要留下一个**持久的状态**，
-         * 让界面上一直挂着横幅（见 AppShell）——「没存进去」这件事
-         * 不能让用户三秒之后就忘了。
-         */
-        set({ error: message, saveFailure: { message, at: new Date().toISOString() } })
-        get().notify(t('data.storage.saveFailed', { message }), 'error')
+        reportSaveFailure(err)
       }
     })
   }
@@ -2344,6 +2367,44 @@ export const useAppStore = create<AppState>()((set, get) => {
         delta < 0 ? 'error' : 'success',
       )
       return true
+    },
+
+    applySyncedData: async (next, opts) => {
+      const applied = normalizeShape(next)
+
+      /*
+       * 先把界面换过去，再排队落盘 —— 和 commit 同一个顺序。
+       *
+       * 这里**不**调用 commit：commit 会顺手存一份快照、把 updatedAt 刷成现在。
+       * 刷 updatedAt 是这里特别不能做的：同步靠「谁的时间更新」来判断谁赢，
+       * 落地时刷一下时间，就等于把「这份数据其实来自对方」这件事抹掉了，
+       * 下一次合并会误判成「本地更新」。
+       */
+      set({ data: applied, derived: createDerived(applied) })
+
+      /*
+       * 同样要登记「内存里这份还没落盘」：同步落地之后如果用户马上刷新页面，
+       * 而这笔写还排着队，那盘上就是**合并之前**的旧数据 ——
+       * 下次同步会当成「本地改动」再推一遍（内容一样，但白跑一趟）。
+       */
+      dirtySinceFlush = true
+      await enqueueWrite(async () => {
+        try {
+          await getRepository().save(applied)
+          dirtySinceFlush = false
+          if (get().saveFailure !== null) set({ saveFailure: null, error: null })
+        } catch (err) {
+          reportSaveFailure(err)
+        }
+      })
+
+      /*
+       * 同步把东西删掉了 → AI 会话里那些草稿指向的 id 可能已经不存在。
+       * 和「整体替换」是同一个道理（见上面 invalidateAiSession 那段），
+       * 但只在**真的少了东西**时才作废 —— 只是多了几件东西的话，
+       * 用户的草稿依然有效，清掉等于白丢一段对话。
+       */
+      if (opts?.aiSessionStale) invalidateAiSession()
     },
   }
 })

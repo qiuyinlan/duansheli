@@ -19,6 +19,7 @@ import { attributes } from './attributes'
 import { categories } from './categories'
 import { chart } from './chart'
 import { checklists } from './checklists'
+import { cloud } from './cloud'
 import { collections } from './collections'
 import { common } from './common'
 import { data } from './data'
@@ -62,6 +63,7 @@ export const zh = {
   more,
   ai,
   data,
+  cloud,
 }
 
 export type Dict = typeof zh

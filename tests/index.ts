@@ -29,6 +29,8 @@ import './storage'
 import './dataLoss'
 // 两份数据的差异、快照件数、合并只做加法（issue 14/15/16）
 import './diff'
+// 云端同步：信封 / 删除墓碑 / 两台设备收敛（纯逻辑，不连网）
+import './cloud'
 import './ai'
 import './i18n'
 import './render'
@@ -38,6 +40,9 @@ import './statusConsistency'
 import './diagnose'
 // 同上：会话用例也会写 IndexedDB 与 store 状态，放在最后
 import './aiSession'
+// 云端同步引擎（接假云端）：首次绑定不许替用户决定、冲突要先合并。
+// 它同样会写 store 与 IndexedDB，所以排在最后 —— 而且自己负责恢复现场
+import './cloudEngine'
 
 import { finish } from './harness'
 

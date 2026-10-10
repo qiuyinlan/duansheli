@@ -12,6 +12,7 @@ import { createRoot } from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
 import { App } from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { initCloud } from './cloud/sync'
 import { syncDocumentLang, t } from './i18n'
 
 import './styles/global.css'
@@ -22,6 +23,17 @@ import './styles/pages.css'
 // 先把 <html lang> 定下来，再挂 React —— 字体回退、连字符断行、
 // 读屏软件发音都看这个属性，晚一步设置会先闪一下错误的语言。
 syncDocumentLang()
+
+/*
+ * 云端同步在这里点火。
+ *
+ * 为什么在挂 React 之前：`initCloud` 要订阅 store（本地数据一读出来就同步一次），
+ * 而那件事越早挂上越好 —— 挂在 App 的 effect 里的话，StrictMode 会把 effect
+ * 跑两遍（`initCloud` 是幂等的，两遍也不会挂两套监听，但没必要让它跑两遍）。
+ *
+ * 没配 Supabase 的时候它什么都不做，只把「未配置」记在状态里给设置页显示。
+ */
+initCloud()
 
 const container = document.getElementById('root')
 if (!container) throw new Error(t('common.mountPointMissing'))
