@@ -140,7 +140,11 @@ export function Ai() {
     const map = new Map<number, string>()
     drafts.forEach((draft, index) => {
       const pick = duplicatePicks[draft.key]
-      if (pick !== undefined && pick !== 'new' && !draft.sourceItemId) map.set(index, pick)
+      if (pick !== undefined && !draft.sourceItemId) {
+        // Use a sentinel to explicitly confirm “create another”, so the
+        // collision guard does not treat it as unresolved.
+        map.set(index, pick === 'new' ? '__new__' : pick)
+      }
     })
     return map
   }, [drafts, duplicatePicks])

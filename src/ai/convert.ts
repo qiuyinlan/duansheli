@@ -624,9 +624,10 @@ export function draftsToApply(
      * 其次是调用方按条目注入的 `duplicates`（界面上的选择）；
      * 最后才是全局的 `collisionMode`。
      */
+    const selectedDuplicate = duplicates?.get(index)
     const targetId =
       draft.duplicateOf ??
-      duplicates?.get(index) ??
+      (selectedDuplicate === '__new__' ? undefined : selectedDuplicate) ??
       (collisionMode === 'update' ? collision?.existingId : undefined)
 
     if (targetId !== undefined) {
@@ -639,7 +640,7 @@ export function draftsToApply(
         return
       }
       // 那件东西在这中间被删了 → 退回新建，免得整条丢掉
-    } else if (collision !== undefined && collisionMode === 'ask') {
+    } else if (collision !== undefined && collisionMode === 'ask' && selectedDuplicate !== '__new__') {
       return // 等用户点头，这一步什么都不做
     }
 
