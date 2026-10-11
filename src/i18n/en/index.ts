@@ -30,6 +30,7 @@ import { locations } from './locations'
 import { more } from './more'
 import { nav } from './nav'
 import { overview } from './overview'
+import { planMap } from './planMap'
 import { seed } from './seed'
 import { settings } from './settings'
 import { spare } from './spare'
@@ -44,6 +45,7 @@ export const en: Dict = {
   format,
   seed,
   overview,
+  planMap,
   items,
   itemEdit,
   locations,

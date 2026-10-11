@@ -39,8 +39,7 @@ function splitNumbered(name: string): { head: string; num: number; tail: string 
  *    1层(order 0)、3层(order 1)、2层(order 2) —— 于是整棵树显示成 1、3、2。
  *    用户报的就是这个（「先显示1层，再3，再2」）。
  *    而这几个名字本身已经把顺序写清楚了，再按创建顺序排就是明着跟名字作对。
- * 2. 其余按 `order`、再按名字。名字比较用**数字感知**的口语序
- *    （`10层` 排在 `2层` 后面，而不是按字符一个一个比）。
+ * 2. 其余按用户给出的 `order`、再按名字兜底。
  */
 export function compareTreeNodes<T extends TreeItem>(a: T, b: T): number {
   if (a.id === b.id) return 0
@@ -57,7 +56,8 @@ export function compareTreeNodes<T extends TreeItem>(a: T, b: T): number {
     return na.num - nb.num
   }
 
-  if (a.order !== b.order) return a.order - b.order
+  const byOrder = a.order - b.order
+  if (byOrder !== 0) return byOrder
   return a.name.localeCompare(b.name, 'zh-CN', { numeric: true })
 }
 

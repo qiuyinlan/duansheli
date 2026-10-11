@@ -1368,7 +1368,7 @@ await test('★ 当前指令只能出现一次（重复会把模型带偏，表�
 
 suite('按需调取现有物品')
 
-await test('目录只放名字和件数，不放具体条目（这是省 token 的关键）', () => {
+await test('目录提供物品名辅助自然语言匹配，同时保留分类位置统计', () => {
   const digest = buildInventoryDigest(fx, ctx)
   const text = renderInventoryDigest(digest)
 
@@ -1378,15 +1378,28 @@ await test('目录只放名字和件数，不放具体条目（这是省 token �
   ok(text.includes('家 / 卧室 / 衣柜'), '位置要用完整路径')
   ok(text.includes('只是**统计**') || text.includes('只是'), '要说明这只是统计')
 
-  // 关键：不能把具体物品名混进去，否则 token 就白省了
-  ok(!text.includes('灰色羊毛衫'), '目录里不该出现具体物品名')
-  ok(!text.includes('牛仔裤'), '目录里不该出现具体物品名')
+  ok(text.includes('灰色羊毛衫'), '已存在物品名称应可供语义匹配')
+  ok(text.includes('牛仔裤'), '每条现有物品的名称都应纳入匹配上下文')
 })
 
 await test('空数据时的目录也说得通', () => {
   const empty = createEmptyData()
   const text = renderInventoryDigest(buildInventoryDigest(empty, createDerived(empty)))
   ok(text.includes('一件都还没有'))
+})
+
+await test('整理版图 AI 命令可解析为受限动作', () => {
+  const parsed = parseChatResponse({
+    reply: '已更新整理版图',
+    planMapChanges: [
+      { kind: 'add', name: '书桌' },
+      { kind: 'done', name: '衣柜' },
+      { kind: 'unknown', name: '忽略' },
+    ],
+  })
+  eq(parsed.planMapChanges?.length, 2)
+  eq(parsed.planMapChanges?.[0]?.kind, 'add')
+  eq(parsed.planMapChanges?.[1]?.kind, 'done')
 })
 
 await test('loadScope：按分类路径取（含子分类）', () => {

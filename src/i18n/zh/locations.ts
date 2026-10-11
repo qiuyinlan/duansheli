@@ -14,8 +14,10 @@ export const locations = {
    * 用户的原话：「这么多折叠层级，怎么看最清晰呢」——
    * 层级一深，最有效的一招是**直接跳到某个位置**，而不是让眼睛顺着一棵树爬。
    */
-  searchPlaceholder: '搜位置（打「顶层」就能找到）',
   searchAria: '搜索位置',
+  searchPlaceholder: '搜索位置或物品…',
+  searchItemsLabel: '匹配的物品',
+  searchItemLocation: '位置：{path}',
   searchFound_one: '找到 {count} 个位置（浅色的是它在哪一层）',
   searchFound_other: '找到 {count} 个位置（浅色的是它在哪一层）',
   searchNone: '没有匹配的位置',

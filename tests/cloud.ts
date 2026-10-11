@@ -293,6 +293,19 @@ await test('集合的先后不同不算「变了」（否则两台设备会互�
   eq(sameContent(tagA, tagC), false, '标签名字不同必须认得出')
 })
 
+await test('整理版图内容参与云端比较和删除墓碑', () => {
+  const entry = { id: 'pm1', name: '书桌', done: false, updatedAt: T0 }
+  const before: AppData = { ...base(), planMap: [entry] }
+  const after: AppData = { ...base(), planMap: [] }
+  eq(sameContent(before, after), false, '删除整理位置必须触发同步')
+  eq(collectRemovals(before, after, T1).pm1, T1, '整理位置删除必须产生墓碑')
+  const updated: AppData = {
+    ...base(),
+    planMap: [{ ...entry, done: true, updatedAt: T2 }],
+  }
+  eq(sameContent(before, updated), false, '完成状态变化必须触发同步')
+})
+
 /* ------------------------------------------------------------------ */
 /* 删除墓碑                                                            */
 /* ------------------------------------------------------------------ */

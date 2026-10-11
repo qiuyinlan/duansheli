@@ -888,11 +888,13 @@ export function isGroupExpanded(
   groupBy: GroupBy,
   expandedGroups: readonly string[],
   collapsedGroups: readonly string[],
+  depth = 0,
 ): boolean {
   if (collapsedGroups.includes(key)) return false
   if (expandedGroups.includes(key)) return true
   if (!hasChildren) return true
-  return !isTreeGrouping(groupBy)
+  if (!isTreeGrouping(groupBy)) return true
+  return depth === 0
 }
 
 /** 递归找出某个 key 的节点，测试和"定位到某个分组"时用得上 */

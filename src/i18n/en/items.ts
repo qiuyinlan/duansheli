@@ -77,6 +77,7 @@ export const items = {
     'Spares are hidden here by default — {count} are put away (all on the Spares page)',
   spareHiddenGo: 'Spares page',
   spareHiddenShow: 'Show here',
+  hiddenJoin: '; ',
   discard: 'Discard',
   selectAllShown: 'Select all {count} shown',
   batchStatus_one: 'Marked {count} item as “{status}”',

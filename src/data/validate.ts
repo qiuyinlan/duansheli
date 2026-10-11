@@ -10,6 +10,7 @@ import type {
   Item,
   ItemStatus,
   Location,
+  PlanMapEntry,
   Tag,
 } from '../types'
 import { APP_ID, SCHEMA_VERSION } from '../types'
@@ -285,6 +286,19 @@ function normalizeChecklist(raw: unknown, now: string, warn: string[]): Checklis
   }
 }
 
+function normalizePlanMapEntry(raw: unknown, now: string): PlanMapEntry | null {
+  if (!isRecord(raw)) return null
+  const id = str(raw.id).trim()
+  const name = str(raw.name).trim()
+  if (!id || !name) return null
+  return {
+    id,
+    name,
+    done: bool(raw.done, false),
+    updatedAt: isoDate(raw.updatedAt, now),
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* 解析与校验                                                          */
 /* ------------------------------------------------------------------ */
@@ -365,6 +379,7 @@ export function parseExportFile(text: string): ParseOutcome {
   const rawCollections = Array.isArray(dataRaw.collections) ? dataRaw.collections : []
   // v4 及更早没有 checklists
   const rawChecklists = Array.isArray(dataRaw.checklists) ? dataRaw.checklists : []
+  const rawPlanMap = Array.isArray(dataRaw.planMap) ? dataRaw.planMap : []
 
   if (
     !Array.isArray(dataRaw.items) &&
@@ -420,6 +435,10 @@ export function parseExportFile(text: string): ParseOutcome {
     if (checklist) checklists.push(checklist)
   }
 
+  const planMap: PlanMapEntry[] = rawPlanMap
+    .map((raw) => normalizePlanMapEntry(raw, now))
+    .filter((entry): entry is PlanMapEntry => entry !== null)
+
   // 去重：id 重复时保留第一条，避免出现两个「同一个位置」
   const dedupe = <T extends { id: string }>(list: T[], kind: string): T[] => {
     const seen = new Set<string>()
@@ -441,6 +460,7 @@ export function parseExportFile(text: string): ParseOutcome {
   const dedupedAttrDefs = dedupe(attributeDefs, t('data.kind.attribute'))
   const dedupedCollections = dedupe(collections, t('data.kind.collection'))
   const dedupedChecklists = dedupe(checklists, t('data.kind.checklist'))
+  const dedupedPlanMap = dedupe(planMap, t('data.kind.planMap'))
 
   // 悬空引用修复：物品指向了不存在的位置/分类/属性/活动
   const locIds = new Set(dedupedLocations.map((l) => l.id))
@@ -505,6 +525,7 @@ export function parseExportFile(text: string): ParseOutcome {
     tags,
     collections: dedupedCollections,
     checklists: dedupedChecklists,
+    planMap: dedupedPlanMap,
     updatedAt: now,
   }
 

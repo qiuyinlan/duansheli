@@ -175,6 +175,7 @@ function normalizeShape(data: AppData): AppData {
     collections: Array.isArray(data.collections) ? data.collections : [],
     // v5 新增：老数据里没有清单
     checklists: Array.isArray(data.checklists) ? data.checklists : [],
+    planMap: Array.isArray(data.planMap) ? data.planMap : [],
     updatedAt: data.updatedAt ?? new Date().toISOString(),
   }
 }
@@ -715,6 +716,12 @@ export interface AppState {
   removeChecklistEntry: (checklistId: string, entryId: string) => void
   /** 把已打钩的一次清掉，剩下一堆未办的在眼前 */
   clearCheckedEntries: (checklistId: string) => number
+
+  /* 整理版图 */
+  addPlanMapEntry: (name: string) => string | null
+  renamePlanMapEntry: (id: string, name: string) => void
+  togglePlanMapEntry: (id: string, done?: boolean) => void
+  deletePlanMapEntry: (id: string) => void
 
   /* 数据整体操作 */
   replaceAll: (next: AppData, reason: SnapshotReason, message?: string) => Promise<void>
@@ -2258,6 +2265,45 @@ export const useAppStore = create<AppState>()((set, get) => {
         ),
       })
       return removed
+    },
+
+    addPlanMapEntry: (name) => {
+      const trimmed = name.trim()
+      if (!trimmed) return null
+      const data = get().data
+      const now = new Date().toISOString()
+      const entry = { id: uid(), name: trimmed, done: false, updatedAt: now }
+      commit({ ...data, planMap: [...(data.planMap ?? []), entry] })
+      return entry.id
+    },
+
+    renamePlanMapEntry: (id, name) => {
+      const trimmed = name.trim()
+      if (!trimmed) return
+      const data = get().data
+      const now = new Date().toISOString()
+      commit({
+        ...data,
+        planMap: (data.planMap ?? []).map((entry) =>
+          entry.id === id ? { ...entry, name: trimmed, updatedAt: now } : entry,
+        ),
+      })
+    },
+
+    togglePlanMapEntry: (id, done) => {
+      const data = get().data
+      const now = new Date().toISOString()
+      commit({
+        ...data,
+        planMap: (data.planMap ?? []).map((entry) =>
+          entry.id === id ? { ...entry, done: done ?? !entry.done, updatedAt: now } : entry,
+        ),
+      })
+    },
+
+    deletePlanMapEntry: (id) => {
+      const data = get().data
+      commit({ ...data, planMap: (data.planMap ?? []).filter((entry) => entry.id !== id) })
     },
 
     /* ---------------- 数据整体操作 ---------------- */

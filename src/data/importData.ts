@@ -346,6 +346,16 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
     checklistAdded++
   }
 
+  /* ---------------- 整理版图 ---------------- */
+  // 同一条记录按 updatedAt 取较新的一份，保证跨设备勾选状态不会回退。
+  const planMapById = new Map((current.planMap ?? []).map((entry) => [entry.id, { ...entry }]))
+  for (const incomingEntry of incoming.planMap ?? []) {
+    const existing = planMapById.get(incomingEntry.id)
+    if (!existing || incomingEntry.updatedAt > existing.updatedAt) {
+      planMapById.set(incomingEntry.id, { ...incomingEntry })
+    }
+  }
+
   const data: AppData = {
     schemaVersion: SCHEMA_VERSION,
     items: itemsWithCollections,
@@ -355,6 +365,7 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
     tags,
     collections,
     checklists,
+    planMap: [...planMapById.values()],
     updatedAt: now,
   }
 

@@ -68,6 +68,7 @@ export const items = {
   spareHidden_other: '这里默认不显示备用的东西 —— 有 {count} 件被收起来了（都在「备用」页）',
   spareHiddenGo: '去备用页',
   spareHiddenShow: '就在这看',
+  hiddenJoin: '；',
   discard: '舍弃',
   selectAllShown: '全选当前 {count} 件',
   batchStatus_one: '已把 {count} 件物品标记为「{status}」',

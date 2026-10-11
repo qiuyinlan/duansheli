@@ -494,6 +494,7 @@ export function parseCsvToAppData(text: string): CsvImportOutcome {
       // CSV 里没有这两样，只能是空的 —— 界面上会说清楚
       collections: [],
       checklists: [],
+      planMap: [],
       updatedAt: latestUpdate === '' ? now : latestUpdate,
     },
     warnings,

@@ -206,6 +206,16 @@ select {
   gap: var(--gap-3);
 }
 
+.link-button {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 .wrap {
   flex-wrap: wrap;
 }

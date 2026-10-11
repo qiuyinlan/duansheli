@@ -18,6 +18,7 @@ export function buildExportFile(data: AppData): ExportFile {
       tags: data.tags.length,
       collections: data.collections.length,
       checklists: data.checklists.length,
+      planMap: data.planMap.length,
     },
     data: {
       items: data.items,
@@ -27,6 +28,7 @@ export function buildExportFile(data: AppData): ExportFile {
       tags: data.tags,
       collections: data.collections,
       checklists: data.checklists,
+      planMap: data.planMap,
     },
   }
 }

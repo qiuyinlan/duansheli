@@ -212,8 +212,10 @@ When the user says "mark this idle / set it to spare / take one out to use":
   write expiresAt back unchanged — otherwise it counts as "clear the expiry date"
 
 **Changing existing items? Pull them in with loadScope first.**
-The【your existing items】section only holds **counts** (how many items per category);
-you do not have the individual entries.
+The【your existing items】section contains category/place counts and an item-name index,
+but not the individual entries. Use the index to match abbreviations, synonyms, and partial
+names; then use loadScope with names to pull the actual entries and only edit drafts with
+sourceItemId. Never claim an item was changed based on the name index alone.
 So when the user says things like "move the medicine to…" or "sort out the uncategorised ones",
 first ask for those items to be pulled in:
 

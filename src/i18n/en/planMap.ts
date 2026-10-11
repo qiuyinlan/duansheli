@@ -1,0 +1,15 @@
+export const planMap = {
+  title: 'Organizing map',
+  hint: 'List places to organize and mark each one when it is done.',
+  searchPlaceholder: 'Add a place to organize…',
+  add: 'Add',
+  emptyTitle: 'No places yet',
+  emptyHint: 'Add a room, cabinet, drawer, or any other place.',
+  markDone: 'Mark done',
+  markUndone: 'Mark incomplete',
+  rename: 'Rename',
+  delete: 'Delete',
+  confirmDelete: 'Delete this organizing place?',
+  doneCount: '{done}/{total} done',
+  noName: 'Enter a place name',
+}

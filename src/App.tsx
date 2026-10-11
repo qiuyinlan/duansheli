@@ -13,6 +13,7 @@ import { Idle } from './pages/Idle'
 import { ItemEdit } from './pages/ItemEdit'
 import { Items } from './pages/Items'
 import { Locations } from './pages/Locations'
+import { PlanMap } from './pages/PlanMap'
 import { More } from './pages/More'
 import { Overview } from './pages/Overview'
 import { Settings } from './pages/Settings'
@@ -34,6 +35,7 @@ export function AppRoutes() {
         <Route path="items/new" element={<ItemEdit />} />
         <Route path="items/:id" element={<ItemEdit />} />
         <Route path="locations" element={<Locations />} />
+        <Route path="plan-map" element={<PlanMap />} />
         <Route path="idle" element={<Idle />} />
         <Route path="spare" element={<Spare />} />
         <Route path="expiry" element={<Expiry />} />

@@ -49,6 +49,7 @@ export interface AiContext {
  */
 export interface InventoryDigest {
   totalItems: number
+  itemNames: string[]
   categories: Array<{ path: string[]; count: number }>
   /** 没有分类的物品数 */
   uncategorized: number
@@ -179,6 +180,7 @@ export function buildInventoryDigest(data: AppData, derived: DerivedContext): In
 
   return {
     totalItems: live.length,
+    itemNames: live.map((item) => item.name).filter(Boolean).slice(0, 500),
     categories: toEntries(derived.categoryIndex, derived.categoryFlat, categoryCounts),
     uncategorized: categoryCounts.get(UNCATEGORIZED_ID) ?? 0,
     locations: toEntries(derived.index, derived.flat, locationCounts),
@@ -211,6 +213,7 @@ export function renderInventoryDigest(digest: InventoryDigest): string {
 
   return [
     fill(p.digestTitle, { total: digest.totalItems }),
+    digest.itemNames.length > 0 ? digest.itemNames.join(String.fromCharCode(0x3001)) : '',
     fill(p.digestByCategory, { list: categories }),
     digest.uncategorized > 0 ? fill(p.digestUncategorized, { count: digest.uncategorized }) : '',
     fill(p.digestByLocation, { list: locations }),

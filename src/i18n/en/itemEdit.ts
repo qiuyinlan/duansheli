@@ -88,6 +88,10 @@ export const itemEdit = {
   /* Place picker */
   pickLocationTitle: 'Choose a place',
   pickLocationCurrent: 'Current: {path}',
+  locationSearchItems: 'Matching items (click to use their location)',
+  newLocationPlaceholder: 'Create a place here',
+  renameLocationPrompt: 'Rename location',
+  renameCategoryPrompt: 'Rename category',
   locationsEmpty: 'No places yet — you can create them on the Places page.',
   locationSearchPlaceholder: 'Search places, e.g. “wardrobe” or “top drawer”',
   locationSearchAria: 'Search places',

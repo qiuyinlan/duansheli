@@ -95,6 +95,7 @@ export function Locations() {
     name: string
     childCount: number
     itemCount: number
+    reason: string
   } | null>(null)
 
   /*
@@ -198,6 +199,22 @@ export function Locations() {
   }, [derived.tree])
 
   const live = useMemo(() => liveItems(data), [data])
+  const matchingItems = useMemo(() => {
+    if (!searching) return []
+    const needle = query.trim().toLocaleLowerCase()
+    return live
+      .filter((item) => {
+        const locationPath = item.locationId ? derived.index.pathString(item.locationId, ' / ') : ''
+        const categoryNames = item.categoryIds
+          .map((id) => derived.categoryIndex.byId.get(id)?.name ?? '')
+          .join(' ')
+        const haystack = [item.name, item.note, item.tags.join(' '), locationPath, categoryNames]
+          .join(' ')
+          .toLocaleLowerCase()
+        return haystack.includes(needle)
+      })
+      .slice(0, 20)
+  }, [searching, query, live, derived])
   const counts = useMemo(
     () => countByLocationIncludingDescendants(live, derived),
     [live, derived],
@@ -310,6 +327,7 @@ export function Locations() {
       name: loc.name,
       childCount: result.childCount,
       itemCount: result.itemCount,
+      reason: result.reason ?? t('locations.deleteFailed'),
     })
   }
 
@@ -520,6 +538,25 @@ export function Locations() {
                 </>
               )}
             />
+            {searching && matchingItems.length > 0 ? (
+              <div className="stack-sm" style={{ marginTop: 'var(--gap-3)' }}>
+                <div className="small muted">{t('locations.searchItemsLabel')}</div>
+                <ul className="list">
+                  {matchingItems.map((item) => (
+                    <li className="list-row" key={item.id}>
+                      <button type="button" className="link-button grow" onClick={() => navigate(`/items/${item.id}`)}>
+                        <span>{item.name}</span>
+                        <span className="tiny dim" style={{ display: 'block' }}>
+                          {t('locations.searchItemLocation', {
+                            path: item.locationId ? derived.index.pathString(item.locationId, ' / ') : t('status.unassigned'),
+                          })}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
 
           {/* ---------------- 右：该位置的物品 ---------------- */}
@@ -759,6 +796,7 @@ export function Locations() {
         message={
           <>
             {t('locations.deleteBodyLead', { list: deleteContents })}
+            {deleteProbe?.reason ? <><br /><br />{deleteProbe.reason}</> : null}
             <br />
             <br />
             {t('locations.deleteBodyHint', { unassigned: t('status.unassigned') })}

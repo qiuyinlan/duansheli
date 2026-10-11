@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BarChart } from '../components/ui/BarChart'
-import { IconAlert, IconChevronRight } from '../components/ui/icons'
+import { IconChevronRight } from '../components/ui/icons'
 import { Button, EmptyState } from '../components/ui/primitives'
-import { daysSince, formatRelative, percent } from '../lib/format'
+import { formatRelative, percent } from '../lib/format'
 import { colorForKey, topLevelColorMap } from '../lib/palette'
 import { useT } from '../i18n'
 import { UNASSIGNED_ID, UNCATEGORIZED_ID, UNTAGGED_ID } from '../types'
@@ -20,7 +20,6 @@ import { useAppStore } from '../store/useAppStore'
 export function Overview() {
   const data = useAppStore((s) => s.data)
   const derived = useAppStore((s) => s.derived)
-  const lastExportAt = useAppStore((s) => s.ui.lastExportAt)
   const soonDays = useAppStore((s) => s.ui.expirySoonDays)
   const navigate = useNavigate()
 
@@ -57,8 +56,7 @@ export function Overview() {
   }, [derived])
 
   const idlePercent = percent(stats.idleCount, stats.totalItems)
-  const backupOverdue =
-    stats.totalItems > 0 && (lastExportAt === null || daysSince(lastExportAt) >= 7)
+
 
   // 到期的东西才值得占一块版面，一件都没有时整张卡片不渲染
   const urgentExpiryCount = stats.expiredCount + stats.expiringSoonCount
@@ -109,24 +107,6 @@ export function Overview() {
           <Button onClick={() => navigate('/items/new')}>{t('overview.addItem')}</Button>
         </div>
       </div>
-
-      {backupOverdue ? (
-        <div className="notice notice--alert" style={{ marginBottom: 'var(--gap-5)' }}>
-          <span className="notice__icon">
-            <IconAlert />
-          </span>
-          <span className="notice__body">
-            {lastExportAt === null
-              ? t('overview.backupNever')
-              : t('overview.backupStale', { time: formatRelative(lastExportAt) })}
-          </span>
-          <span className="notice__action">
-            <Button size="sm" onClick={() => navigate('/settings')}>
-              {t('overview.backupAction')}
-            </Button>
-          </span>
-        </div>
-      ) : null}
 
       <div className="overview-hero">
         <span className="overview-hero__value numeric">{stats.totalItems}</span>

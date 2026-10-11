@@ -392,6 +392,11 @@ export interface LocationChangeIntent {
   parentPath?: string[]
 }
 
+export interface PlanMapChangeIntent {
+  kind: 'add' | 'done' | 'undone' | 'delete'
+  name: string
+}
+
 export interface ParsedChatResponse {
   reply: string
   /** 只有**新增或改动过**的条目 */
@@ -450,6 +455,7 @@ export interface ParsedChatResponse {
    * 和 `ignoredCategoryChanges` 同一个用途：**不许静默丢弃**。
    */
   ignoredLocationChanges: number
+  planMapChanges?: PlanMapChangeIntent[]
 }
 
 /**
@@ -661,6 +667,24 @@ function normalizeLocationChanges(raw: unknown): LocationChangeIntent[] {
   return out
 }
 
+function normalizePlanMapChanges(raw: unknown): PlanMapChangeIntent[] {
+  if (!Array.isArray(raw)) return []
+  const out: PlanMapChangeIntent[] = []
+  for (const entry of raw) {
+    if (!isRecord(entry)) continue
+    const action = asString(entry.kind ?? entry.action ?? entry.操作).toLowerCase()
+    const name = asString(entry.name ?? entry.名称 ?? entry.place).trim()
+    if (!name) continue
+    const kind: PlanMapChangeIntent['kind'] | null =
+      ['add', 'create', '新建', '添加'].includes(action) ? 'add' :
+      ['done', 'complete', '完成', '已整理'].includes(action) ? 'done' :
+      ['undone', 'reopen', '未完成', '取消完成'].includes(action) ? 'undone' :
+      ['delete', 'remove', '删除'].includes(action) ? 'delete' : null
+    if (kind) out.push({ kind, name })
+  }
+  return out
+}
+
 function normalizeRevisedItem(raw: unknown): RawRevisedItem | null {  const base = normalizeExtractedItem(raw)
   if (!base || !isRecord(raw)) return null
 
@@ -797,6 +821,7 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
   }
 
   const locationChanges = normalizeLocationChanges(rawLocationChanges)
+  const planMapChanges = normalizePlanMapChanges(payload.planMapChanges ?? payload.planMap ?? payload.organizingMap)
 
   /*
    * 位置新建「没看懂」的判定。
@@ -836,6 +861,7 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
     removedIds.length === 0 &&
     categoryChanges.length === 0 &&
     locationChanges.length === 0
+    && planMapChanges.length === 0
   ) {
     if (loadScope) {
       return {
@@ -848,6 +874,7 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
         ignoredCategoryChanges,
         locationChanges,
         ignoredLocationChanges,
+        planMapChanges,
       }
     }
     if (reply !== '') {
@@ -861,6 +888,7 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
         ignoredCategoryChanges,
         locationChanges,
         ignoredLocationChanges,
+        planMapChanges,
       }
     }
     throw new AiError('bad_response', t('data.ai.noReplyOrItems'))
@@ -884,5 +912,6 @@ export function parseChatResponse(payload: unknown): ParsedChatResponse {
     ignoredCategoryChanges,
     locationChanges,
     ignoredLocationChanges,
+    planMapChanges,
   }
 }

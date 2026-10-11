@@ -17,6 +17,7 @@ export const data = {
     attribute: '属性',
     collection: '活动',
     checklist: '清单',
+    planMap: '整理位置',
   },
 
   /* ---------------- 导入文件的校验 ---------------- */

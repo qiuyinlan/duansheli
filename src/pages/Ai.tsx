@@ -311,6 +311,7 @@ export function Ai() {
             historyNow,
             serializeDrafts(draftsNow, fresh.derived),
             pending,
+            fresh.data.planMap ?? [],
           ),
           signal: controller.signal,
         })
@@ -321,6 +322,23 @@ export function Ai() {
         }))
 
         const parsed = parseChatResponse(extractJson(result.content))
+        if ((parsed.planMapChanges?.length ?? 0) > 0) {
+          let applied = 0
+          for (const change of parsed.planMapChanges ?? []) {
+            const current = useAppStore.getState().data.planMap ?? []
+            const existing = current.find((entry) => entry.name.toLocaleLowerCase() === change.name.toLocaleLowerCase())
+            if (change.kind === 'add') {
+              if (!existing && useAppStore.getState().addPlanMapEntry(change.name)) applied++
+            } else if (existing) {
+              if (change.kind === 'done' && !existing.done) useAppStore.getState().togglePlanMapEntry(existing.id, true)
+              else if (change.kind === 'undone' && existing.done) useAppStore.getState().togglePlanMapEntry(existing.id, false)
+              else if (change.kind === 'delete') useAppStore.getState().deletePlanMapEntry(existing.id)
+              else continue
+              applied++
+            }
+          }
+          if (applied > 0) appendBubble({ id: uid(), role: 'note', text: t('ai.planMapApplied', { count: applied }) })
+        }
         /*
          * history 里追加的是**这一轮**：先记下它们，等这一次请求真正发完再合并。
          *

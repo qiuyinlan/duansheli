@@ -598,7 +598,7 @@ export function suggestSlot<T extends TreeItem>(
           name: node.name,
           path,
           pathText: path.join(v.pathSeparator),
-          isBranch: (childCount.get(node.id) ?? 0) > 0,
+          isBranch: (childCount.get(node.id) ?? 0) > 0 || levelsFromName(node.name) !== null,
           exact: false,
           pinned: pinRank(pinnedIds, node.id) >= 0,
         }

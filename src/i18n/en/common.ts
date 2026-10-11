@@ -29,6 +29,7 @@ export const common = {
   loading: 'Loading…',
   saving: 'Saving…',
   empty: 'Nothing here',
+  noResults: 'No matching results',
   unspecified: 'Not set',
   optional: 'Optional',
   required: 'Required',

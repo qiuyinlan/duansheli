@@ -270,6 +270,15 @@ export interface AppData {
   collections: Collection[]
   /** 清单（一次性的待办，可打钩、可删） */
   checklists: Checklist[]
+  /** 用户自定义的待整理地点与完成状态 */
+  planMap: PlanMapEntry[]
+  updatedAt: string
+}
+
+export interface PlanMapEntry {
+  id: string
+  name: string
+  done: boolean
   updatedAt: string
 }
 
@@ -314,6 +323,7 @@ export interface ExportFile {
     tags: number
     collections: number
     checklists: number
+    planMap: number
   }
   data: {
     items: Item[]
@@ -323,6 +333,7 @@ export interface ExportFile {
     tags: Tag[]
     collections: Collection[]
     checklists: Checklist[]
+    planMap: PlanMapEntry[]
   }
 }
 

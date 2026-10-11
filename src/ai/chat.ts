@@ -26,6 +26,7 @@
 
 import type { ParsedChatResponse, RawRevisedItem, AiStatus } from './parse'
 import type { ChatMessage } from './deepseek'
+import { t } from '../i18n'
 import type { AiContext, InventoryDigest } from './prompts'
 import { renderContextBlock, renderInventoryDigest } from './prompts'
 import { promptText } from './promptText'
@@ -219,6 +220,7 @@ export function buildChatMessages(
   history: ChatTurn[],
   drafts: DraftForAi[],
   instruction: string,
+  planMap: Array<{ name: string; done: boolean }> = [],
 ): ChatMessage[] {
   const p = promptText()
 
@@ -239,6 +241,11 @@ export function buildChatMessages(
         renderContextBlock(context),
         '',
         renderInventoryDigest(digest),
+        '',
+        t('ai.planMapInstructions'),
+        planMap.length > 0
+          ? planMap.map((entry) => `- [${entry.done ? 'x' : ' '}] ${entry.name}`).join('\n')
+          : '—',
       ].join('\n'),
     },
   ]

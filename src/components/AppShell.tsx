@@ -52,6 +52,7 @@ const PRIMARY_NAV: NavEntry[] = [
   { to: '/', labelKey: 'nav.overview', Icon: IconOverview },
   { to: '/items', labelKey: 'nav.items', Icon: IconItems },
   { to: '/locations', labelKey: 'nav.locations', Icon: IconLocations },
+  { to: '/plan-map', labelKey: 'nav.planMap', Icon: IconLocations },
   { to: '/idle', labelKey: 'nav.idle', Icon: IconIdle, badge: 'idle' },
   { to: '/spare', labelKey: 'nav.spare', Icon: IconSpare, badge: 'spare' },
   { to: '/expiry', labelKey: 'nav.expiry', Icon: IconClock, badge: 'expiry' },
@@ -84,6 +85,7 @@ const ROOT_ROUTES = new Set([
   '/',
   '/items',
   '/locations',
+  '/plan-map',
   '/idle',
   '/spare',
   '/expiry',
@@ -103,6 +105,7 @@ function titleKeyForPath(pathname: string): DictKey {
   if (pathname === '/items/new') return 'nav.titleItemNew'
   if (/^\/items\/[^/]+$/.test(pathname)) return 'nav.titleItemDetail'
   if (pathname === '/locations') return 'nav.titleLocations'
+  if (pathname === '/plan-map') return 'nav.titlePlanMap'
   if (pathname === '/idle') return 'nav.titleIdle'
   if (pathname === '/spare') return 'nav.titleSpare'
   if (pathname === '/expiry') return 'nav.titleExpiry'

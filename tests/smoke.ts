@@ -575,11 +575,13 @@ await test('父分类的合计含子分类，同一子树里不重复计', () =>
   )
 })
 
-await test('默认展开规则：有子级的折叠，叶子展开', () => {
+await test('默认展开规则：顶层展开、子级折叠，叶子内容可见', () => {
   eq(isGroupExpanded('x', false, 'category', [], []), true, '叶子没有结构可钻，直接展开')
-  eq(isGroupExpanded('x', true, 'category', [], []), false, '有子级的先折叠，要看细的再点开')
+  eq(isGroupExpanded('x', true, 'category', [], [], 0), true, '先展开主要分组')
+  eq(isGroupExpanded('x', true, 'category', [], [], 1), false, '更深层级由用户决定是否展开')
   eq(isGroupExpanded('x', false, 'location', [], []), true)
-  eq(isGroupExpanded('x', true, 'location', [], []), false)
+  eq(isGroupExpanded('x', true, 'location', [], [], 0), true)
+  eq(isGroupExpanded('x', true, 'location', [], [], 1), false)
   eq(isGroupExpanded('x', false, 'tag', [], []), true, '平铺分组本来就只有一层')
 })
 

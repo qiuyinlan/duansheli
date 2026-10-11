@@ -1,0 +1,15 @@
+export const planMap = {
+  title: '整理版图',
+  hint: '把待整理的地方列出来，完成后逐项标记。',
+  searchPlaceholder: '添加待整理的位置…',
+  add: '添加',
+  emptyTitle: '还没有待整理的位置',
+  emptyHint: '先添加一个房间、柜子或抽屉。',
+  markDone: '标记完成',
+  markUndone: '取消完成',
+  rename: '重命名',
+  delete: '删除',
+  confirmDelete: '确定删除这个整理位置吗？',
+  doneCount: '已完成 {done}/{total}',
+  noName: '请输入位置名称',
+}

@@ -85,6 +85,10 @@ export const itemEdit = {
   /* 位置选择器 */
   pickLocationTitle: '选择位置',
   pickLocationCurrent: '当前：{path}',
+  locationSearchItems: '????????????????',
+  newLocationPlaceholder: '??????',
+  renameLocationPrompt: '?????',
+  renameCategoryPrompt: '?????',
   locationsEmpty: '还没有位置，可以在「位置」页面里创建。',
   locationSearchPlaceholder: '搜索位置，例如「衣柜」「第二层」',
   locationSearchAria: '搜索位置',

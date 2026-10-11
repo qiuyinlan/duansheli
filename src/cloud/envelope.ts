@@ -59,6 +59,7 @@ export const ID_COLLECTIONS = [
   'attributeDefs',
   'collections',
   'checklists',
+  'planMap',
 ] as const
 
 export type IdCollection = (typeof ID_COLLECTIONS)[number]
@@ -132,7 +133,10 @@ export function checkEnvelope(value: unknown): EnvelopeCheck {
   const data = env.data
   if (typeof data !== 'object' || data === null) return { ok: false, reason: 'badData' }
   for (const key of ID_COLLECTIONS) {
-    if (!Array.isArray((data as unknown as Record<string, unknown>)[key])) {
+    const value = (data as unknown as Record<string, unknown>)[key]
+    // planMap was added after the first envelope version; old cloud data is valid.
+    if (value === undefined && key === 'planMap') continue
+    if (!Array.isArray(value)) {
       return { ok: false, reason: 'badData' }
     }
   }

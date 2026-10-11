@@ -13,8 +13,10 @@ export const locations = {
    * Search + expand controls. When the tree gets deep, jumping straight to a
    * place beats scrolling down a hierarchy with your eyes.
    */
-  searchPlaceholder: 'Search places (type “top tier”)',
   searchAria: 'Search places',
+  searchPlaceholder: 'Search places or items…',
+  searchItemsLabel: 'Matching items',
+  searchItemLocation: 'Place: {path}',
   searchFound_one: '{count} place found (faded rows show where it sits)',
   searchFound_other: '{count} places found (faded rows show where they sit)',
   searchNone: 'No matching places',

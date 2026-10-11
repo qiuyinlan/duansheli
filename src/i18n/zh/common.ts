@@ -33,6 +33,7 @@ export const common = {
   loading: '加载中…',
   saving: '正在保存…',
   empty: '暂无内容',
+  noResults: '没有匹配结果',
   unspecified: '未指定',
   optional: '可选',
   required: '必填',

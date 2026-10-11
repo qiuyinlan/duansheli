@@ -16,6 +16,7 @@ export const nav = {
   /* Sidebar & bottom tabs */
   overview: 'Overview',
   items: 'Items',
+  planMap: 'Organizing map',
   locations: 'Places',
   idle: 'Idle',
   spare: 'Spares',
@@ -36,6 +37,7 @@ export const nav = {
   titleItemNew: 'New item',
   titleItemDetail: 'Item',
   titleLocations: 'Places',
+  titlePlanMap: 'Organizing map',
   titleIdle: 'Idle',
   titleSpare: 'Spares',
   titleExpiry: 'Expiry',

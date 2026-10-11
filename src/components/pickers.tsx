@@ -95,6 +95,10 @@ export function LocationPicker({
   allowUnassigned = true,
 }: LocationPickerProps) {
   const { t, tc } = useT()
+  const addLocation = useAppStore((s) => s.addLocation)
+  const renameLocation = useAppStore((s) => s.renameLocation)
+  const items = useAppStore((s) => s.data.items)
+  const [newLocationName, setNewLocationName] = useState('')
   /** 搜索词 —— 位置多了之后，滚动找一层抽屉是很费劲的事（issue 4） */
   const [query, setQuery] = useState('')
 
@@ -152,6 +156,13 @@ export function LocationPicker({
     [ctx, query],
   )
   const searching = query.trim() !== ''
+  const matchedItems = useMemo(() => {
+    const q = query.trim().toLocaleLowerCase()
+    if (!q) return []
+    return items
+      .filter((item) => item.status !== 'discarded' && item.name.toLocaleLowerCase().includes(q))
+      .slice(0, 12)
+  }, [items, query])
   const view = useMemo(
     () => (searching ? filterTreeByIds([...ctx.index.byId.values()], matchedIds) : null),
     [searching, ctx, matchedIds],
@@ -213,6 +224,30 @@ export function LocationPicker({
         </>
       )}
 
+      {searching && matchedItems.length > 0 ? (
+        <div className="picker-search-items" style={{ marginBottom: 'var(--gap-2)' }}>
+          <div className="tiny dim">{t('itemEdit.locationSearchItems')}</div>
+          {matchedItems.map((item) => {
+            const locationLabel = item.locationId
+              ? ctx.index.pathString(item.locationId, ' / ')
+              : t('status.unassigned')
+            return (
+              <button
+                type="button"
+                className="row-between picker-search-item"
+                key={item.id}
+                onClick={() => {
+                  onSelect(item.locationId)
+                  onClose()
+                }}
+              >
+                <span>{item.name}</span><span className="tiny muted">{locationLabel}</span>
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+
       <TreeView
         nodes={view ? view.roots : ctx.tree}
         selectedIds={value ? [value] : [UNASSIGNED_ID]}
@@ -225,6 +260,10 @@ export function LocationPicker({
         onSelect={(id) => {
           onSelect(id)
           onClose()
+        }}
+        onRename={(node) => {
+          const next = window.prompt(t('itemEdit.renameLocationPrompt'), node.name)?.trim()
+          if (next && next !== node.name) renameLocation(node.id, next)
         }}
         counts={counts}
         expanded={effectiveExpanded}
@@ -251,6 +290,10 @@ export function LocationPicker({
         }
         emptyText={searching ? t('itemEdit.locationSearchNone') : t('itemEdit.locationsEmpty')}
       />
+      <div className="row" style={{ marginTop: 'var(--gap-3)' }}>
+        <input className="input grow" value={newLocationName} onChange={(e) => setNewLocationName(e.target.value)} placeholder={t('itemEdit.newLocationPlaceholder')} />
+        <Button disabled={!newLocationName.trim()} onClick={() => { const created = addLocation(newLocationName.trim(), null); if (created) { onSelect(created.id); setNewLocationName(''); onClose() } }}>{t('common.create')}</Button>
+      </div>
     </Modal>
   )
 }
@@ -270,6 +313,7 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
   const data = useAppStore((s) => s.data)
   const derived = useAppStore((s) => s.derived)
   const addCategory = useAppStore((s) => s.addCategory)
+  const renameCategory = useAppStore((s) => s.renameCategory)
   const notify = useAppStore((s) => s.notify)
   const { t, tc } = useT()
 
@@ -419,6 +463,10 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
           selectedIds={selectedIds}
           onSelect={(id) => {
             if (id) toggle(id)
+          }}
+          onRename={(node) => {
+            const next = window.prompt(t('itemEdit.renameCategoryPrompt'), node.name)?.trim()
+            if (next && next !== node.name) renameCategory(node.id, next)
           }}
           counts={counts}
           expanded={effectiveExpanded}

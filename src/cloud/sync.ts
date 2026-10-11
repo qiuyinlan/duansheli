@@ -803,7 +803,12 @@ export async function signUpCloud(email: string, password: string): Promise<Auth
     if (error) return { ok: false, error: describeAuthError(error.message) }
     // 项目开了「确认邮箱」时，注册完还拿不到会话 —— 必须让人知道要去点邮件
     if (!data.session) return { ok: true, needsEmailConfirm: true }
-    await afterSignIn()
+    // 登录成功与首次同步是两件事；网络慢时不能把已成功的登录误报成失败。
+    try {
+      await afterSignIn()
+    } catch {
+      // 后台同步会在网络恢复、切回前台或手动点击时重试。
+    }
     return { ok: true }
   } catch (err) {
     return { ok: false, error: describeAuthError(err instanceof Error ? err.message : String(err)) }

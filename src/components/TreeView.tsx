@@ -43,6 +43,7 @@ export interface TreeViewProps<T extends TreeItem> {
   onToggle: (id: string) => void
   /** 行尾的操作按钮（新建子级 / 移动 / 重命名 / 删除） */
   renderActions?: (node: T) => ReactNode
+  onRename?: (node: T) => void
   /** 树顶的虚拟节点，例如「未归位」「未分类」 */
   virtualRoot?: { id: string; label: string; count: number } | null
   emptyText?: string
@@ -109,6 +110,7 @@ export function TreeView<T extends TreeItem>({
   expanded,
   onToggle,
   renderActions,
+  onRename,
   virtualRoot = null,
   emptyText,
   dropTarget = null,
@@ -231,6 +233,7 @@ export function TreeView<T extends TreeItem>({
                 .filter(Boolean)
                 .join(' ')}
               onClick={() => onSelect(id)}
+              onDoubleClick={() => onRename?.(node.node)}
               aria-pressed={isActive}
             >
               <span className="truncate">{node.node.name}</span>

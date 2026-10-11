@@ -9,6 +9,8 @@
  * 英文版要读起来像英语使用者真会打进去的话，不要逐字翻。
  */
 export const ai = {
+  planMapInstructions: '整理版图也可管理。用户明确要求时，输出 planMapChanges 数组，每项使用 kind（add、done、undone、delete）和 name。只能操作上下文中已有的位置名；新增用 add。',
+  planMapApplied: '整理版图已更新：{count} 项',
   /* ---- API Key 面板 ---- */
   keyLabel: 'DeepSeek API Key',
   keyPlaceholder: 'sk-…',

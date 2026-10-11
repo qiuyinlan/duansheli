@@ -7,7 +7,7 @@ import { AddToCollectionDialog } from './Collections'
 import { CreateChecklistDialog } from './Checklists'
 import { SplitToSpareDialog } from './Spare'
 import { LocationPicker, TagInput } from '../components/pickers'
-import { IconChevronRight, IconIdle, IconSpare, IconTrash } from '../components/ui/icons'
+import { IconChevronRight, IconTrash } from '../components/ui/icons'
 import { Button, EmptyState, Modal, SearchInput } from '../components/ui/primitives'
 import {
   EMPTY_FILTER,
@@ -329,6 +329,7 @@ export function Items() {
       groupBy,
       ui.expandedGroups,
       ui.collapsedGroups,
+      depth,
     )
     const color = groupColors.get(node.key) ?? NEUTRAL_GROUP_COLOR
 
@@ -448,46 +449,15 @@ export function Items() {
         用户会以为「我明明录过那个，怎么不见了」，然后开始怀疑数据丢了。
         所以这里不只说藏了几件，还给一个直接去看的入口。
       */}
-      {hiddenIdleCount > 0 ? (
+      {hiddenIdleCount > 0 || hiddenSpareCount > 0 ? (
         <div className="hidden-notice">
-          <span className="hidden-notice__icon">
-            <IconIdle size={14} />
+          <span className="grow small">{[hiddenIdleCount > 0 ? tc(hiddenIdleCount, 'items.idleHidden') : null, hiddenSpareCount > 0 ? tc(hiddenSpareCount, 'items.spareHidden') : null].filter(Boolean).join(t('items.hiddenJoin'))}</span>
+          <span className="row" style={{ flexShrink: 0 }}>
+            {hiddenIdleCount > 0 ? <Button size="sm" variant="ghost" onClick={() => navigate('/idle')}>{t('items.idleHiddenGo')}</Button> : null}
+            {hiddenIdleCount > 0 ? <Button size="sm" variant="ghost" onClick={() => setUi({ hideIdle: false })}>{t('items.idleHiddenShow')}</Button> : null}
+            {hiddenSpareCount > 0 ? <Button size="sm" variant="ghost" onClick={() => navigate('/spare')}>{t('items.spareHiddenGo')}</Button> : null}
+            {hiddenSpareCount > 0 ? <Button size="sm" variant="ghost" onClick={() => setUi({ hideSpare: false })}>{t('items.spareHiddenShow')}</Button> : null}
           </span>
-          <span className="grow small">{tc(hiddenIdleCount, 'items.idleHidden')}</span>
-          <Button size="sm" variant="ghost" onClick={() => navigate('/idle')}>
-            {t('items.idleHiddenGo')}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setFilter((prev) => ({ ...prev, statuses: ['idle'] }))}
-          >
-            {t('items.idleHiddenShow')}
-          </Button>
-        </div>
-      ) : null}
-
-      {/*
-        备用被收起时的提示。理由和上面闲置那条完全一样：
-        光说「收了几件」不够，必须给出去哪看的入口 ——
-        否则用户会以为「我明明录过那个，怎么不见了」。
-      */}
-      {hiddenSpareCount > 0 ? (
-        <div className="hidden-notice">
-          <span className="hidden-notice__icon">
-            <IconSpare size={14} />
-          </span>
-          <span className="grow small">{tc(hiddenSpareCount, 'items.spareHidden')}</span>
-          <Button size="sm" variant="ghost" onClick={() => navigate('/spare')}>
-            {t('items.spareHiddenGo')}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setFilter((prev) => ({ ...prev, statuses: ['spare'] }))}
-          >
-            {t('items.spareHiddenShow')}
-          </Button>
         </div>
       ) : null}
 

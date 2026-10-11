@@ -15,6 +15,7 @@ export function createEmptyData(): AppData {
     tags: [],
     collections: [],
     checklists: [],
+    planMap: [],
     updatedAt: new Date().toISOString(),
   }
 }
@@ -162,6 +163,7 @@ export function createSeedData(lang: Lang = getLang()): AppData {
      */
     collections: [],
     checklists: [],
+    planMap: [],
     updatedAt: now,
   }
 }

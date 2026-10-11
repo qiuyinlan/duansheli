@@ -12,6 +12,8 @@
  * translation is not.
  */
 export const ai = {
+  planMapInstructions: 'The organizing map can be managed too. When explicitly asked, return a planMapChanges array with kind (add, done, undone, delete) and name. Only update names already listed in context; use add for new places.',
+  planMapApplied: 'Organizing map updated: {count} entries',
   /* ---- API key panel ---- */
   keyLabel: 'DeepSeek API Key',
   keyPlaceholder: 'sk-…',

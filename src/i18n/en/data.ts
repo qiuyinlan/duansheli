@@ -18,6 +18,7 @@ export const data = {
     attribute: 'attribute',
     collection: 'collection',
     checklist: 'list',
+    planMap: 'organizing place',
   },
 
   /* ---------------- Import file validation ---------------- */
