@@ -107,8 +107,9 @@ Extraction rules:
       "In the wardrobe:" — then you **must** use that name as the category,
       **even if it is not in the existing categories list below**.
       That is the user's own stated intent and it outranks anything you pick from a list.
-   b) If the source gives no grouping, look for a **semantically matching** entry
-      in the existing categories list.
+   b) If the source gives no grouping, you **must** choose the most semantically matching
+      entry in the existing categories list; if none fits, create a clear category path.
+      A new item must never be left uncategorized; the user can change it in the preview.
    c) Only if neither applies, invent a new path. Keep every level short and generic.
 
    **Never squeeze an item into an unrelated existing category just to avoid creating one.**

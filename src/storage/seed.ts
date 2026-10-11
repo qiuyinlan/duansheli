@@ -47,6 +47,8 @@ export function createSeedData(lang: Lang = getLang()): AppData {
   // 这里刻意不用 loc()/cat() 那种简写表，因为要保证父子引用不出错 ——
   // 名字写错时下面的代码会如实跳过该节点，而不是造出一个孤儿。
   const LOCATION_TREE: Array<{ name: string; parent: string | null }> = [
+    /* Locations are user-specific; start empty and let the user/AI create them. */
+  /*
     { name: t('seed.home'), parent: null },
     { name: t('seed.bedroom'), parent: t('seed.home') },
     { name: t('seed.livingRoom'), parent: t('seed.home') },
@@ -67,6 +69,7 @@ export function createSeedData(lang: Lang = getLang()): AppData {
     { name: t('seed.fridge'), parent: t('seed.kitchen') },
     { name: t('seed.storageBox'), parent: t('seed.storage') },
     { name: t('seed.shelf'), parent: t('seed.storage') },
+  */
   ]
 
   const CATEGORY_NAMES = [
