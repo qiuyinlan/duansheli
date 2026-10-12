@@ -4,11 +4,13 @@ import { DiscardPickerDialog } from '../components/DiscardPickerDialog'
 import { ItemRow } from '../components/ItemRow'
 import { LocationPicker } from '../components/pickers'
 import { IconTrash } from '../components/ui/icons'
-import { Button, EmptyState, Modal } from '../components/ui/primitives'
+import { Button, EmptyState, Modal, SearchInput } from '../components/ui/primitives'
 import { useT, type DictKey } from '../i18n'
 import { NEUTRAL_GROUP_COLOR, assignTreeColors, topLevelColorMap } from '../lib/palette'
 import {
   groupAndSort,
+  EMPTY_FILTER,
+  filterItems,
   spareItems,
   totalUnits,
   type ItemGroupNode,
@@ -59,19 +61,28 @@ export function Spare() {
   const { t, tc } = useT()
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [search, setSearch] = useState('')
   /* 删除走勾选列表（issue 3），不再是一点就走 */
   const [discardPick, setDiscardPick] = useState<{ preselect: string[] } | null>(null)
 
   const spares = useMemo(() => spareItems(data), [data])
-  const units = useMemo(() => totalUnits(spares), [spares])
+  const filteredSpares = useMemo(
+    () => filterItems(spares, { ...EMPTY_FILTER, search }, derived),
+    [spares, search, derived],
+  )
+  const units = useMemo(() => totalUnits(filteredSpares), [filteredSpares])
+
+  useEffect(() => {
+    setSelected(new Set())
+  }, [search])
 
   /*
    * 复用物品列表那套分组（按位置、树形、同一份顶层配色）：
    * 层级、颜色、虚拟的「未归位」分组全都一致，用户不用学第二套东西。
    */
   const groups = useMemo(
-    () => groupAndSort(spares, 'location', 'name', 'asc', derived),
-    [spares, derived],
+    () => groupAndSort(filteredSpares, 'location', 'name', 'asc', derived),
+    [filteredSpares, derived],
   )
 
   const groupColors = useMemo(
@@ -222,13 +233,22 @@ export function Spare() {
         </div>
       </div>
 
+      <div style={{ marginBottom: 'var(--gap-3)' }}>
+        <SearchInput
+          value={search}
+          onValueChange={setSearch}
+          placeholder={t('items.searchPlaceholder')}
+          aria-label={t('items.searchAria')}
+        />
+      </div>
+
       {/*
         顶部这块刻意**不说**「闲置占比」那一套 —— 备用不是待处理的东西，
         引一个「该处理了」的气氛进来就全错了。只说囤了几样、共几件。
       */}
       <div className="idle-highlight" style={{ marginBottom: 'var(--gap-5)' }}>
         <div>
-          <div className="idle-highlight__value">{spares.length}</div>
+          <div className="idle-highlight__value">{filteredSpares.length}</div>
           <div className="tiny dim">{t('spare.highlightKinds')}</div>
         </div>
         <div className="idle-highlight__text">
@@ -242,14 +262,14 @@ export function Spare() {
         <label className="checkbox">
           <input
             type="checkbox"
-            checked={selected.size === spares.length}
+            checked={filteredSpares.length > 0 && selected.size === filteredSpares.length}
             onChange={() =>
               setSelected(
-                selected.size === spares.length ? new Set() : new Set(spares.map((i) => i.id)),
+                selected.size === filteredSpares.length ? new Set() : new Set(filteredSpares.map((i) => i.id)),
               )
             }
           />
-          <span className="small muted">{t('spare.selectAll', { count: spares.length })}</span>
+          <span className="small muted">{t('spare.selectAll', { count: filteredSpares.length })}</span>
         </label>
 
         {selected.size > 0 ? (
@@ -275,16 +295,18 @@ export function Spare() {
         ) : null}
       </div>
 
-      {groups.map((node) => renderGroup(node, 0))}
+      {filteredSpares.length === 0 ? (
+        <EmptyState title={t('items.noMatch')} hint={t('items.noMatchHint')} />
+      ) : groups.map((node) => renderGroup(node, 0))}
 
       {/* 删除前的勾选（issue 3）—— **只有批量舍弃走这里** */}
       <DiscardPickerDialog
         open={discardPick !== null}
         onClose={() => setDiscardPick(null)}
-        items={spares}
+        items={filteredSpares}
         ctx={derived}
         preselect={discardPick?.preselect}
-        hint={tc(spares.length, 'spare.discardPickerHint')}
+        hint={tc(filteredSpares.length, 'spare.discardPickerHint')}
         onConfirm={(ids) => {
           discard(ids)
           setSelected(new Set())

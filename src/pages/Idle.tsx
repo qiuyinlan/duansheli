@@ -1,14 +1,16 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DiscardPickerDialog } from '../components/DiscardPickerDialog'
 import { ItemRow } from '../components/ItemRow'
 import { IconChevronRight, IconTrash } from '../components/ui/icons'
-import { Button, EmptyState } from '../components/ui/primitives'
+import { Button, EmptyState, SearchInput } from '../components/ui/primitives'
 import { daysSince, formatDays, percent } from '../lib/format'
 import { NEUTRAL_GROUP_COLOR, assignTreeColors, topLevelColorMap } from '../lib/palette'
 import { useT } from '../i18n'
 import {
   computeStats,
+  EMPTY_FILTER,
+  filterItems,
   groupItemsTree,
   liveItems,
   sortByIdleDuration,
@@ -33,6 +35,7 @@ export function Idle() {
   const { t, tc, lang } = useT()
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [search, setSearch] = useState('')
   /*
    * 删除走勾选列表（issue 3），不再是「点一下就走」。
    * preselect 是批量删除时把已经勾好的那些带进去。
@@ -44,6 +47,14 @@ export function Idle() {
     () => sortByIdleDuration(data.items.filter((i) => i.status === 'idle')),
     [data.items],
   )
+  const filteredIdleItems = useMemo(
+    () => filterItems(idleItems, { ...EMPTY_FILTER, search }, derived),
+    [idleItems, search, derived],
+  )
+
+  useEffect(() => {
+    setSelected(new Set())
+  }, [search])
 
   /*
    * 按分类分组。
@@ -55,8 +66,8 @@ export function Idle() {
    * 而「越久越靠前」这条规矩并没有丢，它变成了**组内**的排序。
    */
   const groups = useMemo(
-    () => groupItemsTree(idleItems, 'category', derived),
-    [idleItems, derived, lang],
+    () => groupItemsTree(filteredIdleItems, 'category', derived),
+    [filteredIdleItems, derived, lang],
   )
 
   /*
@@ -86,10 +97,10 @@ export function Idle() {
   }
 
   const selectedIds = useMemo(() => [...selected], [selected])
-  const allSelected = idleItems.length > 0 && idleItems.every((i) => selected.has(i.id))
+  const allSelected = filteredIdleItems.length > 0 && filteredIdleItems.every((i) => selected.has(i.id))
 
-  const oldestDays = idleItems.length
-    ? daysSince(idleItems[0].idleAt ?? idleItems[0].updatedAt)
+  const oldestDays = filteredIdleItems.length
+    ? daysSince(filteredIdleItems[0].idleAt ?? filteredIdleItems[0].updatedAt)
     : 0
 
   /**
@@ -246,14 +257,23 @@ export function Idle() {
         </div>
       </div>
 
+      <div style={{ marginBottom: 'var(--gap-3)' }}>
+        <SearchInput
+          value={search}
+          onValueChange={setSearch}
+          placeholder={t('items.searchPlaceholder')}
+          aria-label={t('items.searchAria')}
+        />
+      </div>
+
       <div className="row-between wrap" style={{ marginBottom: 'var(--gap-3)' }}>
         <label className="checkbox">
           <input
             type="checkbox"
             checked={allSelected}
-            onChange={() => setSelected(allSelected ? new Set() : new Set(idleItems.map((i) => i.id)))}
+            onChange={() => setSelected(allSelected ? new Set() : new Set(filteredIdleItems.map((i) => i.id)))}
           />
-          <span className="small muted">{t('idle.selectAll', { count: idleItems.length })}</span>
+          <span className="small muted">{t('idle.selectAll', { count: filteredIdleItems.length })}</span>
         </label>
 
         {selected.size > 0 ? (
@@ -276,16 +296,18 @@ export function Idle() {
         ) : null}
       </div>
 
-      {groups.map((node) => renderGroup(node, 0))}
+      {filteredIdleItems.length === 0 ? (
+        <EmptyState title={t('items.noMatch')} hint={t('items.noMatchHint')} />
+      ) : groups.map((node) => renderGroup(node, 0))}
 
       {/* 删除前的勾选（issue 3）—— **只有批量处理走这里** */}
       <DiscardPickerDialog
         open={discardPick !== null}
         onClose={() => setDiscardPick(null)}
-        items={idleItems}
+        items={filteredIdleItems}
         ctx={derived}
         preselect={discardPick?.preselect}
-        hint={tc(idleItems.length, 'idle.discardPickerHint')}
+        hint={tc(filteredIdleItems.length, 'idle.discardPickerHint')}
         onConfirm={(ids) => {
           batchSetStatus(ids, 'discarded')
           notify(t('idle.handledToast', { count: ids.length }), 'success')
