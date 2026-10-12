@@ -42,7 +42,7 @@ import { uid } from '../lib/id'
 /* ------------------------------------------------------------------ */
 
 /** 这一版只支持新建。加动作时先回来看文件顶部那段说明。 */
-export type LocationChangeKind = 'create'
+export type LocationChangeKind = 'create' | 'rename' | 'move' | 'delete'
 
 export interface LocationChange {
   kind: LocationChangeKind
@@ -52,6 +52,8 @@ export interface LocationChange {
   parentPath?: string[]
   /** 名字（缺省 = `path` 的最后一段） */
   newName?: string
+  newParentPath?: string[]
+  deleteItems?: boolean
 }
 
 /* ------------------------------------------------------------------ */
@@ -63,6 +65,8 @@ export type LocationPlanStatus =
   | 'ok'
   /** 库里已经有这一条了（同名同级），不用建 */
   | 'duplicate'
+  | 'missing'
+  | 'cycle'
 
 export interface LocationPlanEntry {
   /** 界面上做 key，也让用户能单独取消某一条 */
@@ -70,7 +74,7 @@ export interface LocationPlanEntry {
   kind: LocationChangeKind
   status: LocationPlanStatus
   /** 新建的条目没有「原来的位置」——措辞交给界面（这一层不该知道界面语言） */
-  isNew: true
+  isNew: boolean
   /** 目标位置现在的路径文字（新建时是空字符串） */
   fromLabel: string
   /** 建完之后的完整路径，给界面显示 */
@@ -85,6 +89,9 @@ export interface LocationPlanEntry {
   include: boolean
   /** AI 原本的话，用来在界面上如实展示（不用它做判断） */
   raw: LocationChange
+  targetId?: string | null
+  deleteItems?: boolean
+  itemCount?: number
 }
 
 export interface LocationPlanResult {
@@ -148,6 +155,30 @@ export function planLocationChanges(
 
     const name = norm(change.newName ?? rawPath[rawPath.length - 1] ?? '')
     if (name === '') continue
+
+    const targetId = childNamed(data.locations, null, rawPath[0])
+      ? (data.locations.find((l) => pathOf(data.locations, l.id).join('/') === rawPath.join('/'))?.id ?? null)
+      : null
+    if (change.kind !== 'create') {
+      const target = targetId ? data.locations.find((l) => l.id === targetId) : null
+      if (!target) {
+        entries.push({ key: uid(), kind: change.kind, status: 'missing', isNew: false, fromLabel: rawPath.join(' / '), toLabel: '', willCreate: [], newParentId: null, newName: name, include: true, raw: change, targetId: null })
+        continue
+      }
+      const parentPath = (change.newParentPath ?? []).map(norm).filter(Boolean)
+      const parent = parentPath.length ? data.locations.find((l) => pathOf(data.locations, l.id).join('/') === parentPath.join('/')) : null
+      const descendants = new Set<string>([target.id]); let scan = true
+      while (scan) { scan = false; for (const l of data.locations) if (l.parentId && descendants.has(l.parentId) && !descendants.has(l.id)) { descendants.add(l.id); scan = true } }
+      const missingParent = change.kind === 'move' && parentPath.length > 0 && !parent
+      const cycle = change.kind === 'move' && !!parent && descendants.has(parent.id)
+      const children = change.kind === 'delete' ? descendants : new Set<string>()
+      const itemCount = data.items.filter((item) => item.locationId && children.has(item.locationId)).length
+      entries.push({ key: uid(), kind: change.kind, status: missingParent ? 'missing' : cycle ? 'cycle' : 'ok', isNew: false,
+        fromLabel: pathOf(data.locations, target.id).join(' / '),
+        toLabel: change.kind === 'rename' ? [...pathOf(data.locations, target.id).slice(0,-1), name].join(' / ') : (parent ? [...pathOf(data.locations, parent.id), target.name].join(' / ') : pathOf(data.locations, target.id).join(' / ')),
+        willCreate: [], newParentId: parent?.id ?? null, newName: name, include: true, raw: change, targetId: target.id, deleteItems: change.deleteItems, itemCount })
+      continue
+    }
 
     const parentPath = (
       change.parentPath !== undefined ? change.parentPath : rawPath.slice(0, -1)
@@ -230,6 +261,7 @@ export interface LocationApplyResult {
   data: AppData
   /** 真的建了几个位置（含顺带建出来的中间层） */
   created: number
+  changed: number
 }
 
 /**
@@ -249,7 +281,10 @@ export function applyLocationPlan(
 ): LocationApplyResult {
   const effective = entries.filter((entry) => entry.include && entry.status === 'ok')
   const locations: Location[] = data.locations.map((location) => ({ ...location }))
+  let items = data.items
   let created = 0
+  let changed = false
+  let changedEntries = 0
 
   const nextOrder = (parentId: string | null): number => {
     let max = -1
@@ -260,6 +295,28 @@ export function applyLocationPlan(
   }
 
   for (const entry of effective) {
+    if (entry.targetId) {
+      const idx = locations.findIndex((l) => l.id === entry.targetId)
+      if (idx >= 0) {
+        if (entry.kind === 'rename') { locations[idx] = { ...locations[idx], name: entry.newName }; changed = true; changedEntries++ }
+        if (entry.kind === 'move') { locations[idx] = { ...locations[idx], parentId: entry.newParentId ?? null, order: nextOrder(entry.newParentId ?? null) }; changed = true; changedEntries++ }
+        if (entry.kind === 'delete') {
+          const removed = new Set<string>([entry.targetId]); let changed = true
+          while (changed) { changed = false; for (const l of locations) if (l.parentId && removed.has(l.parentId) && !removed.has(l.id)) { removed.add(l.id); changed = true } }
+          locations.splice(0, locations.length, ...locations.filter((l) => !removed.has(l.id)))
+          items = items.map((item) => {
+            if (!removed.has(item.locationId ?? '')) return item
+            changed = true
+            return entry.deleteItems
+              ? { ...item, status: 'discarded', discardedAt: now, updatedAt: now }
+              : { ...item, locationId: null, updatedAt: now }
+          })
+          changed = true
+          changedEntries++
+        }
+      }
+      continue
+    }
     let parentId: string | null = entry.newParentId
     /* 父级如果在计划里刚被建出来，这一步要认出来：按名字逐级往下找 */
     for (const levelName of entry.willCreate) {
@@ -282,6 +339,6 @@ export function applyLocationPlan(
     }
   }
 
-  if (created === 0) return { data, created: 0 }
-  return { data: { ...data, locations, updatedAt: now }, created }
+  if (created === 0 && !changed) return { data, created: 0, changed: 0 }
+  return { data: { ...data, locations, items, updatedAt: now }, created, changed: changedEntries }
 }

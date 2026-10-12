@@ -715,8 +715,8 @@ export function Ai() {
       id: uid(),
       role: 'note',
       text:
-        result.created > 0
-          ? t('ai.locDone') + tc(result.created, 'ai.locResultCreated')
+        result.created > 0 || result.changed > 0
+          ? t('ai.locDone') + [result.created > 0 ? tc(result.created, 'ai.locResultCreated') : '', result.changed > 0 ? tc(result.changed, 'ai.locResultChanged') : ''].filter(Boolean).join('；')
           : t('ai.locResultNothing'),
     })
   }

@@ -578,7 +578,7 @@ export interface AppState {
    * （`planLocationChanges` 的产物），算法在 `ai/locationEdit.ts` 的纯函数里、
    * 有用例钉着；这里只负责 commit 一次（只留一份快照、只写一次盘）。
    */
-  applyLocationPlan: (entries: LocationPlanEntry[]) => { created: number }
+  applyLocationPlan: (entries: LocationPlanEntry[]) => { created: number; changed: number }
 
   setUi: (patch: Partial<UiPrefs>) => void
   /** 展开 / 收起某个分组。展开和折叠分别记录，因为默认值会随分组维度变化。 */
@@ -1266,8 +1266,8 @@ export const useAppStore = create<AppState>()((set, get) => {
       const data = get().data
       const result = applyLocationPlanPure(data, entries)
 
-      /* 一个位置都没建 → 不 commit（不然白留一份快照、白写一次盘） */
-      if (result.created === 0) return { created: 0 }
+      /* 没有任何结构或归位变化才跳过提交。 */
+      if (result.created === 0 && result.data === data) return { created: 0, changed: 0 }
 
       /*
        * `auto` 快照 —— 和别的结构性改动一个待遇。
@@ -1275,7 +1275,7 @@ export const useAppStore = create<AppState>()((set, get) => {
        * 所以不需要更重的 `destructive`。
        */
       commit(result.data, 'auto')
-      return { created: result.created }
+      return { created: result.created, changed: result.changed }
     },
 
     /* ---------------- 界面偏好 ---------------- */

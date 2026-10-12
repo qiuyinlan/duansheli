@@ -76,6 +76,7 @@ export function LocationChangePreview({ entries, onChange }: Props) {
         {entries.map((entry) => {
           /* 中间层 = 要建的每一级里，除了最后那一级自己 */
           const intermediate = Math.max(0, entry.willCreate.length - 1)
+          const kindKey = { create: 'ai.locKindCreate', rename: 'ai.locKindRename', move: 'ai.locKindMove', delete: 'ai.locKindDelete' } as const
           return (
             <li
               key={entry.key}
@@ -92,24 +93,26 @@ export function LocationChangePreview({ entries, onChange }: Props) {
                 onChange={() => toggle(entry.key)}
               />
 
-              <span className="cat-plan__kind">{t('ai.locKindCreate')}</span>
+              <span className="cat-plan__kind">{t(kindKey[entry.kind])}</span>
 
               <span className="cat-plan__body">
                 <span className="cat-plan__names">
-                  <span className="cat-plan__from">{t('ai.locFromNew')}</span>
+                  <span className="cat-plan__from">{entry.isNew ? t('ai.locFromNew') : entry.fromLabel}</span>
                   <span className="cat-plan__arrow">→</span>
                   <span className="cat-plan__to">{entry.toLabel}</span>
                 </span>
 
-                {entry.status === 'ok' ? (
+                {entry.kind === 'delete' && entry.status === 'ok' ? (
+                  <span className="cat-plan__note">{entry.deleteItems ? t('ai.locDeleteItems', { count: entry.itemCount ?? 0 }) : t('ai.locDeleteUnassign')}</span>
+                ) : entry.status === 'ok' && entry.kind === 'create' ? (
                   <span className="cat-plan__note">
                     {intermediate > 0
                       ? tc(intermediate, 'ai.locAlsoLevels')
                       : t('ai.locOnlyItself')}
                   </span>
-                ) : (
-                  <span className="cat-plan__note">{t('ai.locNoteDuplicate')}</span>
-                )}
+                ) : entry.status !== 'ok' ? (
+                  <span className="cat-plan__note">{entry.status === 'missing' ? t('ai.locNoteMissing') : entry.status === 'cycle' ? t('ai.locNoteCycle') : t('ai.locNoteDuplicate')}</span>
+                ) : null}
               </span>
             </li>
           )

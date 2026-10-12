@@ -7,7 +7,7 @@
 
 import type { ParseOutcome, ParseSuccess } from '../src/data/validate'
 import { createSeedData } from '../src/storage/seed'
-import type { AppData, Item } from '../src/types'
+import type { AppData, Item, Location as AppLocation } from '../src/types'
 
 /* ------------------------------------------------------------------ */
 /* 断言                                                                */
@@ -171,10 +171,32 @@ export function fixture(): AppData {
   // 而下面一堆 `cat('衣物')` 的查找会直接抛「夹具缺少分类 衣物」——
   // 症状离病因很远，很难查。传死语言，这类污染就不可能发生。
   const seed = createSeedData('zh')
+  const locationSpecs: Array<{ name: string; parent: string | null }> = [
+    { name: '家', parent: null },
+    { name: '卧室', parent: '家' },
+    { name: '客厅', parent: '家' },
+    { name: '厨房', parent: '家' },
+    { name: '书房', parent: '家' },
+    { name: '衣柜', parent: '卧室' },
+    { name: '床头柜', parent: '卧室' },
+    { name: '橱柜', parent: '厨房' },
+  ]
+  const locationIds = new Map<string, string>()
+  const locations: AppLocation[] = locationSpecs.map((spec, order) => {
+    const id = `test-location-${order}`
+    locationIds.set(spec.name, id)
+    return {
+      id,
+      name: spec.name,
+      parentId: spec.parent ? locationIds.get(spec.parent) ?? null : null,
+      order,
+      note: '',
+      createdAt: OLD_DATE,
+    }
+  })
   const cat = (name: string) =>
     must(seed.categories.find((c) => c.name === name), `夹具缺少分类 ${name}`).id
-  const loc = (name: string) =>
-    must(seed.locations.find((l) => l.name === name), `夹具缺少位置 ${name}`).id
+  const loc = (name: string) => must(locationIds.get(name), `夹具缺少位置 ${name}`)
   const brand = must(seed.attributeDefs.find((d) => d.name === '品牌'), '夹具缺少属性 品牌')
   const price = must(seed.attributeDefs.find((d) => d.name === '价格'), '夹具缺少属性 价格')
 
@@ -213,5 +235,5 @@ export function fixture(): AppData {
     item({ id: 'i5', name: '不知道放哪的东西' }),
   ]
 
-  return { ...seed, items }
+  return { ...seed, locations, items }
 }

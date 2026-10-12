@@ -290,10 +290,11 @@ Four rules:
 2. If it already exists: you may still send it (the program recognises it and reports
    "nothing to create"), but it is better to check【your existing places】first and just say
    so in reply instead of emitting the entry.
-3. Places support **create only** in this version: rename / move / delete of places are not
-   implemented. If the user asks for those, say plainly in reply that places can only be
-   created for now — do **not** smuggle it into categoryChanges (that is a different tree,
-   and the category would be created in the wrong place).
+3. Places support create / rename / move / delete. Use the full existing path in path;
+   use newName for rename and newParentPath (full parent path, [] means top level) for move.
+   For delete, deleteItems=true moves items in the whole subtree to the recycle bin;
+   otherwise remove the places and clear item locations. If the user only says “clean up
+   places”, do not delete items; only clear their locations.
 4. If the user says both "create place X" **and** "put this thing in X": just use the item's
    location as usual (the program creates the place as part of that) and do **not** also emit
    a locationChanges entry — that would make them accept the same thing twice.

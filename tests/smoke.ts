@@ -53,13 +53,13 @@ import { OLD_DATE, deepEq, eq, fixture, item, match, must, mustParse, ok, suite,
 suite('位置树')
 
 await test('所有位置都能从顶层到达（无孤儿、无环）', () => {
-  const seed = createSeedData()
+  const seed = fixture()
   const flat = flattenTree(buildTree(seed.locations))
   eq(flat.length, seed.locations.length, '每个位置都应该出现在树里')
 })
 
 await test('路径按层级正确拼接', () => {
-  const seed = createSeedData()
+  const seed = fixture()
   const index = createTreeIndex(seed.locations)
   const wardrobe = must(seed.locations.find((l) => l.name === '衣柜'), '找不到衣柜')
   eq(index.pathString(wardrobe.id, ' / '), '家 / 卧室 / 衣柜')
@@ -67,7 +67,7 @@ await test('路径按层级正确拼接', () => {
 })
 
 await test('数据里即使有环，也不会死循环或让节点消失', () => {
-  const seed = createSeedData()
+  const seed = fixture()
   const root = must(seed.locations.find((l) => l.parentId === null), '找不到顶层位置')
   const child = must(seed.locations.find((l) => l.parentId === root.id), '找不到顶层位置的子节点')
   const broken = seed.locations.map((l) => (l.id === root.id ? { ...l, parentId: child.id } : l))
@@ -86,7 +86,7 @@ await test('★ 搜「衣柜」能直接定位到它，而且要把祖先带出�
    * 祖先掉了的话，被搜出来的节点会显示成顶层（`buildTree` 会把找不到父级的
    * 当根），用户会以为它是第一层，从而归错地方。
    */
-  const seed = createSeedData()
+  const seed = fixture()
   const index = createTreeIndex(seed.locations)
   const wardrobe = must(
     seed.locations.find((location) => location.name === '衣柜'),
@@ -109,13 +109,13 @@ await test('★ 搜「衣柜」能直接定位到它，而且要把祖先带出�
 })
 
 await test('搜索匹配的是节点自己的名字，不是整条路径（和分类页同一口径）', () => {
-  const seed = createSeedData()
+  const seed = fixture()
   /* 「家」在每一条路径里都出现，但只有顶层那个节点自己叫「家」 */
   const matched = searchTreeIds(seed.locations, '家')
   eq(matched.size, 1, `只有名字真的含这两个字的那一条，实际 ${matched.size} 条`)
 })
 
-await test('禁止把位置移动到它自己的子孙下', () => {  const seed = createSeedData()
+await test('禁止把位置移动到它自己的子孙下', () => {  const seed = fixture()
   const index = createTreeIndex(seed.locations)
   const home = must(seed.locations.find((l) => l.name === '家'), '找不到家')
   const wardrobe = must(seed.locations.find((l) => l.name === '衣柜'), '找不到衣柜')
@@ -219,7 +219,7 @@ await test('往返两次的结果依然相同（幂等）', () => {
 })
 
 await test('空值属性在往返中被丢弃（保证数据干净）', () => {
-  const seed = createSeedData()
+  const seed = fixture()
   const brand = must(seed.attributeDefs.find((d) => d.name === '品牌'), '找不到品牌属性')
   const data: AppData = {
     ...seed,
@@ -338,8 +338,8 @@ await test('导入数据引用的位置本地没有时，按名称路径对齐�
 })
 
 await test('本地完全没有的位置会被补建，物品不会掉成未归位', () => {
-  const current = createSeedData()
-  const base = createSeedData()
+  const current = fixture()
+  const base = fixture()
   const now = new Date().toISOString()
 
   const incoming: AppData = {

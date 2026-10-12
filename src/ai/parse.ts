@@ -386,10 +386,12 @@ export interface CategoryChangeIntent {
  * 「这条到底是动哪棵树」得靠猜。
  */
 export interface LocationChangeIntent {
-  kind: 'create'
+  kind: 'create' | 'rename' | 'move' | 'delete'
   path: string[]
   newName?: string
   parentPath?: string[]
+  newParentPath?: string[]
+  deleteItems?: boolean
 }
 
 export interface PlanMapChangeIntent {
@@ -640,10 +642,11 @@ function normalizeLocationChanges(raw: unknown): LocationChangeIntent[] {
     if (!isRecord(entry)) continue
 
     const kindText = asString(entry.kind ?? entry.action ?? entry.操作 ?? entry.动作).toLowerCase()
-    /* 空 kind 也认：只支持新建时，模型经常干脆不写这个字段 */
+    /* 空 kind 也认：模型经常干脆不写这个字段 */
     const isCreate =
       kindText === '' || kindText === 'create' || kindText === '新建' || kindText === 'add'
-    if (!isCreate) continue
+    const kind = isCreate ? 'create' : (['rename','改名','move','移动','delete','删除'].includes(kindText) ? (['rename','改名'].includes(kindText) ? 'rename' : ['move','移动'].includes(kindText) ? 'move' : 'delete') : null)
+    if (!kind) continue
 
     let path = asPathList(entry.path ?? entry.位置 ?? entry.路径 ?? entry.name ?? entry.名称)
     const newName = asString(entry.newName ?? entry.新名字 ?? entry.名字)
@@ -657,10 +660,12 @@ function normalizeLocationChanges(raw: unknown): LocationChangeIntent[] {
       : undefined
 
     out.push({
-      kind: 'create',
+      kind,
       path,
       ...(newName !== '' ? { newName } : {}),
       ...(parentPath !== undefined ? { parentPath } : {}),
+      ...(entry.newParentPath !== undefined ? { newParentPath: asPathList(entry.newParentPath) } : {}),
+      ...(entry.deleteItems === true ? { deleteItems: true } : {}),
     })
   }
 
