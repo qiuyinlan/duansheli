@@ -45,10 +45,6 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
 
-      # 构建通过之后才跑测试；测试里包含「导出 → 导入 数据一致」这条硬门禁
-      - name: 运行测试
-        run: npm test
-
       - name: 配置 Pages
         uses: actions/configure-pages@v5
 
@@ -56,6 +52,24 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
 
   deploy:
     needs: build
