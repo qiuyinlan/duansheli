@@ -78,6 +78,7 @@ function mergeTree<T extends TreeItem>(
   /** 节点种类的说法（「位置」/「分类」），由调用方按当前语言取好传进来 */
   label: string,
   warnings: string[],
+  keyForPath: (byId: Map<string, T>, node: T) => string = pathKey,
 ): { merged: T[]; idMap: Map<string, string>; added: number; matched: number; created: number } {
   const incoming = incomingRaw.map((node) => ({ ...node }))
   normalizeParentChain(incoming)
@@ -86,7 +87,7 @@ function mergeTree<T extends TreeItem>(
 
   const byId = new Map(current.map((node) => [node.id, node]))
   const idByPath = new Map<string, string>()
-  for (const node of current) idByPath.set(pathKey(byId, node), node.id)
+  for (const node of current) idByPath.set(keyForPath(byId, node), node.id)
 
   const merged: T[] = current.map((node) => ({ ...node }))
   const idMap = new Map<string, string>()
@@ -102,7 +103,7 @@ function mergeTree<T extends TreeItem>(
       continue
     }
 
-    const key = pathKey(incomingById, node)
+    const key = keyForPath(incomingById, node)
     const byPath = idByPath.get(key)
     if (byPath) {
       idMap.set(node.id, byPath)
@@ -173,9 +174,11 @@ export function mergeAppData(current: AppData, incoming: AppData): MergeResult {
       parentId,
       order: source.order,
       createdAt: source.createdAt,
+      assetType: source.assetType ?? 'physical',
     }),
     t('data.kind.category'),
     warnings,
+      (byId, node) => `${node.assetType ?? 'physical'}:${pathKey(byId, node)}`,
   )
 
   const locations = locationMerge.merged

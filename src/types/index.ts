@@ -17,13 +17,15 @@ export const APP_ID = 'duansheli'
  * v5 → v6：物品状态增加 spare(备用)。这是**校验规则**变了：
  *          老程序读到 `status: 'spare'` 会认不出来，所以让它明确拒绝
  *          整份备份比让它默默把那件物品的备用属性丢掉要好。
+ * v6 → v7：数字资产字段。
+ * v7 → v8：分类增加 assetType，实物分类和数字资料目录分开管理。
  *
  * 升版本号是为了保护老程序：它拿到更高版本的备份会**明确拒绝**并提示升级，
  * 而不是静默把不认识的字段丢掉 —— 静默丢字段是最糟的，用户会以为备份是完整的。
  * 反过来老备份能正常导入新程序，缺的字段按默认值补齐
  * （分类全是顶层、有效期为空、不属于任何活动、没有清单）。
  */
-export const SCHEMA_VERSION = 6
+export const SCHEMA_VERSION = 8
 
 /* ------------------------------------------------------------------ */
 /* 物品                                                                */
@@ -48,6 +50,9 @@ export const SCHEMA_VERSION = 6
  * 而且「闲置占比」是断舍离的核心指标，把备用算进去会把这个数字弄脏。
  */
 export type ItemStatus = 'active' | 'idle' | 'spare' | 'discarded'
+export type AssetType = 'physical' | 'digital'
+export type DigitalSource = 'local' | 'obsidian' | 'feishu' | 'github' | 'web' | 'screenshot' | 'other'
+export type DigitalStatus = 'keep' | 'pending' | 'discard'
 
 export type AttrType = 'text' | 'number' | 'date' | 'select' | 'bool'
 
@@ -57,6 +62,12 @@ export interface Item {
   id: string
   /** 唯一必填字段 */
   name: string
+  assetType?: AssetType
+  digitalSource?: DigitalSource | null
+  digitalPlatforms?: string[]
+  digitalUri?: string
+  digitalSnapshot?: string
+  digitalStatus?: DigitalStatus
   /** 可属多个分类 */
   categoryIds: string[]
   /** 单一位置，指向位置树的任意层级节点；null = 未归位 */
@@ -142,6 +153,8 @@ export const UNTAGGED_ID = '__untagged__'
 export interface Category extends TreeItem {
   /** null = 顶层分类。加这个字段是纯新增，老数据自动变成全是顶层。 */
   createdAt: string
+  /** 目录所属资产模式；旧数据缺省按实物分类处理。 */
+  assetType?: AssetType
 }
 
 /** 自由标签：回答「什么情境」，如 想送人 / 舍不得扔 */

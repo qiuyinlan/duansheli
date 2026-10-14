@@ -37,7 +37,7 @@
  * 而每一步都在预览里看得见、能取消。
  */
 
-import type { AppData, Category } from '../types'
+import type { AppData, AssetType, Category } from '../types'
 import { uid } from '../lib/id'
 
 /* ------------------------------------------------------------------ */
@@ -93,6 +93,7 @@ export interface CategoryPlanEntry {
   /** 界面上用来做 key，也用来让用户单独取消某一条 */
   key: string
   kind: CategoryChangeKind
+  assetType?: AssetType
   status: CategoryPlanStatus
   /**
    * 这条改动**没有**「原来的分类」——只有新建才是这样。
@@ -109,6 +110,10 @@ export interface CategoryPlanEntry {
   toLabel: string
   /** 目标分类现在的 id（missing 时为 null） */
   targetId: string | null
+  /** 新分类的稳定 id；同一计划里的子分类可用它引用这个父级 */
+  plannedId?: string
+  /** 创建该分类所依赖的新建父级及其祖先计划项 */
+  dependsOn?: string[]
   /** 挪到哪个父级（move / create 用） */
   newParentId?: string | null
   /** 改完之后的名字（rename / create 用） */
@@ -175,10 +180,10 @@ function resolvePath(categories: Category[], path: string[]): string | null {
 }
 
 /** 某个分类下面直接挂着几个子分类 / 几件物品 */
-function countsUnder(data: AppData, id: string): { children: number; items: number } {
+function countsUnder(data: AppData, id: string, assetType: AssetType): { children: number; items: number } {
   return {
-    children: data.categories.filter((c) => c.parentId === id).length,
-    items: data.items.filter((item) => item.categoryIds.includes(id)).length,
+    children: data.categories.filter((c) => c.parentId === id && (c.assetType ?? 'physical') === assetType).length,
+    items: data.items.filter((item) => item.categoryIds.includes(id) && (item.assetType ?? 'physical') === assetType).length,
   }
 }
 
@@ -200,10 +205,28 @@ function countsUnder(data: AppData, id: string): { children: number; items: numb
 export function planCategoryChanges(
   data: AppData,
   changes: readonly CategoryChange[],
+  assetType: AssetType = 'physical',
 ): CategoryPlanResult {
   const entries: CategoryPlanEntry[] = []
+  const scopedCategories = data.categories
+    .filter((category) => (category.assetType ?? 'physical') === assetType)
+    .map((category) => ({ ...category }))
+  const workingCategories = [...scopedCategories]
+  const plannedEntriesById = new Map<string, CategoryPlanEntry>()
 
-  for (const change of changes) {
+  const orderedChanges = changes
+    .map((change, index) => ({ change, index }))
+    .sort((a, b) => {
+      const aCreate = a.change.kind === 'create'
+      const bCreate = b.change.kind === 'create'
+      if (aCreate !== bCreate) return aCreate ? -1 : 1
+      if (!aCreate || !bCreate) return a.index - b.index
+      const depth = (change: CategoryChange) =>
+        (change.parentPath ?? change.path.slice(0, -1)).filter((part) => norm(part) !== '').length
+      return depth(a.change) - depth(b.change) || a.index - b.index
+    })
+
+  for (const { change } of orderedChanges) {
     const key = uid()
     const rawPath = change.path.map(norm).filter((part) => part !== '')
     if (rawPath.length === 0) continue
@@ -216,12 +239,13 @@ export function planCategoryChanges(
       if (name === '') continue
 
       const parentPath = (change.parentPath ?? rawPath.slice(0, -1)).map(norm).filter(Boolean)
-      const parentId = parentPath.length === 0 ? null : resolvePath(data.categories, parentPath)
+      const parentId = parentPath.length === 0 ? null : resolvePath(workingCategories, parentPath)
 
       if (parentPath.length > 0 && parentId === null) {
         entries.push({
           key,
           kind: 'create',
+          assetType,
           status: 'missing',
           isNew: true,
           fromLabel: '',
@@ -233,7 +257,7 @@ export function planCategoryChanges(
         continue
       }
 
-      const duplicate = data.categories.some(
+      const duplicate = workingCategories.some(
         (c) => (c.parentId ?? null) === parentId && c.name === name,
       )
       const toLabel =
@@ -243,6 +267,7 @@ export function planCategoryChanges(
         entries.push({
           key,
           kind: 'create',
+          assetType,
           status: 'duplicate',
           isNew: true,
           fromLabel: '',
@@ -254,28 +279,47 @@ export function planCategoryChanges(
         continue
       }
 
-      entries.push({
+      const plannedId = uid()
+      const parentEntry = parentId === null ? undefined : plannedEntriesById.get(parentId)
+      const dependsOn = parentEntry
+        ? [...(parentEntry.dependsOn ?? []), parentEntry.key]
+        : []
+      const entry: CategoryPlanEntry = {
         key,
         kind: 'create',
+        assetType,
         status: 'ok',
         isNew: true,
         fromLabel: '',
         toLabel,
         targetId: null,
+        plannedId,
+        ...(dependsOn.length > 0 ? { dependsOn } : {}),
         newParentId: parentId,
         newName: name,
         include: true,
         raw: change,
+      }
+      entries.push(entry)
+      workingCategories.push({
+        id: plannedId,
+        name,
+        parentId,
+        assetType,
+        order: workingCategories.filter((category) => (category.parentId ?? null) === parentId).length,
+        createdAt: '',
       })
+      plannedEntriesById.set(plannedId, entry)
       continue
     }
 
     /* ---------------- rename / move / delete 都要先找到目标 ---------------- */
-    const targetId = resolvePath(data.categories, rawPath)
+    const targetId = resolvePath(scopedCategories, rawPath)
     if (targetId === null) {
       entries.push({
         key,
         kind: change.kind,
+        assetType,
         status: 'missing',
         fromLabel: fromPathLabel,
         toLabel: fromPathLabel,
@@ -286,8 +330,8 @@ export function planCategoryChanges(
       continue
     }
 
-    const target = data.categories.find((c) => c.id === targetId) as Category
-    const parentPath = pathOf(data.categories, targetId).slice(0, -1)
+    const target = scopedCategories.find((c) => c.id === targetId) as Category
+    const parentPath = pathOf(scopedCategories, targetId).slice(0, -1)
 
     if (change.kind === 'rename') {
       const newName = norm(change.newName ?? '')
@@ -296,6 +340,7 @@ export function planCategoryChanges(
         entries.push({
           key,
           kind: 'rename',
+          assetType,
           status: 'noop',
           fromLabel: fromPathLabel,
           toLabel: fromPathLabel,
@@ -306,13 +351,14 @@ export function planCategoryChanges(
         })
         continue
       }
-      const duplicate = data.categories.some(
+      const duplicate = scopedCategories.some(
         (c) => c.id !== targetId && (c.parentId ?? null) === target.parentId && c.name === newName,
       )
       if (duplicate) {
         entries.push({
           key,
           kind: 'rename',
+          assetType,
           status: 'duplicate',
           fromLabel: fromPathLabel,
           toLabel: [...parentPath, newName].join(' / '),
@@ -326,6 +372,7 @@ export function planCategoryChanges(
       entries.push({
         key,
         kind: 'rename',
+        assetType,
         status: 'ok',
         fromLabel: fromPathLabel,
         toLabel: [...parentPath, newName].join(' / '),
@@ -348,12 +395,13 @@ export function planCategoryChanges(
       if (change.newParentPath === undefined) continue
 
       const newParentId =
-        wantedParentPath.length === 0 ? null : resolvePath(data.categories, wantedParentPath)
+        wantedParentPath.length === 0 ? null : resolvePath(scopedCategories, wantedParentPath)
 
       if (wantedParentPath.length > 0 && newParentId === null) {
         entries.push({
           key,
           kind: 'move',
+          assetType,
           status: 'missing',
           fromLabel: fromPathLabel,
           toLabel: wantedParentPath.join(' / ') + ' / ' + target.name,
@@ -368,6 +416,7 @@ export function planCategoryChanges(
         entries.push({
           key,
           kind: 'move',
+          assetType,
           status: 'noop',
           fromLabel: fromPathLabel,
           toLabel: fromPathLabel,
@@ -393,7 +442,7 @@ export function planCategoryChanges(
           const current = stack.pop() as string
           if (descendants.has(current)) continue
           descendants.add(current)
-          for (const child of data.categories) {
+          for (const child of scopedCategories) {
             if (child.parentId === current) stack.push(child.id)
           }
         }
@@ -401,6 +450,7 @@ export function planCategoryChanges(
           entries.push({
             key,
             kind: 'move',
+            assetType,
             status: 'cycle',
             fromLabel: fromPathLabel,
             toLabel: wantedParentPath.join(' / ') + ' / ' + target.name,
@@ -415,10 +465,11 @@ export function planCategoryChanges(
       const newParentLabel =
         newParentId === null
           ? ''
-          : pathOf(data.categories, newParentId).join(' / ') + ' / '
+          : pathOf(scopedCategories, newParentId).join(' / ') + ' / '
       entries.push({
         key,
         kind: 'move',
+        assetType,
         status: 'ok',
         fromLabel: fromPathLabel,
         toLabel: newParentLabel + target.name,
@@ -431,10 +482,11 @@ export function planCategoryChanges(
     }
 
     if (change.kind === 'delete') {
-      const { children, items } = countsUnder(data, targetId)
+      const { children, items } = countsUnder(data, targetId, assetType)
       entries.push({
         key,
         kind: 'delete',
+        assetType,
         status: 'ok',
         fromLabel: fromPathLabel,
         toLabel: parentPath.join(' / '),
@@ -462,7 +514,15 @@ export function planCategoryChanges(
  * （做不了），被用户取消勾选的更不算。
  */
 export function countEffectiveCategoryChanges(entries: readonly CategoryPlanEntry[]): number {
-  return entries.filter((entry) => entry.include && entry.status === 'ok').length
+  const byKey = new Map(entries.map((entry) => [entry.key, entry]))
+  const isEffective = (entry: CategoryPlanEntry): boolean => {
+    if (!entry.include || entry.status !== 'ok') return false
+    return (entry.dependsOn ?? []).every((key) => {
+      const dependency = byKey.get(key)
+      return dependency?.include === true && dependency.status === 'ok'
+    })
+  }
+  return entries.filter((entry) => isEffective(entry)).length
 }
 
 /* ------------------------------------------------------------------ */
@@ -511,7 +571,15 @@ export function applyCategoryPlan(
   entries: readonly CategoryPlanEntry[],
   now: string = new Date().toISOString(),
 ): CategoryApplyResult {
-  const effective = entries.filter((entry) => entry.include && entry.status === 'ok')
+  const includedKeys = new Set(
+    entries.filter((entry) => entry.include && entry.status === 'ok').map((entry) => entry.key),
+  )
+  const effective = entries.filter(
+    (entry) =>
+      entry.include &&
+      entry.status === 'ok' &&
+      (entry.dependsOn ?? []).every((dependencyKey) => includedKeys.has(dependencyKey)),
+  )
   /** 分类当前的样子，边改边更新 */
   let categories: Category[] = data.categories.map((c) => ({ ...c }))
   let items = data.items.map((item) => ({ ...item }))
@@ -523,10 +591,12 @@ export function applyCategoryPlan(
   let reparentedChildren = 0
   let affectedItems = 0
 
-  const nextOrder = (parentId: string | null): number => {
+  const nextOrder = (parentId: string | null, assetType: AssetType): number => {
     let max = -1
     for (const category of categories) {
-      if ((category.parentId ?? null) === parentId) max = Math.max(max, category.order)
+      if ((category.parentId ?? null) === parentId && (category.assetType ?? 'physical') === assetType) {
+        max = Math.max(max, category.order)
+      }
     }
     return max + 1
   }
@@ -536,14 +606,16 @@ export function applyCategoryPlan(
     const name = norm(entry.newName ?? '')
     if (name === '') continue
     const parentId = entry.newParentId ?? null
+    const assetType = entry.assetType ?? 'physical'
     if (parentId !== null && !categories.some((c) => c.id === parentId)) continue
 
     const category: Category = {
-      id: uid(),
+      id: entry.plannedId ?? uid(),
       name,
       parentId,
-      order: nextOrder(parentId),
+      order: nextOrder(parentId, assetType),
       createdAt: now,
+      assetType,
     }
     categories.push(category)
     created++
@@ -566,7 +638,11 @@ export function applyCategoryPlan(
      */
     const current = categories[index] as Category
     const duplicate = categories.some(
-      (c) => c.id !== targetId && (c.parentId ?? null) === (current.parentId ?? null) && c.name === newName,
+      (c) =>
+        c.id !== targetId &&
+        (c.parentId ?? null) === (current.parentId ?? null) &&
+        (c.assetType ?? 'physical') === (entry.assetType ?? 'physical') &&
+        c.name === newName,
     )
     if (duplicate) continue
 
@@ -584,7 +660,11 @@ export function applyCategoryPlan(
 
     // 父级不在了（被前面某一步删了）→ 提到顶层，不留孤儿
     if (newParentId !== null && !categories.some((c) => c.id === newParentId)) {
-      categories[index] = { ...(categories[index] as Category), parentId: null, order: nextOrder(null) }
+      categories[index] = {
+        ...(categories[index] as Category),
+        parentId: null,
+        order: nextOrder(null, entry.assetType ?? 'physical'),
+      }
       moved++
       continue
     }
@@ -605,7 +685,7 @@ export function applyCategoryPlan(
     categories[index] = {
       ...(categories[index] as Category),
       parentId: newParentId,
-      order: nextOrder(newParentId),
+      order: nextOrder(newParentId, entry.assetType ?? 'physical'),
     }
     moved++
   }
@@ -623,7 +703,11 @@ export function applyCategoryPlan(
     categories = categories.map((category) => {
       if (category.parentId !== targetId) return category
       reparentedChildren++
-      return { ...category, parentId: grandParentId, order: nextOrder(grandParentId) }
+      return {
+        ...category,
+        parentId: grandParentId,
+        order: nextOrder(grandParentId, entry.assetType ?? 'physical'),
+      }
     })
 
     // 物品只摘掉这**一个**分类归属，别的分类和字段一个字不动

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { DiscardPickerDialog } from '../components/DiscardPickerDialog'
 import { FilterPanel } from '../components/FilterPanel'
 import { ItemRow } from '../components/ItemRow'
+import { DigitalCategoryBrowser } from '../components/DigitalCategoryBrowser'
 import { AddToCollectionDialog } from './Collections'
 import { CreateChecklistDialog } from './Checklists'
 import { SplitToSpareDialog } from './Spare'
@@ -121,6 +122,8 @@ export function Items() {
   const [groupBy, setGroupBy] = useState<GroupBy>(ui.groupBy)
   const [sortBy, setSortBy] = useState<SortBy>(ui.sortBy)
   const [sortDir, setSortDir] = useState<SortDir>(ui.sortDir)
+  const [digitalPlatformFilter, setDigitalPlatformFilter] = useState('')
+  const [digitalDispositionFilter, setDigitalDispositionFilter] = useState('')
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [filterOpen, setFilterOpen] = useState(false)
@@ -154,8 +157,15 @@ export function Items() {
   }, [filter, groupBy])
 
   const source = useMemo(
-    () => (filter.statuses.includes('discarded') ? data.items : liveItems(data)),
-    [data, filter.statuses],
+    () => {
+      const items = filter.statuses.includes('discarded') ? data.items : liveItems(data)
+      return searchParams.get('asset') === 'digital'
+        ? items.filter((item) => item.assetType === 'digital'
+          && (!digitalPlatformFilter || item.digitalPlatforms?.includes(digitalPlatformFilter))
+          && (!digitalDispositionFilter || (item.digitalStatus ?? 'pending') === digitalDispositionFilter))
+        : items.filter((item) => item.assetType !== 'digital')
+    },
+    [data, filter.statuses, searchParams, digitalPlatformFilter, digitalDispositionFilter],
   )
 
   /*
@@ -292,6 +302,8 @@ export function Items() {
 
   /* ---------------- 渲染 ---------------- */
 
+  if (searchParams.get('asset') === 'digital') return <DigitalCategoryBrowser />
+
   if (data.items.length === 0) {
     return (
       <>
@@ -304,9 +316,12 @@ export function Items() {
           title={t('items.emptyTitle')}
           hint={t('items.emptyHint')}
           action={
-            <Button variant="primary" onClick={() => navigate('/items/new')}>
-              {t('items.addItem')}
-            </Button>
+            <div className="row wrap">
+              <Button onClick={() => navigate('/ai')}>{t('items.aiEntry')}</Button>
+              <Button variant="primary" onClick={() => navigate('/items/new')}>
+                {t('items.addItem')}
+              </Button>
+            </div>
           }
         />
       </>
@@ -437,7 +452,7 @@ export function Items() {
         </div>
         <div className="page-header__actions">
           <Button onClick={() => navigate('/ai')}>{t('items.aiEntry')}</Button>
-          <Button variant="primary" onClick={() => navigate('/items/new')}>
+          <Button variant="primary" onClick={() => navigate(`/items/new${searchParams.get('asset') === 'digital' ? '?asset=digital' : ''}`)}>
             {t('items.addItem')}
           </Button>
         </div>
@@ -469,6 +484,16 @@ export function Items() {
           placeholder={t('items.searchPlaceholder')}
           aria-label={t('items.searchAria')}
         />
+
+        {searchParams.get('asset') === 'digital' ? <div className="row wrap" style={{ marginTop: 'var(--gap-2)' }}>
+          <select className="select" value={digitalPlatformFilter} onChange={(e) => setDigitalPlatformFilter(e.target.value)} aria-label="按平台筛选">
+            <option value="">全部平台</option>
+            {['飞书文档', '网盘', '网页', 'GitHub', 'Obsidian', '截图', '其他'].map((platform) => <option key={platform} value={platform}>{platform}</option>)}
+          </select>
+          <select className="select" value={digitalDispositionFilter} onChange={(e) => setDigitalDispositionFilter(e.target.value)} aria-label="按数字资料状态筛选">
+            <option value="">全部整理状态</option><option value="keep">保留</option><option value="pending">待整理</option><option value="discard">可清理</option>
+          </select>
+        </div> : null}
 
         <div className="toolbar__row">
           <span className="toolbar__label">{t('items.groupLabel')}</span>

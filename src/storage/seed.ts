@@ -112,6 +112,7 @@ export function createSeedData(lang: Lang = getLang()): AppData {
     parentId: null,
     order: i,
     createdAt: now,
+    assetType: 'physical',
   }))
 
   // 按定义顺序逐层建位置，用名字索引父节点 id。

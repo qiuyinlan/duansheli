@@ -6,6 +6,8 @@ import { countByCategoryIncludingDescendants, liveItems } from '../store/selecto
 import { expandAncestorsOf, filterTreeByIds, searchTreeIds } from '../lib/tree'
 import { pinnedNodes, togglePinned } from '../lib/pins'
 import { useAppStore } from '../store/useAppStore'
+import { createDerived } from '../store/selectors'
+import type { AssetType } from '../types'
 import { useT } from '../i18n'
 import { TreeView } from './TreeView'
 import { IconClose, IconPlus, IconStar, IconSuitcase } from './ui/icons'
@@ -307,11 +309,17 @@ interface CategoryPickerProps {
   onClose: () => void
   selectedIds: string[]
   onChange: (ids: string[]) => void
+  assetType?: AssetType
 }
 
-export function CategoryPicker({ open, onClose, selectedIds, onChange }: CategoryPickerProps) {
+export function CategoryPicker({ open, onClose, selectedIds, onChange, assetType = 'physical' }: CategoryPickerProps) {
   const data = useAppStore((s) => s.data)
-  const derived = useAppStore((s) => s.derived)
+  const categories = useMemo(
+    () => data.categories.filter((category) => (category.assetType ?? 'physical') === assetType),
+    [data.categories, assetType],
+  )
+  const categoryData = useMemo(() => ({ ...data, categories }), [data, categories])
+  const derived = useMemo(() => createDerived(categoryData), [categoryData])
   const addCategory = useAppStore((s) => s.addCategory)
   const renameCategory = useAppStore((s) => s.renameCategory)
   const notify = useAppStore((s) => s.notify)
@@ -335,8 +343,11 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
   }, [open, derived.categoryFlat])
 
   const counts = useMemo(
-    () => countByCategoryIncludingDescendants(liveItems(data), derived),
-    [data, derived],
+    () => countByCategoryIncludingDescendants(
+      liveItems(data).filter((item) => (item.assetType ?? 'physical') === assetType),
+      derived,
+    ),
+    [data, derived, assetType],
   )
 
   /*
@@ -347,13 +358,13 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
    * 「眼影盘」—— 用户会以为它是顶层分类，点下去选错层级也不知道。
    */
   const matchedIds = useMemo(
-    () => searchTreeIds(data.categories, query),
-    [data.categories, query],
+    () => searchTreeIds(categories, query),
+    [categories, query],
   )
   const searching = query.trim() !== ''
   const view = useMemo(
-    () => (searching ? filterTreeByIds(data.categories, matchedIds) : null),
-    [searching, data.categories, matchedIds],
+    () => (searching ? filterTreeByIds(categories, matchedIds) : null),
+    [searching, categories, matchedIds],
   )
   /** 祖先节点（留着当路径，但不是命中项） */
   const pathOnlyIds = useMemo(() => {
@@ -367,8 +378,8 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
    */
   const effectiveExpanded = useMemo(() => {
     if (!searching) return expanded
-    return new Set([...expanded, ...expandAncestorsOf(data.categories, matchedIds)])
-  }, [searching, expanded, data.categories, matchedIds])
+    return new Set([...expanded, ...expandAncestorsOf(categories, matchedIds)])
+  }, [searching, expanded, categories, matchedIds])
 
   const toggle = (id: string) => {
     onChange(
@@ -387,7 +398,7 @@ export function CategoryPicker({ open, onClose, selectedIds, onChange }: Categor
   const createTopLevel = () => {
     const name = newName.trim()
     if (name === '') return
-    const created = addCategory(name, null)
+    const created = addCategory(name, null, assetType)
     if (!created) {
       notify(t('itemEdit.duplicateCategory', { name }), 'error')
       return

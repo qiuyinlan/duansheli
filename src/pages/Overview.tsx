@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { BarChart } from '../components/ui/BarChart'
 import { IconChevronRight } from '../components/ui/icons'
 import { Button, EmptyState } from '../components/ui/primitives'
@@ -22,17 +22,22 @@ export function Overview() {
   const derived = useAppStore((s) => s.derived)
   const soonDays = useAppStore((s) => s.ui.expirySoonDays)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const viewData = useMemo(() => {
+    const digital = searchParams.get('asset') === 'digital'
+    return { ...data, items: data.items.filter((item) => digital ? item.assetType === 'digital' : item.assetType !== 'digital') }
+  }, [data, searchParams])
 
   // useT() 一方面是拿 t/tc，另一方面是**订阅语言**：
   // 语言一换这个页面就会重新渲染，页面上所有文字才会跟着变。
   const { t, tc } = useT()
 
-  const stats = useMemo(() => computeStats(data, soonDays), [data, soonDays])
-  const live = useMemo(() => liveItems(data), [data])
+  const stats = useMemo(() => computeStats(viewData, soonDays), [viewData, soonDays])
+  const live = useMemo(() => liveItems(viewData), [viewData])
   const byCategory = useMemo(() => countByCategory(live, derived), [live, derived])
   const byLocation = useMemo(() => countByTopLocation(live, derived), [live, derived])
   const byTag = useMemo(() => countByTag(live, derived), [live, derived])
-  const byStatus = useMemo(() => countByStatus(data.items), [data.items])
+  const byStatus = useMemo(() => countByStatus(viewData.items), [viewData.items])
 
   /*
    * 图表用的取色表。

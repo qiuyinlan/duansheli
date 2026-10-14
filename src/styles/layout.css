@@ -75,6 +75,10 @@
  * 两者由媒体查询互斥，任何宽度下恰好有一个在。
  */
 .sidebar__lang {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-2);
   margin-top: var(--gap-4);
   padding-bottom: var(--gap-1);
 }

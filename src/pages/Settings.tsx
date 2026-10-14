@@ -9,6 +9,7 @@ import {
 } from '../components/ui/icons'
 import { Button, ConfirmDialog, Modal, Switch } from '../components/ui/primitives'
 import { CloudSyncPanel } from '../components/CloudSyncPanel'
+import { AiKeyPanel } from '../components/AiKeyPanel'
 import { SnapshotCompareDialog } from '../components/SnapshotCompareDialog'
 import { exportCsv } from '../data/exportCsv'
 import { exportJson } from '../data/exportJson'
@@ -529,6 +530,17 @@ export function Settings() {
           <div className="page-header__sub">{t('settings.subtitle')}</div>
         </div>
       </div>
+      <section className="section">
+        <div className="settings-block">
+          <div className="settings-block__head">
+            <div className="settings-block__title">{t('settings.aiKeyTitle')}</div>
+            <div className="settings-block__desc">{t('settings.aiKeyDesc')}</div>
+          </div>
+          <div className="settings-block__body">
+            <AiKeyPanel />
+          </div>
+        </div>
+      </section>
 
       {/* ================= 备份与恢复 ================= */}
       <section className="section">

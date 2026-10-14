@@ -7,6 +7,7 @@ export const nav = {
   /* 侧栏与底部 Tab */
   overview: '概览',
   items: '物品',
+  digitalAssets: '数字资产',
   locations: '位置',
   planMap: '整理版图',
   idle: '闲置',
@@ -25,6 +26,7 @@ export const nav = {
   /* 顶栏标题（比导航词更细，会区分「录入」和「详情」） */
   titleOverview: '概览',
   titleItems: '物品',
+  titleDigitalAssets: '数字资产',
   titleItemNew: '录入物品',
   titleItemDetail: '物品详情',
   titleLocations: '位置',

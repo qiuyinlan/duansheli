@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AttributePicker, CategoryPicker, CollectionPicker, LocationPicker, TagInput } from '../components/pickers'
 import { IconChevronRight, IconClose, IconPlus, IconTrash } from '../components/ui/icons'
 import { Button, EmptyState, Switch } from '../components/ui/primitives'
@@ -12,7 +12,7 @@ import {
   liveItems,
 } from '../store/selectors'
 import { suggestAttrIds, useAppStore, type ItemInput } from '../store/useAppStore'
-import type { AttributeDef, AttrValue, ItemStatus } from '../types'
+import type { AttributeDef, AttrValue, DigitalStatus, ItemStatus } from '../types'
 
 /* ------------------------------------------------------------------ */
 /* 有效期：快捷设置的候选值                                            */
@@ -129,6 +129,8 @@ function AttributeField({
 export function ItemEdit() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const digitalMode = searchParams.get('asset') === 'digital'
   const { t } = useT()
 
   const data = useAppStore((s) => s.data)
@@ -147,6 +149,7 @@ export function ItemEdit() {
     () => (id ? data.items.find((i) => i.id === id) : undefined),
     [data.items, id],
   )
+  const isDigital = digitalMode || existing?.assetType === 'digital'
 
   const [name, setName] = useState('')
   const [locationId, setLocationId] = useState<string | null>(null)
@@ -161,6 +164,11 @@ export function ItemEdit() {
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
   /** 所属的活动合集 */
   const [collectionIds, setCollectionIds] = useState<string[]>([])
+  const [digitalPlatforms, setDigitalPlatforms] = useState<string[]>([])
+  const [digitalSource, setDigitalSource] = useState('')
+  const [digitalUri, setDigitalUri] = useState('')
+  const [digitalSnapshot, setDigitalSnapshot] = useState('')
+  const [digitalStatus, setDigitalStatus] = useState<DigitalStatus>('pending')
 
   const [moreOpen, setMoreOpen] = useState(false)
   const [locationOpen, setLocationOpen] = useState(false)
@@ -183,6 +191,11 @@ export function ItemEdit() {
       setAttrIds(Object.keys(existing.attrs))
       setExpiresAt(existing.expiresAt)
       setCollectionIds(existing.collectionIds)
+      setDigitalPlatforms(existing.digitalPlatforms ?? [])
+      setDigitalSource(existing.digitalSource ?? '')
+      setDigitalUri(existing.digitalUri ?? '')
+      setDigitalSnapshot(existing.digitalSnapshot ?? '')
+      setDigitalStatus(existing.digitalStatus ?? 'pending')
       // 有标签、有备注、或属于某个活动，就默认把「更多」摊开 ——
       // 否则用户会看不到自己之前填过的东西，以为丢了
       setMoreOpen(
@@ -200,7 +213,12 @@ export function ItemEdit() {
       setAttrIds(suggestAttrIds(ui, data.attributeDefs, ui.lastCategoryIds))
       setExpiresAt(null)
       setCollectionIds([])
-      setMoreOpen(false)
+      setDigitalPlatforms([])
+      setDigitalSource('')
+      setDigitalUri('')
+      setDigitalSnapshot('')
+      setDigitalStatus('pending')
+      setMoreOpen(digitalMode)
     }
     // 只在进入页面或切换物品时重新初始化
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -240,6 +258,12 @@ export function ItemEdit() {
 
   const buildInput = (): ItemInput => ({
     name,
+    assetType: digitalMode || existing?.assetType === 'digital' ? 'digital' : 'physical',
+    digitalPlatforms,
+    digitalSource: digitalSource ? digitalSource as ItemInput['digitalSource'] : null,
+    digitalUri,
+    digitalSnapshot,
+    digitalStatus,
     locationId,
     categoryIds,
     quantity,
@@ -264,7 +288,7 @@ export function ItemEdit() {
     if (isEdit && existing) {
       updateItem(existing.id, { ...buildInput(), name: trimmed })
       notify(t('common.saved'), 'success')
-      navigate('/items')
+      navigate(isDigital ? '/items?asset=digital' : '/items')
       return
     }
 
@@ -285,7 +309,7 @@ export function ItemEdit() {
       nameRef.current?.focus()
     } else {
       notify(t('common.saved'), 'success')
-      navigate('/items')
+      navigate(isDigital ? '/items?asset=digital' : '/items')
     }
   }
 
@@ -371,8 +395,16 @@ export function ItemEdit() {
           />
         </div>
 
+        {isDigital ? <div className="field">
+          <span className="field__label">资料所在平台</span>
+          <div className="chip-list">{['飞书文档', '网盘', '网页', 'GitHub', 'Obsidian', '截图', '其他'].map((platform) => <button key={platform} type="button" className={`chip${digitalPlatforms.includes(platform) ? ' is-active' : ' chip--dashed'}`} onClick={() => setDigitalPlatforms((prev) => prev.includes(platform) ? prev.filter((x) => x !== platform) : [...prev, platform])}>{platform}</button>)}</div>
+          <textarea className="textarea" rows={2} placeholder="具体链接或入口（可选）" value={digitalUri} onChange={(e) => setDigitalUri(e.target.value)} />
+          <textarea className="textarea" rows={4} placeholder="资料主题、摘要或截图文字，便于搜索" value={digitalSnapshot} onChange={(e) => setDigitalSnapshot(e.target.value)} />
+          <select className="select" value={digitalStatus} onChange={(e) => setDigitalStatus(e.target.value as DigitalStatus)}><option value="keep">保留</option><option value="pending">待整理</option><option value="discard">可清理</option></select>
+        </div> : null}
+
         {/* ---------------- 位置 ---------------- */}
-        <div className="field">
+        {!isDigital ? <div className="field">
           <span className="field__label">{t('itemEdit.fieldLocation')}</span>
           <button
             type="button"
@@ -398,7 +430,7 @@ export function ItemEdit() {
               {t('itemEdit.locationClear')}
             </button>
           ) : null}
-        </div>
+        </div> : null}
 
         {/* ---------------- 分类 ---------------- */}
         <div className="field">
@@ -434,7 +466,7 @@ export function ItemEdit() {
         </div>
 
         {/* ---------------- 数量 ---------------- */}
-        <div className="field">
+        {!isDigital ? <div className="field">
           <label className="field__label" htmlFor="item-quantity">
             {t('itemEdit.fieldQuantity')}
           </label>
@@ -448,7 +480,7 @@ export function ItemEdit() {
             value={quantity}
             onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
           />
-        </div>
+        </div> : null}
 
         {/* ---------------- 状态 ---------------- */}
         {/*
@@ -461,7 +493,7 @@ export function ItemEdit() {
           「一个都没选中」是界面坏了。（以前用开关时，已舍弃的物品
           会被显示成「在用」，那是个实打实的错。）
         */}
-        <div className="field">
+        {!isDigital ? <div className="field">
           <span className="field__label">{t('itemEdit.fieldStatus')}</span>
           {status === 'discarded' ? (
             <div className="dim small">{t('itemEdit.statusDiscardedHint')}</div>
@@ -484,10 +516,10 @@ export function ItemEdit() {
               </div>
             </>
           )}
-        </div>
+        </div> : null}
 
         {/* ---------------- 有效期 ---------------- */}
-        <div className="field">
+        {!isDigital ? <div className="field">
           <label className="field__label" htmlFor="item-expires-at">
             {t('expiry.fieldLabel')}
           </label>
@@ -524,7 +556,7 @@ export function ItemEdit() {
           {expiryIsPast ? (
             <div className="expiry-field__warning small">{t('expiry.fieldPastWarning')}</div>
           ) : null}
-        </div>
+        </div> : null}
 
         {/* ---------------- 更多（标签、备注） ---------------- */}
         <div>
@@ -552,7 +584,7 @@ export function ItemEdit() {
                 <div className="field__hint">{t('itemEdit.tagsHint')}</div>
               </div>
 
-              <div className="field">
+              {!isDigital ? <div className="field">
                 <span className="field__label">{t('itemEdit.fieldCollections')}</span>
                 <CollectionPicker
                   value={collectionIds}
@@ -567,7 +599,7 @@ export function ItemEdit() {
                   }}
                 />
                 <div className="field__hint">{t('itemEdit.collectionsHint')}</div>
-              </div>
+              </div> : null}
 
               <div className="field">
                 <label className="field__label" htmlFor="item-note">
@@ -585,10 +617,10 @@ export function ItemEdit() {
           ) : null}
         </div>
 
-        <div className="edit-form__divider" />
+        {!isDigital ? <div className="edit-form__divider" /> : null}
 
         {/* ---------------- 属性 ---------------- */}
-        <div className="stack">
+        {!isDigital ? <div className="stack">
           <div className="row-between wrap">
             <div>
               <div className="field__label" style={{ margin: 0 }}>
@@ -639,7 +671,7 @@ export function ItemEdit() {
               ))}
             </div>
           )}
-        </div>
+        </div> : null}
 
         <div className="edit-form__divider" />
 
@@ -670,6 +702,7 @@ export function ItemEdit() {
         onClose={() => setCategoryOpen(false)}
         selectedIds={categoryIds}
         onChange={setCategoryIds}
+        assetType={isDigital ? 'digital' : 'physical'}
       />
 
       <AttributePicker

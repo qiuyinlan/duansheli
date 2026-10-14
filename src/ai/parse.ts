@@ -11,7 +11,7 @@ import { fill } from './promptText'
 import { t } from '../i18n'
 import { normalizeExpiryDate } from '../lib/expiry'
 import { statusFromWords } from '../lib/statusWords'
-import type { ItemStatus } from '../types'
+import type { AssetType, DigitalSource, DigitalStatus, ItemStatus } from '../types'
 
 /* ------------------------------------------------------------------ */
 /* 从文本里抠出 JSON                                                   */
@@ -213,6 +213,12 @@ function asPathListOfLists(value: unknown): string[][] {
 
 export interface RawExtractedItem {
   name: string
+  assetType?: AssetType
+  digitalSource?: DigitalSource | null
+  digitalPlatforms?: string[]
+  digitalUri?: string
+  digitalSnapshot?: string
+  digitalStatus?: DigitalStatus
   quantity: number
   /** 每条是一条从顶层到末级的分类名称路径；AI 只给一个名字时就是单元素路径 */
   categoryPaths: string[][]
@@ -257,6 +263,16 @@ function normalizeExtractedItem(raw: unknown): RawExtractedItem | null {
 
   return {
     name,
+    assetType: raw.assetType === 'digital' ? 'digital' : raw.assetType === 'physical' ? 'physical' : undefined,
+    digitalSource: ['local', 'obsidian', 'feishu', 'github', 'web', 'screenshot', 'other'].includes(asString(raw.digitalSource))
+      ? asString(raw.digitalSource) as DigitalSource
+      : null,
+    digitalPlatforms: uniq(asStringList(raw.digitalPlatforms ?? raw.platforms)),
+    digitalUri: asString(raw.digitalUri ?? raw.uri ?? raw.url),
+    digitalSnapshot: asString(raw.digitalSnapshot ?? raw.snapshot ?? raw.content ?? raw.summary),
+    digitalStatus: ['keep', 'pending', 'discard'].includes(asString(raw.digitalStatus))
+      ? asString(raw.digitalStatus) as DigitalStatus
+      : undefined,
     quantity: asQuantity(raw.quantity ?? raw.数量 ?? raw.count),
     categoryPaths: asPathListOfLists(raw.categories ?? raw.分类 ?? raw.category),
     location: location.length > 0 ? location : null,
@@ -373,6 +389,7 @@ export interface CategoryChangeIntent {
   kind: 'create' | 'rename' | 'move' | 'delete'
   path: string[]
   newName?: string
+  parentPath?: string[]
   newParentPath?: string[]
 }
 
@@ -597,7 +614,9 @@ function normalizeCategoryChanges(raw: unknown): CategoryChangeIntent[] {
     if (path.length === 0 && newName !== '') path = [newName]
     if (path.length === 0) continue
 
-    const parentRaw = entry.newParentPath ?? entry.parentPath ?? entry.父级 ?? entry.上级分类
+    const parentRaw = kind === 'create'
+      ? entry.parentPath ?? entry.父级 ?? entry.上级分类
+      : entry.newParentPath ?? entry.parentPath ?? entry.父级 ?? entry.上级分类
     /*
      * 父级这一项的解析有个**必须区分**的地方：
      *   · 字段根本没出现 → `undefined`（= 没提这件事）
@@ -614,7 +633,11 @@ function normalizeCategoryChanges(raw: unknown): CategoryChangeIntent[] {
       kind,
       path,
       ...(newName !== '' ? { newName } : {}),
-      ...(newParentPath !== undefined ? { newParentPath } : {}),
+      ...(newParentPath !== undefined
+        ? kind === 'create'
+          ? { parentPath: newParentPath }
+          : { newParentPath }
+        : {}),
     })
   }
 

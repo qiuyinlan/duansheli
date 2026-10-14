@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ItemRow } from '../components/ItemRow'
+import { DigitalCategoryBrowser } from '../components/DigitalCategoryBrowser'
 import { TreeView } from '../components/TreeView'
 import { LocationPicker } from '../components/pickers'
 import { IconPencil, IconPlus, IconTrash } from '../components/ui/icons'
@@ -47,6 +48,7 @@ interface NameDialogState {
 
 export function Locations() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const data = useAppStore((s) => s.data)
   const derived = useAppStore((s) => s.derived)
   const ui = useAppStore((s) => s.ui)
@@ -198,7 +200,12 @@ export function Locations() {
     )
   }, [derived.tree])
 
-  const live = useMemo(() => liveItems(data), [data])
+  const live = useMemo(() => {
+    const items = liveItems(data)
+    return searchParams.get('asset') === 'digital'
+      ? items.filter((item) => item.assetType === 'digital')
+      : items.filter((item) => item.assetType !== 'digital')
+  }, [data, searchParams])
   const matchingItems = useMemo(() => {
     if (!searching) return []
     const needle = query.trim().toLocaleLowerCase()
@@ -394,6 +401,8 @@ export function Locations() {
   ]
     .filter((part): part is string => part !== null)
     .join(t('locations.deleteJoin'))
+
+  if (searchParams.get('asset') === 'digital') return <DigitalCategoryBrowser />
 
   return (
     <>

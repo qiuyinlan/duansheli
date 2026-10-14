@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { buildAiContext, buildInventoryDigest } from '../ai/prompts'
 import {
   createMatchContext,
@@ -26,17 +27,16 @@ import { countLocationChanges, planLocationChanges } from '../ai/locationEdit'
 import type { LocationChangeIntent } from '../ai/parse'
 import { AiChatPanel } from '../components/AiChatPanel'
 import { AiExtractPreview } from '../components/AiExtractPreview'
-import { AiKeyPanel } from '../components/AiKeyPanel'
 import { CategoryChangePreview } from '../components/CategoryChangePreview'
 import { LocationChangePreview } from '../components/LocationChangePreview'
 import type { ComposerContext } from '../components/AiQuickBar'
-import { Button, EmptyState } from '../components/ui/primitives'
+import { Button, ConfirmDialog, EmptyState } from '../components/ui/primitives'
 import { IconAlert } from '../components/ui/icons'
 import { uid } from '../lib/id'
 import { togglePinned } from '../lib/pins'
 import { useT } from '../i18n'
 import { useAppStore } from '../store/useAppStore'
-import { countByLocationIncludingDescendants } from '../store/selectors'
+import { countByLocationIncludingDescendants, createDerived } from '../store/selectors'
 import {
   addUsage,
   appendBubble,
@@ -74,6 +74,7 @@ function errorText(err: unknown): string {
  * 「新对话」。详见 useAiSessionStore.ts 顶部的说明。
  */
 export function Ai() {
+  const navigate = useNavigate()
   const data = useAppStore((s) => s.data)
   const derived = useAppStore((s) => s.derived)
   const aiApiKey = useAppStore((s) => s.aiApiKey)
@@ -123,6 +124,7 @@ export function Ai() {
 
   /** 用户逐条确认过的选择：物品 id = 「就是它」；'new' = 「另建一条」 */
   const [duplicatePicks, setDuplicatePicks] = useState<Record<string, string | 'new'>>({})
+  const [showKeyDialog, setShowKeyDialog] = useState(false)
 
   /** 还没做过选择的撞名条目 —— 它们会挡住采纳，按钮上要说清楚 */
   const unresolvedCollisions = useMemo(
@@ -240,9 +242,8 @@ export function Ai() {
     setDuplicatePicks({})
   }
 
-  const send = async (instruction: string) => {
+  const send = async (instruction: string, imageDataUrls: string[] = [], assetMode: 'physical' | 'digital' = 'physical') => {
     if (aiApiKey.trim() === '') {
-      notify(t('ai.needKey'), 'error')
       return
     }
 
@@ -283,10 +284,17 @@ export function Ai() {
        * 已经没有那两条草稿了（采纳完就移走了），于是它要么新建两条，
        * 要么反问「哪两条」。这句提示就是补上那个上下文。
        */
+      const modeInstruction = assetMode === 'digital'
+        ? '当前登记类型：数字资料。数字资料可以是目录/分类，也可以是某一条具体笔记、链接或文件。截图若展示 Flomo 等软件的标签树或文件夹树，按可见层级用 categoryChanges 创建完整分类树：每条 create 的 path 写从顶层到当前分类的完整路径，parentPath 写完整父级路径；父分类和子分类都要提交，不能把所有末级名称建成顶层。预览必须能看出每条分类的完整路径。不要创建概览资料条目，也不要记录、推算或展示目录旁的笔记数量。回复简短说明已整理目录。只有用户明确提供具体笔记、链接或文件时，才把它作为数字资料条目，并归入对应分类；平台可记录多个，链接可空。不要要求数量或实物存放位置。'
+        : '当前登记类型：实物物品。请按物品名称、数量和存放位置整理。'
       let pending =
+        modeInstruction + (assetMode === 'digital'
+          ? '\n数字资料规则补充：识别到的平台名称必须作为一级分类根节点（例如 Flomo），所有内容分类都挂在对应平台下面，不允许内容分类成为顶层。'
+          : '') + '\n' + (
         session.appliedSummary === ''
           ? instruction
           : t('ai.appliedContext', { names: session.appliedSummary }) + instruction
+        )
       let touchedNow = new Set(session.touchedKeys)
       /** 会话里已有的分类计划 —— 这一轮新提的追加在后面 */
       let categoryPlanNow = session.categoryPlan
@@ -304,8 +312,17 @@ export function Ai() {
       for (let turn = 0; turn < MAX_AUTO_TURNS; turn++) {
         const fresh = useAppStore.getState()
         const matchCtx = createMatchContext(fresh.data, fresh.derived)
-        const context = buildAiContext(fresh.data, fresh.derived)
-        const digest = buildInventoryDigest(fresh.data, fresh.derived)
+        const scopedData = {
+          ...fresh.data,
+          categories: fresh.data.categories.filter(
+            (category) => (category.assetType ?? 'physical') === assetMode,
+          ),
+          items: fresh.data.items.filter((item) => (item.assetType ?? 'physical') === assetMode),
+          locations: assetMode === 'digital' ? [] : fresh.data.locations,
+        }
+        const scopedDerived = createDerived(scopedData)
+        const context = buildAiContext(scopedData, scopedDerived)
+        const digest = buildInventoryDigest(scopedData, scopedDerived)
 
         const result = await chat({
           apiKey: aiApiKey,
@@ -318,6 +335,7 @@ export function Ai() {
             fresh.data.planMap ?? [],
           ),
           signal: controller.signal,
+          imageDataUrls: turn === 0 ? imageDataUrls : [],
         })
 
         useAiSessionStore.setState((state) => ({
@@ -326,6 +344,9 @@ export function Ai() {
         }))
 
         const parsed = parseChatResponse(extractJson(result.content))
+        parsed.items = parsed.items.map((item) => assetMode === 'digital'
+          ? { ...item, assetType: 'digital', digitalStatus: item.digitalStatus ?? 'pending' }
+          : { ...item, assetType: 'physical' })
         if ((parsed.planMapChanges?.length ?? 0) > 0) {
           let applied = 0
           for (const change of parsed.planMapChanges ?? []) {
@@ -432,7 +453,7 @@ export function Ai() {
          * 新提的追加在后面 —— 和物品那边「没提到 = 不用动」是同一个规矩。
          */
         if (parsed.categoryChanges.length > 0) {
-          const plan = planCategoryChanges(fresh.data, parsed.categoryChanges as CategoryChange[])
+          const plan = planCategoryChanges(fresh.data, parsed.categoryChanges as CategoryChange[], assetMode)
           const merged = [...categoryPlanNow, ...plan.entries]
           categoryPlanNow = merged
           useAiSessionStore.setState({ categoryPlan: merged })
@@ -519,6 +540,20 @@ export function Ai() {
       controller.dispose()
       setAiCancel(null)
     }
+  }
+
+  const handlePanelSend = (
+    instruction: string,
+    imageDataUrls: string[] = [],
+    assetMode: 'physical' | 'digital' = 'physical',
+  ): boolean => {
+    if (aiApiKey.trim() === '') {
+      setShowKeyDialog(true)
+      return false
+    }
+    if (useAiSessionStore.getState().running) return false
+    void send(instruction, imageDataUrls, assetMode)
+    return true
   }
 
   /** 把 AI 要的那批现有物品转成草稿 */
@@ -732,7 +767,6 @@ export function Ai() {
         </div>
       </div>
 
-      <AiKeyPanel />
 
       <div className="chat-layout">
         <AiChatPanel
@@ -742,7 +776,7 @@ export function Ai() {
           usage={usage}
           lastTurnUsage={lastTurnUsage}
           draftCount={drafts.length}
-          onSend={(text) => void send(text)}
+          onSend={handlePanelSend}
           onCancel={cancel}
           onReset={reset}
           composer={composer}
@@ -1084,6 +1118,18 @@ export function Ai() {
           )}
         </div>
       </div>
+      <ConfirmDialog
+        open={showKeyDialog}
+        title={t('ai.needKeyTitle')}
+        message={t('ai.needKey')}
+        confirmLabel={t('ai.needKeyGoSettings')}
+        cancelLabel={t('common.cancel')}
+        onConfirm={() => {
+          setShowKeyDialog(false)
+          navigate('/settings')
+        }}
+        onCancel={() => setShowKeyDialog(false)}
+      />
     </>
   )
 }

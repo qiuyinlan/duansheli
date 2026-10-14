@@ -21,6 +21,7 @@ import { cloud } from './cloud'
 import { collections } from './collections'
 import { common } from './common'
 import { data } from './data'
+import { digital } from './digital'
 import { expiry } from './expiry'
 import { format } from './format'
 import { idle } from './idle'
@@ -63,5 +64,6 @@ export const en: Dict = {
   more,
   ai,
   data,
+  digital,
   cloud,
 }

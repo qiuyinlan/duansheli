@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type {
   AppData,
+  AssetType,
   AttributeDef,
   AttrType,
   AttrValue,
@@ -10,6 +11,8 @@ import type {
   Collection,
   ImportReport,
   Item,
+  DigitalSource,
+  DigitalStatus,
   ItemStatus,
   Location,
   SnapshotReason,
@@ -256,6 +259,12 @@ function resolvePathIn<T extends TreeItem>(
 
 export interface ItemInput {
   name: string
+  assetType?: AssetType
+  digitalSource?: DigitalSource | null
+  digitalPlatforms?: string[]
+  digitalUri?: string
+  digitalSnapshot?: string
+  digitalStatus?: DigitalStatus
   categoryIds?: string[]
   locationId?: string | null
   quantity?: number
@@ -282,6 +291,12 @@ export interface ItemInput {
 export interface DraftApplyItem {
   existingId?: string
   name: string
+  assetType?: AssetType
+  digitalSource?: DigitalSource | null
+  digitalPlatforms?: string[]
+  digitalUri?: string
+  digitalSnapshot?: string
+  digitalStatus?: DigitalStatus
   quantity: number
   categoryPaths: string[][]
   locationPath: string[] | null
@@ -393,35 +408,34 @@ function createNameResolvers(data: AppData, now: string) {
    * 所以这里收到的要么是一条**已存在的完整路径**（原样命中，不会重复建），
    * 要么是一条**确定要新建的路径**。不会出现「本该复用却建了个新的」。
    */
-  const resolveCategoryPath = (path: string[]): string | null => {
+  const resolveCategoryPath = (path: string[], assetType: AssetType): string | null => {
     const cleaned = path.map((part) => part.trim()).filter((part) => part !== '')
     if (cleaned.length === 0) return null
 
-    const key = cleaned.join('/')
+    const key = `${assetType}:${cleaned.join('/')}`
     const cached = categoryIdCache.get(key)
     if (cached !== undefined) return cached
 
+    const scopedCategories = categories.filter((category) => (category.assetType ?? 'physical') === assetType)
     const { id, created } = resolvePathIn(
-      categories,
+      scopedCategories,
       cleaned,
       now,
-      (name, parentId, order, createdAt): Category => ({
-        id: uid(),
-        name,
-        parentId,
-        order,
-        createdAt,
-      }),
+      (name, parentId, order, createdAt): Category => {
+        const category = { id: uid(), name, parentId, order, createdAt, assetType }
+        categories.push(category)
+        return category
+      },
     )
     createdCategories += created
     categoryIdCache.set(key, id)
     return id
   }
 
-  const resolveCategoryPaths = (paths: string[][]): string[] => {
+  const resolveCategoryPaths = (paths: string[][], assetType: AssetType): string[] => {
     const ids: string[] = []
     for (const path of paths) {
-      const id = resolveCategoryPath(path)
+      const id = resolveCategoryPath(path, assetType)
       if (id && !ids.includes(id)) ids.push(id)
     }
     return ids
@@ -649,7 +663,7 @@ export interface AppState {
   deleteLocation: (id: string, reassignTo?: string | null) => DeleteLocationResult
 
   /* 分类 */
-  addCategory: (name: string, parentId?: string | null) => Category | null
+  addCategory: (name: string, parentId?: string | null, assetType?: AssetType) => Category | null
   renameCategory: (id: string, name: string) => void
   moveCategory: (id: string, newParentId: string | null) => { ok: boolean; reason?: string }
   /**
@@ -1072,7 +1086,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const appliedIds: Array<string | null> = plan.map(() => null)
 
       for (const [planIndex, entry] of plan.entries()) {
-        const categoryIds = resolvers.resolveCategoryPaths(entry.categoryPaths)
+        const categoryIds = resolvers.resolveCategoryPaths(entry.categoryPaths, entry.assetType ?? 'physical')
         const locationId = resolvers.resolveLocation(entry.locationPath)
 
         const attrs: Record<string, AttrValue> = {}
@@ -1114,6 +1128,12 @@ export const useAppStore = create<AppState>()((set, get) => {
           items[index] = {
             ...prev,
             name: name || prev.name,
+            assetType: entry.assetType ?? prev.assetType,
+            digitalSource: entry.digitalSource !== undefined ? entry.digitalSource : prev.digitalSource,
+            digitalPlatforms: entry.digitalPlatforms ?? prev.digitalPlatforms,
+            digitalUri: entry.digitalUri ?? prev.digitalUri,
+            digitalSnapshot: entry.digitalSnapshot ?? prev.digitalSnapshot,
+            digitalStatus: entry.digitalStatus ?? prev.digitalStatus,
             quantity,
             categoryIds,
             locationId,
@@ -1141,6 +1161,12 @@ export const useAppStore = create<AppState>()((set, get) => {
         items.push({
           id: createdId,
           name,
+          assetType: entry.assetType ?? 'physical',
+          digitalSource: entry.digitalSource ?? null,
+          digitalPlatforms: entry.digitalPlatforms ?? [],
+          digitalUri: entry.digitalUri ?? '',
+          digitalSnapshot: entry.digitalSnapshot ?? '',
+          digitalStatus: entry.digitalStatus ?? 'pending',
           quantity,
           categoryIds,
           locationId,
@@ -1326,6 +1352,12 @@ export const useAppStore = create<AppState>()((set, get) => {
       const item: Item = {
         id: uid(),
         name,
+        assetType: input.assetType ?? 'physical',
+        digitalSource: input.digitalSource ?? null,
+        digitalPlatforms: input.digitalPlatforms ?? [],
+        digitalUri: input.digitalUri ?? '',
+        digitalSnapshot: input.digitalSnapshot ?? '',
+        digitalStatus: input.digitalStatus ?? 'pending',
         categoryIds: uniq(input.categoryIds ?? []),
         locationId: input.locationId ?? null,
         quantity: Math.max(1, Math.round(input.quantity ?? 1)),
@@ -1363,6 +1395,12 @@ export const useAppStore = create<AppState>()((set, get) => {
       const nextItem: Item = {
         ...prev,
         name: patch.name !== undefined ? patch.name.trim() || prev.name : prev.name,
+        assetType: patch.assetType !== undefined ? patch.assetType : prev.assetType,
+        digitalSource: patch.digitalSource !== undefined ? patch.digitalSource : prev.digitalSource,
+        digitalPlatforms: patch.digitalPlatforms !== undefined ? patch.digitalPlatforms : prev.digitalPlatforms,
+        digitalUri: patch.digitalUri !== undefined ? patch.digitalUri : prev.digitalUri,
+        digitalSnapshot: patch.digitalSnapshot !== undefined ? patch.digitalSnapshot : prev.digitalSnapshot,
+        digitalStatus: patch.digitalStatus !== undefined ? patch.digitalStatus : prev.digitalStatus,
         categoryIds: patch.categoryIds !== undefined ? uniq(patch.categoryIds) : prev.categoryIds,
         locationId: patch.locationId !== undefined ? patch.locationId : prev.locationId,
         quantity:
@@ -1728,17 +1766,23 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     /* ---------------- 分类 ---------------- */
 
-    addCategory: (name, parentId = null) => {
+    addCategory: (name, parentId = null, requestedAssetType) => {
       const trimmed = name.trim()
       if (trimmed === '') return null
 
       const data = get().data
       if (parentId !== null && !get().derived.categoryIndex.has(parentId)) return null
+      const parent = parentId === null ? null : data.categories.find((category) => category.id === parentId) ?? null
+      const assetType = requestedAssetType ?? parent?.assetType ?? 'physical'
+      if (parent && (parent.assetType ?? 'physical') !== assetType) return null
 
       // 重名只在**同一个父级下**算冲突 ——
       // 「化妆品 › 眼妆」和「护肤 › 眼妆」是两个不同的分类，应该允许
       const duplicate = data.categories.some(
-        (c) => (c.parentId ?? null) === parentId && c.name === trimmed,
+        (c) =>
+          (c.parentId ?? null) === parentId &&
+          (c.assetType ?? 'physical') === assetType &&
+          c.name === trimmed,
       )
       if (duplicate) return null
 
@@ -1746,8 +1790,13 @@ export const useAppStore = create<AppState>()((set, get) => {
         id: uid(),
         name: trimmed,
         parentId,
-        order: orderAmongSiblings(data.categories, parentId),
+        order: data.categories.filter(
+          (category) =>
+            (category.parentId ?? null) === parentId &&
+            (category.assetType ?? 'physical') === assetType,
+        ).length,
         createdAt: new Date().toISOString(),
+        assetType,
       }
       commit({ ...data, categories: [...data.categories, category] })
       return category
@@ -1763,7 +1812,10 @@ export const useAppStore = create<AppState>()((set, get) => {
 
       const duplicate = data.categories.some(
         (c) =>
-          c.id !== id && (c.parentId ?? null) === (target.parentId ?? null) && c.name === trimmed,
+          c.id !== id &&
+          (c.parentId ?? null) === (target.parentId ?? null) &&
+          (c.assetType ?? 'physical') === (target.assetType ?? 'physical') &&
+          c.name === trimmed,
       )
       if (duplicate) return
 
@@ -1778,12 +1830,23 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (!check.ok) return { ok: false, reason: reparentReason(check.blocked, 'category') }
 
       const data = get().data
+      const target = data.categories.find((category) => category.id === id)
+      const parent = newParentId === null
+        ? null
+        : data.categories.find((category) => category.id === newParentId) ?? null
+      if (!target || (parent && (parent.assetType ?? 'physical') !== (target.assetType ?? 'physical'))) {
+        return { ok: false, reason: t('data.tree.moveBlockedMissing', { kind: kindWord('category') }) }
+      }
       const categories = data.categories.map((c) =>
         c.id === id
           ? {
               ...c,
               parentId: newParentId,
-              order: orderAmongSiblings(data.categories, newParentId),
+              order: data.categories.filter(
+                (category) =>
+                  (category.parentId ?? null) === newParentId &&
+                  (category.assetType ?? 'physical') === (target.assetType ?? 'physical'),
+              ).length,
             }
           : c,
       )

@@ -15,6 +15,8 @@
 export const settings = {
   /* Sub-heading under the page title (the title itself is nav.titleSettings) */
   subtitle: 'Keeping your data safe is the most important thing in this app — export a backup regularly',
+  aiKeyTitle: 'AI API key',
+  aiKeyDesc: 'Manage your DeepSeek API key here.',
 
   /* ---------------- Backup and restore ---------------- */
   backupTitle: 'Backup and restore',

@@ -14,9 +14,8 @@ import { commandVocab } from '../ai/commandVocab'
 import { addDaysToISODate, todayISODate } from '../lib/format'
 import type { DictKey } from '../i18n'
 import { useT, type TFunction } from '../i18n'
-import { IconAlert, IconSparkle } from './ui/icons'
+import { IconAlert, IconClose, IconSparkle, IconUpload } from './ui/icons'
 import { Button, ConfirmDialog } from './ui/primitives'
-import { AiQuickEntry } from './AiQuickEntry'
 import { candidateLabel, CommandChipRow, DraftCheckLine, SlotPopover } from './AiQuickBar'
 import type { ComposerContext, SlotRow } from './AiQuickBar'
 
@@ -29,7 +28,7 @@ interface Props {
   /** 上一轮消耗 —— 用来判断「是不是该开新对话了」 */
   lastTurnUsage: AiUsage
   draftCount: number
-  onSend: (text: string) => void
+  onSend: (text: string, imageDataUrls?: string[], assetMode?: 'physical' | 'digital') => boolean
   onCancel: () => void
   onReset: () => void
   /** 位置 / 分类树 + 匹配规则：按钮、补全、预检都要用 */
@@ -105,6 +104,12 @@ export function AiChatPanel({
   const { t, lang } = useT()
 
   const [draft, setDraft] = useState('')
+  const [assetMode, setAssetMode] = useState<'physical' | 'digital'>('physical')
+  const [imageDataUrls, setImageDataUrls] = useState<string[]>([])
+  const imageDataUrlsRef = useRef<string[]>([])
+  const reservedImageSlots = useRef(0)
+  const [imageLimitNotice, setImageLimitNotice] = useState(false)
+  const [draggingImage, setDraggingImage] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
   const streamRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -279,11 +284,34 @@ export function AiChatPanel({
     [draft, composer, lang],
   )
 
+  const readImages = (fileList: FileList | File[]) => {
+    const files = Array.from(fileList).filter((file) => file.type.startsWith('image/'))
+    const available = Math.max(0, 5 - imageDataUrlsRef.current.length - reservedImageSlots.current)
+    if (files.length > available) setImageLimitNotice(true)
+    const accepted = files.slice(0, available)
+    reservedImageSlots.current += accepted.length
+    for (const file of accepted) {
+      const reader = new FileReader()
+      reader.onload = () => {
+        reservedImageSlots.current = Math.max(0, reservedImageSlots.current - 1)
+        if (typeof reader.result !== 'string') return
+        const next = [...imageDataUrlsRef.current, reader.result].slice(0, 5)
+        imageDataUrlsRef.current = next
+        setImageDataUrls(next)
+      }
+      reader.onerror = () => { reservedImageSlots.current = Math.max(0, reservedImageSlots.current - 1) }
+      reader.readAsDataURL(file)
+    }
+  }
   const send = (text: string) => {
     const trimmed = text.trim()
-    if (trimmed === '' || running) return
-    onSend(trimmed)
+    if ((trimmed === '' && imageDataUrls.length === 0) || running) return
+    const accepted = onSend(trimmed || t('ai.imageInstruction'), imageDataUrls, assetMode)
+    if (!accepted) return
     setDraft('')
+    setImageDataUrls([])
+    imageDataUrlsRef.current = []
+    setImageLimitNotice(false)
     setCaret(0)
     setDismissed(false)
     setEngaged(false)
@@ -293,20 +321,6 @@ export function AiChatPanel({
   const askReset = () => {
     if (draftCount > 0 || bubbles.length > 0) setConfirmReset(true)
     else onReset()
-  }
-
-  /** 把一段文字插到光标处（不覆盖他已经写的东西） */
-  const insertText = (text: string, opts: { newLineBefore?: boolean }) => {
-    const result = applyInsert(draft, caret, text, {
-      newLineBefore: opts.newLineBefore === true,
-      separator: vocab.clauseSeparator,
-    })
-    setDraft(result.text)
-    setCaret(result.caret)
-    setPendingCaret(result.caret)
-    setDismissed(false)
-    setEngaged(false)
-    setActiveIndex(0)
   }
 
   const insertChip = (chip: CommandChip) => {
@@ -443,7 +457,9 @@ export function AiChatPanel({
         </div>
       ) : null}
 
-      <div className="chat-panel__composer">
+      <div className={`chat-panel__composer${draggingImage ? ' is-dragging' : ''}`} onDragOver={(e) => { e.preventDefault(); setDraggingImage(true) }} onDragLeave={() => setDraggingImage(false)} onDrop={(e) => { e.preventDefault(); setDraggingImage(false); readImages(e.dataTransfer.files) }} onPaste={(e) => { const files = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/')); if (files.length) { e.preventDefault(); readImages(files) } }}>
+        {imageDataUrls.length ? <div className="chat-image-preview-list">{imageDataUrls.map((url, index) => <div className="chat-image-preview" key={`${index}-${url.slice(-20)}`}><img src={url} alt={t('ai.imagePreviewAlt', { index: index + 1 })} /><button type="button" aria-label={t('ai.removeImageAria', { index: index + 1 })} title={t('ai.removeImage')} onClick={() => { const next = imageDataUrls.filter((_, i) => i !== index); imageDataUrlsRef.current = next; setImageDataUrls(next); setImageLimitNotice(false) }}><IconClose size={13} /></button></div>)}</div> : null}
+        {imageLimitNotice ? <div className="small muted" role="status">{t('ai.imageLimit')}</div> : null}
         <CommandChipRow chips={chips} disabled={running} onPick={insertChip} />
 
         <div className="composer-field">
@@ -520,7 +536,17 @@ export function AiChatPanel({
 
         {check !== null ? <DraftCheckLine check={check} /> : null}
 
-        <AiQuickEntry composer={composer} onGenerate={(text) => insertText(text, { newLineBefore: true })} />
+        <div className="chat-panel__tools">
+          <div className="asset-mode-switch" role="group" aria-label={t('ai.modeGroup')}>
+            <button type="button" className={assetMode === 'physical' ? 'is-active' : ''} onClick={() => setAssetMode('physical')} disabled={running}>{t('ai.modePhysical')}</button>
+            <button type="button" className={assetMode === 'digital' ? 'is-active' : ''} onClick={() => setAssetMode('digital')} disabled={running}>{t('ai.modeDigital')}</button>
+          </div>
+          <label className="chat-image-picker">
+            <input type="file" accept="image/*" multiple hidden onChange={(e) => { if (e.target.files) readImages(e.target.files); e.currentTarget.value = '' }} />
+            <IconUpload size={14} />
+            <span>{t('ai.addImage')}{imageDataUrls.length ? ` (${imageDataUrls.length}/5)` : ''}</span>
+          </label>
+        </div>
 
         <div className="row">
           {running ? (
@@ -533,7 +559,7 @@ export function AiChatPanel({
               variant="primary"
               block
               onClick={() => send(draft)}
-              disabled={draft.trim() === ''}
+              disabled={draft.trim() === '' && imageDataUrls.length === 0}
             >
               {t('ai.send')}
             </Button>

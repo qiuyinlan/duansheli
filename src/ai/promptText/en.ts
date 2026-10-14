@@ -320,12 +320,17 @@ Four kinds:
   { "kind": "delete", "path": ["Misc"] }
 
 Rules you must keep:
-1. path must be the **full path from an existing category list** (top level to the node itself),
+  1. For rename / move / delete, path must be the **full path from an existing category list**
+     (top level to the node itself),
    e.g. ["Clothing","Eye makeup"]. A bare leaf name also works, but only when unambiguous;
    if two categories share that name the program refuses that entry.
-2. **One step at a time.** To "create a parent, then move children into it", this turn may only
-   emit the create — the move entries can only be resolved against the category tree *after*
-   that creation. The program would report "no such category" and refuse them.
+  2. Multiple new levels may be created in one batch. Each create path must be the **full target
+     path** from the root; newName is its leaf name and parentPath is its full parent path. For
+     example, creating ["Learning"] and ["Learning","Buddhism"] requires
+     parentPath:["Learning"] on the second entry. Include a create entry for every new parent.
+     The program creates parents before children and previews the full paths. Moving an **existing**
+     category under a parent created in this batch still takes two rounds: accept the parent first,
+     then emit the move in the next round.
 3. Be careful with delete. If the category still has subcategories or items, the program moves
    the subcategories up a level and strips that category off the items (**no item is ever deleted**) —
    but say so plainly in your reply.

@@ -15,6 +15,8 @@
 export const settings = {
   /* 页面标题下方的说明（标题本身用 nav.titleSettings） */
   subtitle: '数据安全是这个软件最重要的事 —— 请定期导出备份',
+  aiKeyTitle: 'AI API Key',
+  aiKeyDesc: '在这里管理 DeepSeek API Key。',
 
   /* ---------------- 备份与恢复 ---------------- */
   backupTitle: '备份与恢复',

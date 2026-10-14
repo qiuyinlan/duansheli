@@ -10,7 +10,7 @@
  * 分类和位置现在都是树，匹配逻辑一模一样，所以用同一套 PathMatcher。
  */
 
-import type { AppData, Item, TreeItem } from '../types'
+import type { AppData, AssetType, DigitalSource, DigitalStatus, Item, TreeItem } from '../types'
 import { EXPIRY_SOON_DEFAULT_DAYS, isExpired, isExpiring } from '../lib/expiry'
 import { t } from '../i18n'
 import type { DerivedContext } from '../store/selectors'
@@ -145,6 +145,12 @@ export interface ItemDraft {
    */
   sourceItemId?: string
   name: string
+  assetType?: AssetType
+  digitalSource?: DigitalSource | null
+  digitalPlatforms?: string[]
+  digitalUri?: string
+  digitalSnapshot?: string
+  digitalStatus?: DigitalStatus
   quantity: number
   /** 匹配到的已有位置的 id；没匹配上就是 null */
   locationId: string | null
@@ -277,6 +283,12 @@ export function toItemDraft(
   return {
     key: uid(),
     name: raw.name,
+    assetType: raw.assetType ?? 'physical',
+    digitalSource: raw.digitalSource ?? null,
+    digitalPlatforms: raw.digitalPlatforms ?? [],
+    digitalUri: raw.digitalUri ?? '',
+    digitalSnapshot: raw.digitalSnapshot ?? '',
+    digitalStatus: raw.digitalStatus ?? 'pending',
     quantity: raw.quantity,
     locationId,
     locationLabel,
@@ -341,6 +353,12 @@ export function draftsFromItems(
       const draft = toItemDraft(
         {
           name: item.name,
+          assetType: item.assetType ?? 'physical',
+          digitalSource: item.digitalSource ?? null,
+          digitalPlatforms: item.digitalPlatforms ?? [],
+          digitalUri: item.digitalUri ?? '',
+          digitalSnapshot: item.digitalSnapshot ?? '',
+          digitalStatus: item.digitalStatus ?? 'pending',
           quantity: item.quantity,
           categoryPaths: item.categoryIds
             .map((id) => derived.categoryIndex.pathNames(id))
@@ -382,6 +400,12 @@ function effectiveSignable(draft: ItemDraft, derived: DerivedContext): string {
 
   return [
     draft.name.trim(),
+    draft.assetType ?? 'physical',
+    draft.digitalSource ?? '',
+    [...(draft.digitalPlatforms ?? [])].sort().join('|'),
+    draft.digitalUri ?? '',
+    draft.digitalSnapshot ?? '',
+    draft.digitalStatus ?? 'pending',
     String(draft.quantity),
     locations,
     location,
@@ -410,6 +434,12 @@ function effectiveSignable(draft: ItemDraft, derived: DerivedContext): string {
 function itemSignature(item: Item, derived: DerivedContext): string {
   return [
     item.name.trim(),
+    item.assetType ?? 'physical',
+    item.digitalSource ?? '',
+    [...(item.digitalPlatforms ?? [])].sort().join('|'),
+    item.digitalUri ?? '',
+    item.digitalSnapshot ?? '',
+    item.digitalStatus ?? 'pending',
     String(item.quantity),
     item.categoryIds
       .map((id) => derived.categoryIndex.pathNames(id).join('/'))
@@ -592,6 +622,12 @@ export function draftsToApply(
 
     const entry: DraftApplyItem = {
       name: draft.name.trim(),
+      assetType: draft.assetType,
+      digitalSource: draft.digitalSource,
+      digitalPlatforms: draft.digitalPlatforms,
+      digitalUri: draft.digitalUri,
+      digitalSnapshot: draft.digitalSnapshot,
+      digitalStatus: draft.digitalStatus,
       quantity: draft.quantity,
       categoryPaths,
       locationPath,

@@ -94,15 +94,19 @@ export function ItemRow({
    * 说得对 —— 物品行是「读一条记录」，位置在这里只是一个次要信息，
    * 给它上色等于让每条记录的元信息都在抢注意力。颜色留给真正的目录树。
    */
-  const locationText = item.locationId
-    ? ctx.index.pathString(item.locationId, ' / ')
-    : t('status.unassigned')
+  const locationText = item.assetType === 'digital'
+    ? ''
+    : item.locationId
+      ? ctx.index.pathString(item.locationId, ' / ')
+      : t('status.unassigned')
 
   const categoryNames = item.categoryIds
     .map((id) => ctx.categoryById.get(id)?.name)
     .filter((n): n is string => Boolean(n))
 
-  const metaParts: string[] = [locationText]
+  const metaParts: string[] = locationText ? [locationText] : []
+  if (item.assetType === 'digital' && item.digitalPlatforms?.length) metaParts.push(item.digitalPlatforms.join(' / '))
+  if (item.assetType === 'digital') metaParts.push(({ keep: '保留', pending: '待整理', discard: '可清理' } as const)[item.digitalStatus ?? 'pending'])
   if (categoryNames.length > 0) metaParts.push(categoryNames.join('、'))
   if (item.tags.length > 0) metaParts.push(item.tags.map((tag) => `#${tag}`).join(' '))
 

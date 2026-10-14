@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ItemRow } from '../components/ItemRow'
 import { TreeView } from '../components/TreeView'
 import { IconPencil, IconPlus, IconTrash } from '../components/ui/icons'
@@ -19,6 +19,7 @@ import {
   liveItems,
 } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
+import { createDerived } from '../store/selectors'
 import { UNCATEGORIZED_ID } from '../types'
 
 interface NameDialogState {
@@ -42,9 +43,9 @@ interface NameDialogState {
  */
 export function Categories() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
   const data = useAppStore((s) => s.data)
-  const derived = useAppStore((s) => s.derived)
   const ui = useAppStore((s) => s.ui)
   const setUi = useAppStore((s) => s.setUi)
   const addCategory = useAppStore((s) => s.addCategory)
@@ -55,6 +56,13 @@ export function Categories() {
 
   // 拿 t/tc 的同时也订阅了语言：切语言时这个页面会整个重新渲染
   const { t, tc } = useT()
+  const assetType = searchParams.get('asset') === 'digital' ? 'digital' : 'physical'
+  const scopedCategories = useMemo(
+    () => data.categories.filter((category) => (category.assetType ?? 'physical') === assetType),
+    [data.categories, assetType],
+  )
+  const scopedData = useMemo(() => ({ ...data, categories: scopedCategories }), [data, scopedCategories])
+  const categoryDerived = useMemo(() => createDerived(scopedData), [scopedData])
 
   const [selected, setSelected] = useState<string | null>(null)
   const [touched, setTouched] = useState(false)
@@ -73,34 +81,44 @@ export function Categories() {
     itemCount: number
   } | null>(null)
 
+  useEffect(() => {
+    setSelected(null)
+    setTouched(false)
+    setExpandInit(false)
+    setExpanded(new Set())
+  }, [assetType])
+
   // 分类树一般不大，首次拿到数据后全展开
   useEffect(() => {
-    if (expandInit || derived.categoryFlat.length === 0) return
-    setExpanded(new Set(derived.categoryFlat.map((node) => node.node.id)))
+    if (expandInit || categoryDerived.categoryFlat.length === 0) return
+    setExpanded(new Set(categoryDerived.categoryFlat.map((node) => node.node.id)))
     setExpandInit(true)
-  }, [derived.categoryFlat, expandInit])
+  }, [categoryDerived.categoryFlat, expandInit])
 
-  const live = useMemo(() => liveItems(data), [data])
+  const live = useMemo(
+    () => liveItems(data).filter((item) => (item.assetType ?? 'physical') === assetType),
+    [data, assetType],
+  )
   const counts = useMemo(
-    () => countByCategoryIncludingDescendants(live, derived),
-    [live, derived],
+    () => countByCategoryIncludingDescendants(live, categoryDerived),
+    [live, categoryDerived],
   )
 
   // 还没点过任何分类时，默认选中第一个顶层分类
-  const activeId = touched ? selected : (derived.categoryTree[0]?.node.id ?? null)
+  const activeId = touched ? selected : (categoryDerived.categoryTree[0]?.node.id ?? null)
 
   /*
    * 搜索。规则和 CategoryPicker 共用同一套（见 lib/tree.ts）：
    * 命中的节点 + 它们的祖先（祖先淡一档），而且祖先自动展开。
    */
   const matchedIds = useMemo(
-    () => searchTreeIds(data.categories, query),
-    [data.categories, query],
+    () => searchTreeIds(scopedCategories, query),
+    [scopedCategories, query],
   )
   const searching = query.trim() !== ''
   const filteredTree = useMemo(
-    () => (searching ? filterTreeByIds(data.categories, matchedIds) : null),
-    [searching, data.categories, matchedIds],
+    () => (searching ? filterTreeByIds(scopedCategories, matchedIds) : null),
+    [searching, scopedCategories, matchedIds],
   )
   /** 留着当路径的祖先（不是命中项）—— 界面上淡一档显示 */
   const pathOnlyIds = useMemo(() => {
@@ -110,18 +128,18 @@ export function Categories() {
   /** 搜索时把祖先路径自动展开，但**不动**用户手动调过的 expanded */
   const effectiveExpanded = useMemo(() => {
     if (!searching) return expanded
-    return new Set([...expanded, ...expandAncestorsOf(data.categories, matchedIds)])
-  }, [searching, expanded, data.categories, matchedIds])
+    return new Set([...expanded, ...expandAncestorsOf(scopedCategories, matchedIds)])
+  }, [searching, expanded, scopedCategories, matchedIds])
 
   const scopedItems = useMemo(() => {
     if (activeId === null) {
       return live.filter((item) => item.categoryIds.length === 0)
     }
-    return itemsInCategory(live, activeId, ui.includeDescendants, derived)
-  }, [live, activeId, ui.includeDescendants, derived])
+    return itemsInCategory(live, activeId, ui.includeDescendants, categoryDerived)
+  }, [live, activeId, ui.includeDescendants, categoryDerived])
 
   const activeLabel = activeId
-    ? derived.categoryIndex.pathString(activeId, ' / ')
+    ? categoryDerived.categoryIndex.pathString(activeId, ' / ')
     : t('status.uncategorized')
 
   const directCount = activeId
@@ -136,7 +154,7 @@ export function Categories() {
         ? t('categories.renameTitle')
         : nameDialog.parentId
           ? t('categories.addChildTitle', {
-              name: derived.categoryById.get(nameDialog.parentId)?.name ?? '',
+              name: categoryDerived.categoryById.get(nameDialog.parentId)?.name ?? '',
             })
           : t('categories.addTopTitle')
 
@@ -146,7 +164,7 @@ export function Categories() {
   }
 
   const openRenameDialog = (id: string) => {
-    const category = derived.categoryById.get(id)
+    const category = categoryDerived.categoryById.get(id)
     if (!category) return
     setNameDraft(category.name)
     setNameDialog({ mode: 'rename', parentId: category.parentId, targetId: id })
@@ -158,7 +176,7 @@ export function Categories() {
     if (name === '') return
 
     if (nameDialog.mode === 'add') {
-      const created = addCategory(name, nameDialog.parentId)
+      const created = addCategory(name, nameDialog.parentId, assetType)
       if (!created) {
         notify(t('categories.addDuplicate'), 'error')
         return
@@ -175,7 +193,7 @@ export function Categories() {
   }
 
   const handleDelete = (id: string) => {
-    const category = derived.categoryById.get(id)
+    const category = categoryDerived.categoryById.get(id)
     if (!category) return
 
     const result = deleteCategory(id)
@@ -271,7 +289,7 @@ export function Categories() {
             ) : null}
 
             <TreeView
-              nodes={filteredTree ? filteredTree.roots : derived.categoryTree}
+              nodes={filteredTree ? filteredTree.roots : categoryDerived.categoryTree}
               selectedIds={activeId ? [activeId] : [UNCATEGORIZED_ID]}
               onSelect={(id) => {
                 setSelected(id)
@@ -371,14 +389,16 @@ export function Categories() {
                   <ItemRow
                     key={item.id}
                     item={item}
-                    ctx={derived}
+                    ctx={categoryDerived}
                     onOpen={(itemId) => navigate(`/items/${itemId}`)}
                     actions={
                       <Button
                         size="sm"
                         variant="ghost"
                         onClick={() =>
-                          navigate(`/items?cat=${encodeURIComponent(activeId ?? '')}&group=category`)
+                          navigate(
+                            `/items?cat=${encodeURIComponent(activeId ?? '')}&group=category${assetType === 'digital' ? '&asset=digital' : ''}`,
+                          )
                         }
                       >
                         {t('categories.filter')}
@@ -429,6 +449,7 @@ export function Categories() {
       {/* ---------------- 移动分类 ---------------- */}
       <MoveCategoryDialog
         open={moveTarget !== null}
+        assetType={assetType}
         onClose={() => setMoveTarget(null)}
         onPick={(newParentId) => {
           if (moveTarget === null) return
@@ -483,25 +504,37 @@ export function Categories() {
 
 function MoveCategoryDialog({
   open,
+  assetType,
   onClose,
   onPick,
 }: {
   open: boolean
+  assetType: 'physical' | 'digital'
   onClose: () => void
   onPick: (newParentId: string | null) => void
 }) {
-  const derived = useAppStore((s) => s.derived)
   const data = useAppStore((s) => s.data)
+  const scopedData = useMemo(
+    () => ({
+      ...data,
+      categories: data.categories.filter((category) => (category.assetType ?? 'physical') === assetType),
+    }),
+    [data, assetType],
+  )
+  const scopedDerived = useMemo(() => createDerived(scopedData), [scopedData])
   const { t } = useT()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   useEffect(() => {
-    if (open) setExpanded(new Set(derived.categoryFlat.map((node) => node.node.id)))
-  }, [open, derived.categoryFlat])
+    if (open) setExpanded(new Set(scopedDerived.categoryFlat.map((node) => node.node.id)))
+  }, [open, scopedDerived.categoryFlat])
 
   const counts = useMemo(
-    () => countByCategoryIncludingDescendants(liveItems(data), derived),
-    [data, derived],
+    () => countByCategoryIncludingDescendants(
+      liveItems(data).filter((item) => (item.assetType ?? 'physical') === assetType),
+      scopedDerived,
+    ),
+    [data, assetType, scopedDerived],
   )
 
   return (
@@ -526,7 +559,7 @@ function MoveCategoryDialog({
         }}
       >
         <TreeView
-          nodes={derived.categoryTree}
+          nodes={scopedDerived.categoryTree}
           selectedIds={[]}
           onSelect={(id) => onPick(id)}
           counts={counts}

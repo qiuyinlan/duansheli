@@ -62,6 +62,12 @@ export interface ChatBubble {
 export interface DraftForAi {
   id: string
   name: string
+  assetType: ItemDraft['assetType']
+  digitalSource: ItemDraft['digitalSource']
+  digitalPlatforms: string[]
+  digitalUri: string
+  digitalSnapshot: string
+  digitalStatus: ItemDraft['digitalStatus']
   quantity: number
   categoryPaths: string[][]
   location: string[] | null
@@ -95,6 +101,12 @@ type DraftContent = Omit<DraftForAi, 'id'>
 export function effectiveContent(draft: ItemDraft, derived: DerivedContext): DraftContent {
   return {
     name: draft.name.trim(),
+    assetType: draft.assetType ?? 'physical',
+    digitalSource: draft.digitalSource ?? null,
+    digitalPlatforms: [...(draft.digitalPlatforms ?? [])],
+    digitalUri: draft.digitalUri ?? '',
+    digitalSnapshot: draft.digitalSnapshot ?? '',
+    digitalStatus: draft.digitalStatus ?? 'pending',
     quantity: draft.quantity,
     categoryPaths: [
       ...draft.matchedCategoryIds.map((id) => derived.categoryIndex.pathNames(id)),
@@ -127,6 +139,12 @@ export function serializeDrafts(drafts: ItemDraft[], derived: DerivedContext): D
  */
 function compactDraft(item: DraftForAi): Record<string, unknown> {
   const out: Record<string, unknown> = { id: item.id, name: item.name }
+  out.assetType = item.assetType
+  if (item.digitalSource) out.digitalSource = item.digitalSource
+  if (item.digitalPlatforms.length > 0) out.digitalPlatforms = item.digitalPlatforms
+  if (item.digitalUri) out.digitalUri = item.digitalUri
+  if (item.digitalSnapshot) out.digitalSnapshot = item.digitalSnapshot
+  if (item.assetType === 'digital') out.digitalStatus = item.digitalStatus
   if (item.quantity !== 1) out.quantity = item.quantity
   if (item.categoryPaths.length > 0) out.categories = item.categoryPaths
   if (item.location && item.location.length > 0) out.location = item.location
@@ -147,6 +165,12 @@ function compactDraft(item: DraftForAi): Record<string, unknown> {
 function signature(content: DraftContent): string {
   return [
     content.name,
+    content.assetType,
+    content.digitalSource ?? '',
+    [...content.digitalPlatforms].sort().join('|'),
+    content.digitalUri,
+    content.digitalSnapshot,
+    content.digitalStatus,
     String(content.quantity),
     content.categoryPaths
       .map((path) => path.join('/'))

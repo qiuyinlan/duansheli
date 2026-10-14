@@ -9,6 +9,8 @@ import type {
   Collection,
   Item,
   ItemStatus,
+  DigitalSource,
+  DigitalStatus,
   Location,
   PlanMapEntry,
   Tag,
@@ -103,9 +105,25 @@ function normalizeItem(raw: unknown, now: string, warn: string[], index: number)
   const locationId =
     typeof locationIdRaw === 'string' && locationIdRaw.trim() !== '' ? locationIdRaw : null
 
+  const assetType = raw.assetType === 'digital' || raw.assetType === 'physical'
+    ? raw.assetType
+    : undefined
+
   return {
     id,
     name,
+    ...(assetType ? { assetType } : {}),
+    ...(assetType === 'digital' ? {
+      digitalSource: ['local', 'obsidian', 'feishu', 'github', 'web', 'screenshot', 'other'].includes(str(raw.digitalSource))
+        ? (str(raw.digitalSource) as DigitalSource)
+        : null,
+      digitalPlatforms: uniq(strArray(raw.digitalPlatforms).map((value) => value.trim()).filter(Boolean)),
+      digitalUri: str(raw.digitalUri),
+      digitalSnapshot: str(raw.digitalSnapshot),
+      digitalStatus: ['keep', 'pending', 'discard'].includes(str(raw.digitalStatus))
+        ? (str(raw.digitalStatus) as DigitalStatus)
+        : 'pending',
+    } : {}),
     categoryIds: uniq(strArray(raw.categoryIds)),
     locationId,
     quantity: Math.max(1, Math.round(num(raw.quantity, 1))),
@@ -165,6 +183,9 @@ function normalizeCategory(raw: unknown, now: string, warn: string[]): Category 
     parentId,
     order: num(raw.order, 0),
     createdAt: isoDate(raw.createdAt, now),
+    ...(raw.assetType === 'digital' || raw.assetType === 'physical'
+      ? { assetType: raw.assetType }
+      : {}),
   }
 }
 

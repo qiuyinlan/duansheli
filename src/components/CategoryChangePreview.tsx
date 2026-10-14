@@ -27,7 +27,7 @@
  * 比明确告诉他「这 3 条做不了」糟得多。
  */
 
-import type { CategoryPlanEntry } from '../ai/categoryEdit'
+import { countEffectiveCategoryChanges, type CategoryPlanEntry } from '../ai/categoryEdit'
 import { useT, type DictKey } from '../i18n'
 import { Button } from './ui/primitives'
 import { IconAlert } from './ui/icons'
@@ -43,12 +43,25 @@ export function CategoryChangePreview({ entries, onChange }: Props) {
   if (entries.length === 0) return null
 
   const toggle = (key: string) => {
+    const target = entries.find((entry) => entry.key === key)
+    if (!target) return
+    const include = !target.include
     onChange(
-      entries.map((entry) => (entry.key === key ? { ...entry, include: !entry.include } : entry)),
+      entries.map((entry) =>
+        entry.key === key || (!include && entry.dependsOn?.includes(key))
+          ? { ...entry, include }
+          : entry,
+      ),
     )
   }
 
-  const included = entries.filter((e) => e.include && e.status === 'ok')
+  const included = countEffectiveCategoryChanges(entries)
+  const byKey = new Map(entries.map((entry) => [entry.key, entry]))
+  const dependenciesIncluded = (entry: CategoryPlanEntry): boolean =>
+    (entry.dependsOn ?? []).every((key) => {
+      const dependency = byKey.get(key)
+      return dependency?.include === true && dependency.status === 'ok' && dependenciesIncluded(dependency)
+    })
   const problems = entries.filter((e) => e.status !== 'ok' && e.status !== 'noop')
 
   return (
@@ -97,8 +110,8 @@ export function CategoryChangePreview({ entries, onChange }: Props) {
             <input
               type="checkbox"
               className="row-checkbox"
-              checked={entry.include && entry.status === 'ok'}
-              disabled={entry.status !== 'ok'}
+            checked={entry.include && entry.status === 'ok' && dependenciesIncluded(entry)}
+            disabled={entry.status !== 'ok' || !dependenciesIncluded(entry)}
               aria-label={t('ai.catIncludeAria', { name: entry.fromLabel })}
               onChange={() => toggle(entry.key)}
             />
@@ -144,7 +157,7 @@ export function CategoryChangePreview({ entries, onChange }: Props) {
 
       {/* 采纳按钮上一行的小字：点之前让人知道会改几条 */}
       <div className="dim small">
-        {included.length > 0 ? tc(included.length, 'ai.catWillApply') : t('ai.catNothingApply')}
+        {included > 0 ? tc(included, 'ai.catWillApply') : t('ai.catNothingApply')}
       </div>
     </div>
   )

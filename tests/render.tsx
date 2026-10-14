@@ -1209,12 +1209,16 @@ await test('语言开关在两种布局里各有一个，任何屏幕宽度下�
 
     const inSidebar = sidebar.querySelectorAll('.lang-switch').length
     const inTopbar = topbar.querySelectorAll('.lang-switch').length
+    const assetSwitchInSidebar = sidebar.querySelectorAll('.asset-switch').length
+    const assetSwitchInTopbar = topbar.querySelectorAll('.asset-switch').length
 
     ok(
       inSidebar === 1,
       `侧栏底部该有一个语言开关（桌面端只有它可见），实际 ${inSidebar} 个`,
     )
     ok(inTopbar === 1, `顶栏该有一个语言开关（手机端只有它可见），实际 ${inTopbar} 个`)
+    ok(assetSwitchInSidebar === 1, `侧栏该有一个实物 / 数字切换（桌面端可见），实际 ${assetSwitchInSidebar} 个`)
+    ok(assetSwitchInTopbar === 1, `顶栏该有一个实物 / 数字切换（手机端可见），实际 ${assetSwitchInTopbar} 个`)
 
     // 两个都要能点，而不是只有壳子
     for (const root of [sidebar, topbar]) {

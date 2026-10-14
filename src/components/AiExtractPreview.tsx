@@ -151,21 +151,23 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
                   aria-label={t('ai.fieldNameAria')}
                   onChange={(e) => update(draft.key, { name: e.target.value })}
                 />
-                <input
-                  className="input input--number"
-                  style={{ width: 76, flexShrink: 0 }}
-                  type="number"
-                  min={1}
-                  value={draft.quantity}
-                  aria-label={t('ai.fieldQuantityAria')}
-                  onChange={(e) =>
-                    update(draft.key, { quantity: Math.max(1, Number(e.target.value) || 1) })
-                  }
-                />
+                {draft.assetType !== 'digital' ? (
+                  <input
+                    className="input input--number"
+                    style={{ width: 76, flexShrink: 0 }}
+                    type="number"
+                    min={1}
+                    value={draft.quantity}
+                    aria-label={t('ai.fieldQuantityAria')}
+                    onChange={(e) =>
+                      update(draft.key, { quantity: Math.max(1, Number(e.target.value) || 1) })
+                    }
+                  />
+                ) : null}
               </div>
 
               {/* ---------------- 位置 ---------------- */}
-              <div className="ai-row__line">
+              {draft.assetType !== 'digital' ? <div className="ai-row__line">
                 <span className="ai-row__label">{t('ai.fieldLocation')}</span>
                 {draft.locationId ? (
                   <span>{draft.locationLabel}</span>
@@ -183,7 +185,19 @@ export function AiExtractPreview({ drafts, onChange, highlightKeys }: Props) {
                 ) : (
                   <span className="dim">{t('status.unassigned')}</span>
                 )}
-              </div>
+              </div> : null}
+
+              {draft.assetType === 'digital' ? (
+                <>
+                  <div className="ai-row__line">
+                    <span className="ai-row__label">{t('ai.digitalPlatforms')}</span>
+                    <span>{draft.digitalPlatforms?.join('、') || t('ai.digitalUnknown')}</span>
+                  </div>
+                  {draft.digitalUri ? <div className="ai-row__line"><span className="ai-row__label">{t('ai.digitalLink')}</span><a href={draft.digitalUri} target="_blank" rel="noreferrer">{draft.digitalUri}</a></div> : null}
+                  {draft.digitalSnapshot ? <div className="ai-row__line"><span className="ai-row__label">{t('ai.digitalSummary')}</span><span>{draft.digitalSnapshot}</span></div> : null}
+                  <div className="ai-row__line"><span className="ai-row__label">{t('ai.digitalStatus')}</span><span>{draft.digitalStatus === 'keep' ? t('ai.digitalStatusKeep') : draft.digitalStatus === 'discard' ? t('ai.digitalStatusDiscard') : t('ai.digitalStatusPending')}</span></div>
+                </>
+              ) : null}
 
               {/* ---------------- 分类 ---------------- */}
               <div className="ai-row__line">

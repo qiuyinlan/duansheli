@@ -478,7 +478,7 @@ export const EMPTY_FILTER: ItemFilter = {
  * 这样搜「化妆品」能把该分类下的东西都找出来，是很实用的一条。
  */
 function searchHaystack(item: Item, ctx: DerivedContext): string {
-  const parts: string[] = [item.name, item.note, ...item.tags]
+  const parts: string[] = [item.name, item.note, item.digitalSnapshot ?? '', ...(item.digitalPlatforms ?? []), item.digitalUri ?? '', ...item.tags]
 
   for (const id of item.categoryIds) {
     parts.push(ctx.categoryIndex.pathString(id, ' '))
@@ -766,10 +766,10 @@ export function groupItemsTree(
     }
   }
 
-  const roots: ItemGroupNode[] = buildTreeNodes(
-    dimension === 'category' ? ctx.categoryTree : ctx.tree,
-    direct,
-  ).map(({ itemIds: _drop, ...rest }) => rest)
+  const builtTree = dimension === 'category'
+    ? buildTreeNodes(ctx.categoryTree, direct)
+    : buildTreeNodes(ctx.tree, direct)
+  const roots: ItemGroupNode[] = builtTree.map(({ itemIds: _drop, ...rest }) => rest)
 
   if (loose.length > 0) {
     roots.push({

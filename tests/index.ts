@@ -22,6 +22,7 @@ import './aiVocab'
 import './aiCommands'
 // AI 整理分类（新建/改名/移动/删除）—— 纯逻辑，算和写分开
 import './categoryEdit'
+import './categoryHierarchy'
 // AI 新建位置（用户报的「需要可以新建位置」）—— 同一套分工
 import './locationEdit'
 import './storage'

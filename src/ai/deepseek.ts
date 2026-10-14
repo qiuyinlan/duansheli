@@ -14,7 +14,7 @@
 import { t } from '../i18n'
 
 export const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/chat/completions'
-export const DEEPSEEK_MODEL = 'deepseek-chat'
+export const DEEPSEEK_MODEL = 'deepseek-v4-flash-vision-exp'
 
 export type AiErrorKind =
   | 'no_key'
@@ -48,7 +48,7 @@ export interface AiUsage {
 export interface ChatMessage {
   /** assistant 用于多轮对话里回放上一轮 AI 的回复 */
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: any
 }
 
 export interface ChatOptions {
@@ -57,6 +57,7 @@ export interface ChatOptions {
   signal?: AbortSignal
   maxTokens?: number
   temperature?: number
+  imageDataUrls?: string[]
 }
 
 export interface ChatResult {
@@ -233,9 +234,20 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 async function chatOnce(apiKey: string, options: ChatOptions): Promise<ChatResult> {
+  const messages = options.messages.map((message, index) => {
+    if (!options.imageDataUrls?.length || index !== options.messages.length - 1 || message.role !== 'user') return message
+    const text = typeof message.content === 'string' ? message.content : ''
+    return {
+      ...message,
+      content: [
+        { type: 'text' as const, text },
+        ...options.imageDataUrls.map((url) => ({ type: 'image_url' as const, image_url: { url } })),
+      ],
+    }
+  })
   const body: Record<string, unknown> = {
     model: DEEPSEEK_MODEL,
-    messages: options.messages,
+    messages,
     max_tokens: options.maxTokens ?? 8192,
     temperature: options.temperature ?? 0.3,
     stream: false,

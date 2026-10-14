@@ -16,6 +16,7 @@ export const nav = {
   /* Sidebar & bottom tabs */
   overview: 'Overview',
   items: 'Items',
+  digitalAssets: 'Digital assets',
   planMap: 'Organizing map',
   locations: 'Places',
   idle: 'Idle',
@@ -34,6 +35,7 @@ export const nav = {
   /* Top bar titles (finer-grained than nav words) */
   titleOverview: 'Overview',
   titleItems: 'Items',
+  titleDigitalAssets: 'Digital assets',
   titleItemNew: 'New item',
   titleItemDetail: 'Item',
   titleLocations: 'Places',

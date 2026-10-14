@@ -172,6 +172,13 @@ export function AppShell() {
   )
 
   const pathname = location.pathname
+  const digitalMode = new URLSearchParams(location.search).get('asset') === 'digital'
+  const toggleAssetMode = () => {
+    const params = new URLSearchParams(location.search)
+    if (digitalMode) params.delete('asset')
+    else params.set('asset', 'digital')
+    navigate(`${pathname}${params.toString() ? `?${params.toString()}` : ''}`)
+  }
 
   // 切换页面时回到顶部，避免在长列表里跳转后停在半空
   useEffect(() => {
@@ -279,6 +286,24 @@ export function AppShell() {
             两者由媒体查询互斥，任何宽度下都恰好有一个可见。
           */}
           <div className="sidebar__lang">
+            <div className="asset-switch" role="group" aria-label="资产类型">
+              <button
+                type="button"
+                className={!digitalMode ? 'is-active' : ''}
+                aria-pressed={!digitalMode}
+                onClick={() => { if (digitalMode) toggleAssetMode() }}
+              >
+                实物
+              </button>
+              <button
+                type="button"
+                className={digitalMode ? 'is-active' : ''}
+                aria-pressed={digitalMode}
+                onClick={() => { if (!digitalMode) toggleAssetMode() }}
+              >
+                数字
+              </button>
+            </div>
             <LanguageSwitch />
           </div>
         </div>
@@ -298,6 +323,10 @@ export function AppShell() {
             </button>
           ) : null}
           <div className="topbar__title">{t(titleKeyForPath(pathname))}</div>
+          <div className="asset-switch" role="group" aria-label="资产类型">
+            <button type="button" className={!digitalMode ? 'is-active' : ''} aria-pressed={!digitalMode} onClick={() => { if (digitalMode) toggleAssetMode() }}>实物</button>
+            <button type="button" className={digitalMode ? 'is-active' : ''} aria-pressed={digitalMode} onClick={() => { if (!digitalMode) toggleAssetMode() }}>数字</button>
+          </div>
           {/* 手机端在右上角；桌面端这个顶栏整体是隐藏的，开关在侧栏底部（见上面） */}
           <LanguageSwitch />
         </header>
@@ -363,7 +392,7 @@ export function AppShell() {
           type="button"
           className="fab"
           aria-label={t('nav.ariaAddItem')}
-          onClick={() => navigate('/items/new')}
+          onClick={() => navigate(`/items/new${digitalMode ? '?asset=digital' : ''}`)}
         >
           <IconPlus size={22} />
         </button>
