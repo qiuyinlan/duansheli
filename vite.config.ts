@@ -25,6 +25,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
+        id: './',
         // PWA 的名称是**安装时定下**的，装完就不跟着界面语言变了，
         // 所以这里用不改的品牌名，说明用双语写。
         name: '断舍离 · 物品整理',
