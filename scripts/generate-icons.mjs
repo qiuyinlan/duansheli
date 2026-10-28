@@ -1,10 +1,21 @@
 /**
  * 生成 PWA 图标与 favicon。
  *
- * 设计：黑色底 + 三条逐渐变窄的白色横杠 ——
- * 「一堆东西，越往上越少」，正好是断舍离的意思，也跟界面的极简无彩色风格一致。
+ * 形状还是那个形状：**三条越来越短的横杠** ——「一堆东西，越往上越少」，
+ * 正好是断舍离的意思。
  *
- * 不引任何图形库，直接用 zlib 手写 PNG 编码。
+ * ── 底色为什么从黑变成彩色（2026 这一轮）───────────────────────
+ * 用户的原话：「图标换一下，我不想要黑白的」。
+ * 上一版是黑底（#1a1a1a）+ 白杠，跟界面的极简无彩色是一路的，
+ * 但它出现在**桌面 / 主屏 / 浏览器标签**上 —— 那些地方周围全是别人的彩色图标，
+ * 一个黑方块在那里看起来像「没加载出来的图」。
+ *
+ * 所以底色换成一条斜向渐变（青绿 → 靛蓝），横杠仍然是白色：
+ *   · 保留原来的形状，认识它的人一眼还认得出来
+ *   · 白色压在深色渐变上对比够，缩到 16px 也不会糊
+ *   · 只换颜色，不加任何新元素 —— 图标越简单，缩得越小越站得住
+ *
+ * 不引任何图形库，直接手写 PNG 编码（zlib）+ 一个 SVG。
  * 运行：node scripts/generate-icons.mjs
  */
 
@@ -80,7 +91,7 @@ function encodePng(width, height, rgba) {
 /** 归一化坐标下的三条横杠：[x0, y0, x1, y1]，两端为半圆 */
 const BARS = [
   [0.22, 0.285, 0.78, 0.385],
-  [0.30, 0.45, 0.70, 0.55],
+  [0.3, 0.45, 0.7, 0.55],
   [0.385, 0.615, 0.615, 0.715],
 ]
 
@@ -100,10 +111,29 @@ function inBars(fx, fy) {
   return false
 }
 
-const BG = 0x1a // #1a1a1a
-const FG = 0xff // #ffffff
+/**
+ * 底色渐变：左上青绿 → 右下靛蓝。
+ *
+ * 两端的取色不是随手挑的：
+ *   · 青绿（#0d9488）就是这个项目「位置」那个板块的主色，
+ *     而位置正是这个应用里最核心的那张图
+ *   · 靛蓝（#4338ca）是「物品」板块的主色偏深一档
+ * 于是图标和界面是同一套语言，而不是另起一个品牌色。
+ */
+const GRADIENT_FROM = [0x0d, 0x94, 0x88]
+const GRADIENT_TO = [0x43, 0x38, 0xca]
+const BAR_RGB = [0xff, 0xff, 0xff]
 
-/** 超采样渲染，让边缘平滑 */
+function gradientColor(t) {
+  const k = Math.min(1, Math.max(0, t))
+  return [
+    GRADIENT_FROM[0] + (GRADIENT_TO[0] - GRADIENT_FROM[0]) * k,
+    GRADIENT_FROM[1] + (GRADIENT_TO[1] - GRADIENT_FROM[1]) * k,
+    GRADIENT_FROM[2] + (GRADIENT_TO[2] - GRADIENT_FROM[2]) * k,
+  ]
+}
+
+/** 超采样渲染，让横杠的边缘平滑（渐变的底色本身是连续的，不需要超采样） */
 function renderIcon(size, superSample = 4) {
   const rgba = Buffer.alloc(size * size * 4)
   const samples = superSample * superSample
@@ -119,12 +149,18 @@ function renderIcon(size, superSample = 4) {
           if (inBars(fx, fy)) hits++
         }
       }
+
+      // 这条杠盖住了多少 —— 用来把白杠和底色混在一起，边缘才有过渡
       const alpha = hits / samples
-      const value = Math.round(BG + alpha * (FG - BG))
+      const cx = (px + 0.5) / size
+      const cy = (py + 0.5) / size
+      const base = gradientColor((cx + cy) / 2)
+
       const offset = (py * size + px) * 4
-      rgba[offset] = value
-      rgba[offset + 1] = value
-      rgba[offset + 2] = value
+      for (let channel = 0; channel < 3; channel++) {
+        const value = base[channel] + alpha * (BAR_RGB[channel] - base[channel])
+        rgba[offset + channel] = Math.round(value)
+      }
       rgba[offset + 3] = 255
     }
   }
@@ -143,8 +179,20 @@ for (const size of [192, 512]) {
   console.log(`已生成 ${target}（${png.length} 字节）`)
 }
 
+/*
+ * favicon 用 SVG：同一套形状，同一个渐变。
+ *
+ * 16px 下渐变只占几像素、几乎看不出过渡，但整体色调是对的 ——
+ * 重要的是它**不是黑白方块**了，在标签页那一排里一眼能认出来。
+ */
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
-  <rect width="16" height="16" fill="#1a1a1a"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d9488"/>
+      <stop offset="1" stop-color="#4338ca"/>
+    </linearGradient>
+  </defs>
+  <rect width="16" height="16" fill="url(#g)"/>
   <g fill="#ffffff">
     <rect x="3.52" y="4.56" width="8.96" height="1.6" rx="0.8"/>
     <rect x="4.8" y="7.2" width="6.4" height="1.6" rx="0.8"/>

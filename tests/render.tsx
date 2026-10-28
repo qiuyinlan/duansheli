@@ -1915,6 +1915,223 @@ await test('位置页有搜索框（层级深了要能直接跳过去）', () =>
 })
 
 /* ------------------------------------------------------------------ */
+/* 位置页：删除只在「选择」里做，勾完再删                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 用户的原话：「现在位置还是不能直接删除空位置及子位置。删了之后莫名其妙
+ * 又恢复了。删除一个位置，跳出来，删除该位置，和删除该位置及所有子位置。
+ * 以及位置编辑页面可以多选一键删除。不用直接显示删除键，
+ * 进入选择界面能选择后再删除。」
+ *
+ * 这几条钉的就是那句话：行上没删除键 → 进选择模式 → 勾 → 删之前问清楚。
+ */
+suite('位置页：删除只在「选择」里做，勾完再删')
+
+/** 确认框是 portal 到 document.body 的，不在页面容器里 */
+function modalEl(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.modal')
+}
+
+/** 确认框里的某个按钮（按可见文字找） */
+function modalButton(text: string): HTMLButtonElement {
+  const modal = must(modalEl(), '确认框应该开着')
+  return must(
+    Array.from(modal.querySelectorAll('button')).find(
+      (button) => (button.textContent ?? '').trim() === text,
+    ),
+    `确认框里该有「${text}」这个按钮`,
+  )
+}
+
+/** 进选择模式、勾中某个位置、再点「删除所选」 */
+function askDelete(container: HTMLElement, ...names: string[]): void {
+  act(() => {
+    buttonWithText(container, '选择').click()
+  })
+  for (const name of names) {
+    act(() => {
+      treeLabel(container, name).click()
+    })
+  }
+  act(() => {
+    buttonWithText(container, '删除所选').click()
+  })
+}
+
+await test('★ 位置树那一行上没有删除键（删除统一走「选择」）', () => {
+  const data = fixture()
+  expandAllLocationsForTest(data)
+  withPage('/locations', data, (container) => {
+    const row = treeRow(container, '衣柜')
+    const titles = Array.from(row.querySelectorAll('button')).map(
+      (button) => button.getAttribute('title') ?? '',
+    )
+    ok(!titles.includes('删除'), `行上不该再有删除键，实际：${titles.join(' / ')}`)
+    ok(titles.includes('重命名'), '改名还在 —— 「不显示删除键」不等于把别的按钮也拿掉')
+  })
+})
+
+await test('★ 勾一个空位置 → 删除所选：直接删掉，不弹框', async () => {
+  /*
+   * 用户说的「不能直接删除空位置」：空位置没什么好问的，
+   * 摆一个确认框只会让人多点一下。
+   */
+  const data = fixture()
+  expandAllLocationsForTest(data)
+  withPage('/locations', data, (container) => {
+    act(() => {
+      buttonWithText(container, '选择').click()
+    })
+    ok(
+      container.querySelectorAll('.tree-node__check').length > 0,
+      '选择模式下每一行都该出现勾选框',
+    )
+
+    act(() => {
+      treeLabel(container, '书房').click()
+    })
+    contains(container.textContent ?? '', '已选 1 个位置', '勾上之后要看得见勾了几个')
+
+    act(() => {
+      buttonWithText(container, '删除所选').click()
+    })
+
+    eq(modalEl(), null, '空位置不该再问一遍')
+    ok(
+      !useAppStore.getState().data.locations.some((l) => l.name === '书房'),
+      '书房该被删掉',
+    )
+    contains(toastText(), '已删除位置「书房」', '删完要出声')
+  })
+  await settleWrites()
+})
+
+await test('★ 有子位置时，弹出来的就是那两条路（只删这层 / 连子位置一起删）', () => {
+  const data = fixture()
+  expandAllLocationsForTest(data)
+  withPage('/locations', data, (container) => {
+    askDelete(container, '卧室')
+
+    const modal = must(modalEl(), '有子位置时必须问清楚「子位置留不留」')
+    const text = modal.textContent ?? ''
+    contains(text, '删除该位置', '要有一条「只删这层」的路')
+    contains(text, '删除该位置及所有子位置', '还要有一条「连子位置一起删」的路')
+    contains(text, '2 个子位置', '里面有几个子位置要说准（衣柜 + 床头柜）')
+    contains(text, '3 件物品', '会挪走的物品数也要说准')
+  })
+})
+
+await test('★ 点「删除该位置」：子位置保留，往上一层 —— 不会跑到顶层', async () => {
+  /*
+   * 这条正是「删了之后莫名其妙又恢复了」的回归测试：
+   * 以前子位置被挪到**顶层**，看起来像删完又冒出来两个。
+   */
+  const data = fixture()
+  expandAllLocationsForTest(data)
+  const home = locationIdOf(data, '家')
+  const wardrobe = locationIdOf(data, '衣柜')
+
+  withPage('/locations', data, (container) => {
+    askDelete(container, '卧室')
+    act(() => {
+      modalButton('删除该位置').click()
+    })
+
+    const state = useAppStore.getState()
+    ok(!state.data.locations.some((l) => l.name === '卧室'), '这一层删掉了')
+
+    const keptWardrobe = must(
+      state.data.locations.find((l) => l.id === wardrobe),
+      '衣柜要保留 —— 只删这一层',
+    )
+    eq(keptWardrobe.parentId, home, '衣柜回到「家」，不是变成顶层')
+    eq(locationOfItem('i1'), wardrobe, '衣柜里的东西一个都不动')
+    eq(locationOfItem('i3'), locationIdOf(data, '床头柜'), '床头柜里的东西也不动')
+    eq(modalEl(), null, '点完就把框关掉')
+  })
+  await settleWrites()
+})
+
+await test('★ 点「删除该位置及所有子位置」：整棵子树都删掉，物品只回未归位', async () => {
+  const data = fixture()
+  expandAllLocationsForTest(data)
+  const itemCount = data.items.length
+
+  withPage('/locations', data, (container) => {
+    askDelete(container, '卧室')
+    act(() => {
+      modalButton('删除该位置及所有子位置').click()
+    })
+
+    const state = useAppStore.getState()
+    const names = state.data.locations.map((l) => l.name)
+    for (const gone of ['卧室', '衣柜', '床头柜']) {
+      ok(!names.includes(gone), `「${gone}」该一起删掉，实际还剩：${names.join('、')}`)
+    }
+    eq(state.data.items.length, itemCount, '删位置绝不删物品')
+    eq(locationOfItem('i1'), null, '原来在衣柜里的东西回「未归位」')
+  })
+  await settleWrites()
+})
+
+await test('★ 多选：勾两个位置一起删（标题说「所选的 2 个位置」）', async () => {
+  const data = fixture()
+  expandAllLocationsForTest(data)
+
+  withPage('/locations', data, (container) => {
+    act(() => {
+      buttonWithText(container, '选择').click()
+    })
+    act(() => {
+      treeLabel(container, '卧室').click()
+    })
+    act(() => {
+      treeLabel(container, '书房').click()
+    })
+    contains(container.textContent ?? '', '已选 2 个位置', '勾了几个要看得见')
+
+    act(() => {
+      buttonWithText(container, '删除所选').click()
+    })
+
+    const modal = must(modalEl(), '里面有子位置，所以还是要问')
+    const text = modal.textContent ?? ''
+    contains(text, '删除所选的 2 个位置？', '多选时标题要说清是「所选的一批」')
+    contains(text, '只删这些位置', '多选时按钮用复数的说法')
+    contains(text, '连同子位置一起删')
+
+    act(() => {
+      modalButton('连同子位置一起删').click()
+    })
+
+    const names = useAppStore.getState().data.locations.map((l) => l.name)
+    for (const gone of ['卧室', '衣柜', '床头柜', '书房']) {
+      ok(!names.includes(gone), `「${gone}」该被删掉，实际还剩：${names.join('、')}`)
+    }
+  })
+  await settleWrites()
+})
+
+await test('点取消：什么都不删，勾还在（可以接着改主意）', () => {
+  const data = fixture()
+  expandAllLocationsForTest(data)
+  withPage('/locations', data, (container) => {
+    askDelete(container, '卧室')
+    act(() => {
+      modalButton('取消').click()
+    })
+
+    eq(modalEl(), null, '取消要把框关掉')
+    ok(
+      useAppStore.getState().data.locations.some((l) => l.name === '卧室'),
+      '取消之后一个位置都不许动',
+    )
+    contains(container.textContent ?? '', '已选 1 个位置', '取消不该把勾也清掉')
+  })
+})
+
+/* ------------------------------------------------------------------ */
 /* 闲置页：按分类分组                                                  */
 /* ------------------------------------------------------------------ */
 

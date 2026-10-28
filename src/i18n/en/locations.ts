@@ -94,18 +94,54 @@ export const locations = {
   addFailed: 'Could not create it — check the name',
   renameDone: 'Renamed',
 
-  /* Deleting */
+  /*
+   * Deleting — only from the selection mode.
+   *
+   * The user's words: "places still can't be deleted directly, empty ones or
+   * ones with sub-places. After deleting, they mysteriously come back. When I
+   * delete a place, pop up 'delete this place' and 'delete this place and all
+   * its sub-places'." So the row-level trash can is gone, and the choice of
+   * what happens to sub-places is asked instead of decided by the code.
+   */
+  selectMode: 'Select',
+  selectDone: 'Done',
+  selectHint: 'Tick the places to delete, then press “Delete selected”',
+  /* Ticking only picks places: items are never deleted, at most moved away */
+  selectHintItems: 'Ticking only targets places; items are never deleted — they may move to “{unassigned}”',
+  selectClear: 'Clear selection',
+  selectCount_one: '{count} place selected',
+  selectCount_other: '{count} places selected',
+  selectCheckAria: 'Tick “{name}”',
+  deleteSelected: 'Delete selected',
+  deleteNothingPicked: 'Tick the places you want to delete first',
+
+  /*
+   * Asked before deleting (both options appear when sub-places are involved).
+   * Singular and multi-select get one key each: the Chinese pair would have to
+   * be the same sentence, and these two are not (see tests/i18n.ts).
+   */
+  deleteAskTitle: 'Delete the place “{name}”?',
+  deleteAskTitleMany: 'Delete the {count} selected places?',
+  deleteAskLead: '“{name}” still holds {list}.',
+  deleteAskLeadMany: 'The {count} selected places still hold {list}.',
+  deleteOnlyBtn: 'Delete this place',
+  deleteOnlyBtnMany: 'Delete just these places',
+  deleteCascadeBtn: 'Delete this place and all its sub-places',
+  deleteCascadeBtnMany: 'Delete the sub-places too',
+  deleteOnlyHint:
+    'Sub-places stay ({places} of them move up one level); {items} items move to “{unassigned}”.',
+  deleteCascadeHint:
+    '{places} sub-places go with it; the {items} items inside move to “{unassigned}” — nothing is lost.',
+  deletePlainHint: '{items} items move to “{unassigned}” — nothing is lost.',
+
+  /* Result of deleting */
   deleteDone: 'Deleted the place “{name}”',
   deleteFailed: 'Could not delete it',
-  deleteTitle: 'Delete the place “{name}”?',
-  deleteConfirm: 'Move contents and delete',
-  deleteBodyLead: 'This place still holds {list}.',
+  deleteManyDone_one: 'Deleted {count} place',
+  deleteManyDone_other: 'Deleted {count} places',
   deleteJoin: ' and ',
   deleteChildCount_one: '{count} sub-place',
   deleteChildCount_other: '{count} sub-places',
   deleteItemCount_one: '{count} item',
   deleteItemCount_other: '{count} items',
-  deleteBodyHint:
-    'If you continue they move to “{unassigned}” — nothing is lost, and you can give each of them a new place afterwards.',
-  deleteMovedDone: 'Place deleted — its contents moved to “{unassigned}”',
 }

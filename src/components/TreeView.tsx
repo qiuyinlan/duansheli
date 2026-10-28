@@ -100,6 +100,19 @@ export interface TreeViewProps<T extends TreeItem> {
   pinnedIds?: ReadonlySet<string>
   /** 那一行的星星被点了。给回调才会画星星。 */
   onTogglePin?: (id: string) => void
+  /**
+   * 选择模式：点一行 = **勾选**（右边的内容不跟着切），行首出现勾选框。
+   *
+   * 位置页的「选择 → 勾选 → 删除所选」靠它。为什么不留一个「每行一个垃圾桶」：
+   * 用户的原话是「不用直接显示删除键，进入选择界面能选择后再删除」——
+   * 位置树一行上已经挤着新建 / 移动 / 改名三个按钮，再加垃圾桶既挤又容易误点，
+   * 而误删一棵子树是不可撤销的。
+   */
+  selectionMode?: boolean
+  /** 已勾选的 id（只在 selectionMode 下有意义） */
+  checkedIds?: ReadonlySet<string>
+  /** 勾选 / 取消勾选某一个 */
+  onToggleCheck?: (id: string) => void
 }
 
 export function TreeView<T extends TreeItem>({
@@ -119,6 +132,9 @@ export function TreeView<T extends TreeItem>({
   colors,
   pinnedIds,
   onTogglePin,
+  selectionMode = false,
+  checkedIds,
+  onToggleCheck,
 }: TreeViewProps<T>) {
   // 订阅语言：展开 / 折叠的读屏标签和兜底的空状态文字要跟着切
   useT()
@@ -178,6 +194,7 @@ export function TreeView<T extends TreeItem>({
       const hasChildren = node.children.length > 0
       const isOpen = expanded.has(id)
       const isActive = selected.has(id)
+      const isChecked = selectionMode && checkedIds?.has(id) === true
       const count = counts.get(id) ?? 0
       const barColors = colors?.get(id) ?? { bar: 'transparent', line: 'transparent' }
 
@@ -185,8 +202,8 @@ export function TreeView<T extends TreeItem>({
         <div key={id}>
           <div
             className={`tree-node__row${isActive ? ' is-active' : ''}${
-              dropHover === id ? ' is-drop-hover' : ''
-            }`}
+              isChecked ? ' is-checked' : ''
+            }${dropHover === id ? ' is-drop-hover' : ''}`}
             style={{ paddingLeft: `calc(${depth} * 14px + var(--gap-2))` }}
             {...dropProps(id, id)}
           >
@@ -217,6 +234,20 @@ export function TreeView<T extends TreeItem>({
               <span className="tree-node__toggle tree-node__toggle--empty" />
             )}
 
+            {selectionMode ? (
+              /*
+                勾选框在行首，和缩进对齐：勾的是「这一层」，不是「这一支」——
+                子位置要不要一起删是删之前才问的事（见位置页那两个按钮）。
+              */
+              <input
+                type="checkbox"
+                className="tree-node__check"
+                checked={isChecked}
+                aria-label={t('common.selectItemAria', { name: node.node.name })}
+                onChange={() => onToggleCheck?.(id)}
+              />
+            ) : null}
+
             <button
               type="button"
               className={[
@@ -232,9 +263,9 @@ export function TreeView<T extends TreeItem>({
               ]
                 .filter(Boolean)
                 .join(' ')}
-              onClick={() => onSelect(id)}
-              onDoubleClick={() => onRename?.(node.node)}
-              aria-pressed={isActive}
+              onClick={() => (selectionMode ? onToggleCheck?.(id) : onSelect(id))}
+              onDoubleClick={() => (selectionMode ? undefined : onRename?.(node.node))}
+              aria-pressed={selectionMode ? isChecked : isActive}
             >
               <span className="truncate">{node.node.name}</span>
             </button>

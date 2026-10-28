@@ -102,18 +102,57 @@ export const locations = {
   addFailed: '创建失败，请检查名称',
   renameDone: '已重命名',
 
-  /* 删除 */
+  /*
+   * 删除 —— 只在「选择」界面里做。
+   *
+   * 用户的原话：「现在位置还是不能直接删除空位置及子位置。删了之后莫名其妙
+   * 又恢复了。删除一个位置，跳出来，删除该位置，和删除该位置及所有子位置。
+   * 以及位置编辑页面可以多选一键删除。不用直接显示删除键，
+   * 进入选择界面能选择后再删除。」
+   *
+   * 于是两件事一起改了：①每一行不再挂垃圾桶；②删之前把「子位置留不留」
+   * 摆成两个按钮问清楚 —— 以前是代码替他决定（子位置一律移到顶层），
+   * 屏幕上看起来就是「删完又冒出来了」。
+   */
+  selectMode: '选择',
+  selectDone: '完成',
+  selectHint: '勾选要删除的位置，再点「删除所选」',
+  /* 勾选只动位置：物品最多被移走，不会被删 —— 这句得一直摆在眼前 */
+  selectHintItems: '勾选只针对位置；物品不会被删，最多被移到「{unassigned}」',
+  selectClear: '取消全选',
+  selectCount_one: '已选 {count} 个位置',
+  selectCount_other: '已选 {count} 个位置',
+  selectCheckAria: '勾选「{name}」',
+  deleteSelected: '删除所选',
+  deleteNothingPicked: '先勾选要删除的位置',
+
+  /*
+   * 删之前问的那句（有子位置时两个选项都会出现）。
+   *
+   * 单数和多选**各写一条**、不走 `_one/_other`：中文的那一对必须写成同一句话
+   * （见 tests/i18n.ts），而「一个位置」和「所选的一批」本来就不是同一句话。
+   */
+  deleteAskTitle: '删除位置「{name}」？',
+  deleteAskTitleMany: '删除所选的 {count} 个位置？',
+  deleteAskLead: '「{name}」下面还有 {list}。',
+  deleteAskLeadMany: '所选的 {count} 个位置下面还有 {list}。',
+  deleteOnlyBtn: '删除该位置',
+  deleteOnlyBtnMany: '只删这些位置',
+  deleteCascadeBtn: '删除该位置及所有子位置',
+  deleteCascadeBtnMany: '连同子位置一起删',
+  deleteOnlyHint: '子位置保留（其中 {places} 个会移到上一层）；{items} 件物品移到「{unassigned}」。',
+  deleteCascadeHint:
+    '连同 {places} 个子位置一起删；里面的 {items} 件物品移到「{unassigned}」，物品本身不会丢。',
+  deletePlainHint: '{items} 件物品会移到「{unassigned}」，物品本身不会丢。',
+
+  /* 删除的结果 */
   deleteDone: '已删除位置「{name}」',
   deleteFailed: '删除失败',
-  deleteTitle: '删除位置「{name}」？',
-  deleteConfirm: '移动内容并删除',
-  deleteBodyLead: '这个位置下还有 {list}。',
+  deleteManyDone_one: '已删除 {count} 个位置',
+  deleteManyDone_other: '已删除 {count} 个位置',
   deleteJoin: '、',
   deleteChildCount_one: '{count} 个子位置',
   deleteChildCount_other: '{count} 个子位置',
   deleteItemCount_one: '{count} 件物品',
   deleteItemCount_other: '{count} 件物品',
-  deleteBodyHint:
-    '继续的话，它们会被移动到「{unassigned}」，物品本身不会丢失；之后可以再各自指定新位置。',
-  deleteMovedDone: '已删除位置，内容已移到「{unassigned}」',
 }

@@ -22,7 +22,7 @@ import { DEFAULT_UI_PREFS, SCHEMA_VERSION } from '../types'
 import { mergeAppData } from '../data/importData'
 import { normalizeExpiryDate } from '../lib/expiry'
 import { uid } from '../lib/id'
-import { canReparent, type TreeItem } from '../lib/tree'
+import { canReparent, type TreeIndex, type TreeItem } from '../lib/tree'
 import { getRepository } from '../storage/repository'
 import { createEmptyData, createSeedData } from '../storage/seed'
 import { t } from '../i18n'
@@ -220,6 +220,95 @@ function reparentReason(blocked: ReparentBlock, kind: NodeKind): string {
     case 'descendant':
       return t('data.tree.moveBlockedDescendant')
   }
+}
+
+/**
+ * 这次删除到底会删掉哪些位置（含自身）。
+ *
+ * `cascade` 把整棵子树都算进去；`only` 只算传进来的那几个 ——
+ * 子位置会往上挪一层活下来。
+ */
+function locationDeletionSet(
+  index: TreeIndex<Location>,
+  targets: Iterable<string>,
+  mode: LocationDeleteMode,
+): Set<string> {
+  const removed = new Set<string>()
+  for (const id of targets) {
+    if (!index.has(id)) continue
+    if (mode === 'cascade') {
+      for (const nodeId of index.descendantIds(id)) removed.add(nodeId)
+    } else {
+      removed.add(id)
+    }
+  }
+  return removed
+}
+
+/**
+ * 按 `removed` 把位置树和物品裁一遍。
+ *
+ * 两件事一次做完：
+ *   · 物品 —— 落在被删位置里的（`cascade` 时连同更深处的）改成 `reassignTo`
+ *     （默认未归位）。物品**永远不删**：删位置和删东西是两件事，
+ *     混在一起正是最让人不敢点的那种设计。
+ *   · 位置 —— 被删的摘掉；**活下来的子位置**挂到「最近的活着的祖先」下面
+ *     （删「家 / 卧室」时，「衣柜」该回到「家」，而不是跑到顶层去 ——
+ *     以前正是跑到顶层，用户看到的就是「删完又冒出来了」）。
+ *
+ * 为什么不一个个删：那样每删一层都要重算父级，几个兄弟还会被发到同一个 order 上，
+ * 顺序就乱了。这里一次算完，按每个新父级现有的最大 order 往后排。
+ */
+function applyLocationDeletion(
+  data: AppData,
+  removed: ReadonlySet<string>,
+  reassignTo: string | null,
+  now: string,
+): { locations: Location[]; items: Item[]; movedCount: number; movedItemCount: number } {
+  let movedItemCount = 0
+  const items = data.items.map((item) => {
+    if (item.locationId === null || !removed.has(item.locationId)) return item
+    movedItemCount++
+    return { ...item, locationId: reassignTo, updatedAt: now }
+  })
+
+  const parentOf = new Map(
+    data.locations.map((location) => [location.id, location.parentId ?? null]),
+  )
+  const nearestSurvivor = (parentId: string | null): string | null => {
+    let cursor = parentId
+    const seen = new Set<string>()
+    while (cursor !== null && removed.has(cursor) && !seen.has(cursor)) {
+      seen.add(cursor)
+      cursor = parentOf.get(cursor) ?? null
+    }
+    return cursor
+  }
+
+  /** 每个父级下一个可用的 order：先按活下来的那些铺满，再往后发号 */
+  const nextOrder = new Map<string, number>()
+  const orderKey = (parentId: string | null) => parentId ?? ''
+  for (const location of data.locations) {
+    if (removed.has(location.id)) continue
+    const key = orderKey(location.parentId ?? null)
+    nextOrder.set(key, Math.max(nextOrder.get(key) ?? -1, location.order))
+  }
+
+  let movedCount = 0
+  const locations = data.locations
+    .filter((location) => !removed.has(location.id))
+    .map((location) => {
+      const parentId = location.parentId ?? null
+      if (parentId === null || !removed.has(parentId)) return location
+      const target = nearestSurvivor(parentId)
+      const key = orderKey(target)
+      const order = (nextOrder.get(key) ?? -1) + 1
+      nextOrder.set(key, order)
+      movedCount++
+      return { ...location, parentId: target, order }
+    })
+
+  return { locations, items, movedCount, movedItemCount }
 }
 
 /**
@@ -494,10 +583,48 @@ export interface Toast {
   tone: 'info' | 'success' | 'error'
 }
 
+/**
+ * 删位置有两种说法 —— 界面弹出来让用户选的就是这两条。
+ *
+ *   · `only`    —— 只删这一层：子位置往上一层（**保留**），直接挂在这层的物品回「未归位」
+ *   · `cascade` —— 连子位置一起删：整棵子树都没了，里面的物品一律回「未归位」
+ *
+ * 为什么非要分成两种：以前只有一个「移动内容并删除」，它的子位置是**移到顶层**的。
+ * 用户看到的是「我删了一个大标题，它的子文件夹又跑到最上面来了」——
+ * 也就是他说的「删了之后莫名其妙又恢复了」。子位置到底留不留，
+ * 只能他自己说了算，所以做成两个按钮，而不是替他挑一个。
+ */
+export type LocationDeleteMode = 'only' | 'cascade'
+
+export interface DeleteLocationOptions {
+  /**
+   * 不传 = 只是**探一下**：位置里还有东西就拒绝，把数量报给界面去问用户。
+   * 传了 = 真的删。
+   */
+  mode?: LocationDeleteMode
+  /** 物品挪去哪。null / 不传 = 未归位 */
+  reassignTo?: string | null
+}
+
 export interface DeleteLocationResult {
   ok: boolean
   reason?: string
+  /** 直接子位置数 */
   childCount: number
+  /** 全部子孙数（不含自己） */
+  descendantCount: number
+  /** 会被挪到「未归位」的物品数（看 mode：only 只算直接挂着的，cascade 算整棵子树） */
+  itemCount: number
+}
+
+export interface DeleteLocationsResult {
+  ok: boolean
+  reason?: string
+  /** 真正删掉的位置数（含被一起删掉的子位置） */
+  removedCount: number
+  /** 没被删、只是被挪到上一层的位置数 */
+  movedCount: number
+  /** 被挪到「未归位」的物品数 */
   itemCount: number
 }
 
@@ -660,7 +787,24 @@ export interface AppState {
   renameLocation: (id: string, name: string) => void
   updateLocationNote: (id: string, note: string) => void
   moveLocation: (id: string, newParentId: string | null) => { ok: boolean; reason?: string }
-  deleteLocation: (id: string, reassignTo?: string | null) => DeleteLocationResult
+  /**
+   * 删一个位置。
+   *
+   * 不传 options 就是「探一下」：里面有子位置或物品时**拒绝**并报回数量，
+   * 界面拿这个数量去问用户「只删这层」还是「连子位置一起删」。
+   */
+  deleteLocation: (id: string, options?: DeleteLocationOptions) => DeleteLocationResult
+  /**
+   * 一次删掉多个位置（位置页「选择 → 勾选 → 删除所选」走的就是这条）。
+   *
+   * 只提交一次，所以只落一份快照 —— 和「一个个删」在数据上的结果一样，
+   * 但回退时是一整步，而不是二十步。
+   */
+  deleteLocations: (
+    ids: readonly string[],
+    mode: LocationDeleteMode,
+    reassignTo?: string | null,
+  ) => DeleteLocationsResult
 
   /* 分类 */
   addCategory: (name: string, parentId?: string | null, assetType?: AssetType) => Category | null
@@ -1674,7 +1818,9 @@ export const useAppStore = create<AppState>()((set, get) => {
       return { ok: true }
     },
 
-    deleteLocation: (id, reassignTo) => {
+    deleteLocation: (id, options) => {
+      const mode = options?.mode
+      const reassignTo = options?.reassignTo ?? null
       const data = get().data
       const ctx = get().derived
 
@@ -1684,17 +1830,31 @@ export const useAppStore = create<AppState>()((set, get) => {
           ok: false,
           reason: t('data.tree.deleteMissing', { kind: kindWord('location') }),
           childCount: 0,
+          descendantCount: 0,
           itemCount: 0,
         }
       }
 
-      const childCount = data.locations.filter((l) => l.parentId === id).length
-      // 只统计**直接放在这个位置上**的物品。
-      // 子位置里的东西不动 —— 删掉「衣柜」不该把「第二层抽屉」里的东西也倒出来。
+      const childCount = data.locations.filter((l) => (l.parentId ?? null) === id).length
+      const descendants = ctx.index.descendantIds(id)
+      const descendantCount = Math.max(0, descendants.size - 1)
+      // 直接挂在这个位置上的物品。'only' 时只动这些 ——
+      // 子位置里的东西留在原处（跟着子位置一起上移）。
       const directItems = data.items.filter((item) => item.locationId === id)
+      const removed = locationDeletionSet(ctx.index, [id], mode ?? 'only')
+      const itemCount =
+        mode === 'cascade'
+          ? data.items.filter((item) => item.locationId !== null && removed.has(item.locationId))
+              .length
+          : directItems.length
 
-      // 有内容又没指定去处 → 拒绝删除，把情况报给界面去提示
-      if ((childCount > 0 || directItems.length > 0) && reassignTo === undefined) {
+      /*
+       * 没说要怎么删、里面又有东西 → 拒绝，并把数量报回去。
+       * 界面拿这两个数去问他「只删这层」还是「连子位置一起删」——
+       * 这个决定不能由代码替他做（以前就是代码替他做的：子位置一律移到顶层，
+       * 于是屏幕上看起来像「删完又冒出来了」）。
+       */
+      if (mode === undefined && (childCount > 0 || directItems.length > 0)) {
         const kind = kindWord('location')
         return {
           ok: false,
@@ -1709,59 +1869,70 @@ export const useAppStore = create<AppState>()((set, get) => {
                 ? t('data.tree.deleteHasChildren', { kind, children: childCount })
                 : t('data.tree.deleteHasItems', { kind, items: directItems.length }),
           childCount,
+          descendantCount,
           itemCount: directItems.length,
         }
       }
 
-      // 指定了去处 → 把直接物品和直接子节点都挪过去，再删除
-      if (reassignTo !== undefined) {
-        if (reassignTo !== null && !ctx.index.has(reassignTo)) {
-          return {
-            ok: false,
-            reason: t('data.tree.moveBlockedMissing', { kind: kindWord('location') }),
-            childCount,
-            itemCount: directItems.length,
-          }
-        }
-        if (
-          reassignTo !== null &&
-          (reassignTo === id || ctx.index.descendantIds(id).has(reassignTo))
-        ) {
-          return {
-            ok: false,
-            reason: t('data.tree.deleteBlockedDescendant', { kind: kindWord('location') }),
-            childCount,
-            itemCount: directItems.length,
-          }
+      // 物品的去处不能是「这次要删掉的位置」—— 那样等于把它们塞进一个马上就不存在的地方
+      if (reassignTo !== null && (!ctx.index.has(reassignTo) || removed.has(reassignTo))) {
+        return {
+          ok: false,
+          reason: removed.has(reassignTo)
+            ? t('data.tree.deleteBlockedDescendant', { kind: kindWord('location') })
+            : t('data.tree.moveBlockedMissing', { kind: kindWord('location') }),
+          childCount,
+          descendantCount,
+          itemCount,
         }
       }
 
       const now = new Date().toISOString()
-      const items =
-        reassignTo === undefined
-          ? data.items
-          : data.items.map((item) =>
-              item.locationId === id ? { ...item, locationId: reassignTo, updatedAt: now } : item,
-            )
-
-      const locations =
-        reassignTo === undefined
-          ? data.locations.filter((l) => l.id !== id)
-          : data.locations
-              .filter((l) => l.id !== id)
-              .map((l) =>
-                l.parentId === id
-                  ? {
-                      ...l,
-                      parentId: reassignTo,
-                      order: orderAmongSiblings(data.locations, reassignTo),
-                    }
-                  : l,
-              )
+      const applied = applyLocationDeletion(data, removed, reassignTo, now)
 
       // 删除位置会连带影响物品归属，属于结构性破坏操作 → 落一份 destructive 快照
-      commit({ ...data, locations, items }, 'destructive')
-      return { ok: true, childCount, itemCount: directItems.length }
+      commit({ ...data, locations: applied.locations, items: applied.items }, 'destructive')
+      return { ok: true, childCount, descendantCount, itemCount: applied.movedItemCount }
+    },
+
+    deleteLocations: (ids, mode, reassignTo = null) => {
+      const data = get().data
+      const ctx = get().derived
+
+      const targets = [...new Set(ids)].filter((id) => ctx.index.has(id))
+      if (targets.length === 0) {
+        return {
+          ok: false,
+          reason: t('data.tree.deleteMissing', { kind: kindWord('location') }),
+          removedCount: 0,
+          movedCount: 0,
+          itemCount: 0,
+        }
+      }
+
+      const removed = locationDeletionSet(ctx.index, targets, mode)
+      if (reassignTo !== null && (!ctx.index.has(reassignTo) || removed.has(reassignTo))) {
+        return {
+          ok: false,
+          reason: removed.has(reassignTo)
+            ? t('data.tree.deleteBlockedDescendant', { kind: kindWord('location') })
+            : t('data.tree.moveBlockedMissing', { kind: kindWord('location') }),
+          removedCount: 0,
+          movedCount: 0,
+          itemCount: 0,
+        }
+      }
+
+      const now = new Date().toISOString()
+      const applied = applyLocationDeletion(data, removed, reassignTo, now)
+      commit({ ...data, locations: applied.locations, items: applied.items }, 'destructive')
+
+      return {
+        ok: true,
+        removedCount: removed.size,
+        movedCount: applied.movedCount,
+        itemCount: applied.movedItemCount,
+      }
     },
 
     /* ---------------- 分类 ---------------- */

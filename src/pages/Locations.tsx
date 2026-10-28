@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ItemRow } from '../components/ItemRow'
 import { DigitalCategoryBrowser } from '../components/DigitalCategoryBrowser'
 import { TreeView } from '../components/TreeView'
 import { LocationPicker } from '../components/pickers'
 import { IconPencil, IconPlus, IconTrash } from '../components/ui/icons'
-import { Button, ConfirmDialog, EmptyState, Modal, SearchInput, Switch } from '../components/ui/primitives'
+import { Button, EmptyState, Modal, SearchInput, Switch } from '../components/ui/primitives'
 import { useT } from '../i18n'
 import { commandVocab } from '../ai/commandVocab'
 import { levelNames, levelsFromName } from '../lib/levels'
@@ -17,6 +17,7 @@ import {
   liveItems,
 } from '../store/selectors'
 import { useAppStore } from '../store/useAppStore'
+import type { LocationDeleteMode } from '../store/useAppStore'
 import type { Item, Location } from '../types'
 import { UNASSIGNED_ID } from '../types'
 
@@ -56,7 +57,7 @@ export function Locations() {
   const addLocation = useAppStore((s) => s.addLocation)
   const addLocationWithLevels = useAppStore((s) => s.addLocationWithLevels)
   const renameLocation = useAppStore((s) => s.renameLocation)
-  const deleteLocation = useAppStore((s) => s.deleteLocation)
+  const deleteLocations = useAppStore((s) => s.deleteLocations)
   const moveLocation = useAppStore((s) => s.moveLocation)
   const batchMoveToLocation = useAppStore((s) => s.batchMoveToLocation)
   const batchSetStatus = useAppStore((s) => s.batchSetStatus)
@@ -92,13 +93,21 @@ export function Locations() {
    */
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
-  const [deleteProbe, setDeleteProbe] = useState<{
-    id: string
-    name: string
-    childCount: number
-    itemCount: number
-    reason: string
-  } | null>(null)
+  /**
+   * 选择模式：树上每行多一个勾选框，**删除只走这一条路**。
+   *
+   * 用户的原话：「位置编辑页面可以多选一键删除。不用直接显示删除键，
+   * 进入选择界面能选择后再删除。」以前每行挂了四个按钮（新建子级 / 移动 /
+   * 改名 / 删除），在手机上挤成一排、误点一下就是删掉一整棵子树，
+   * 而且删完弹出来的确认只有一条路（内容一律移到顶层）——
+   * 于是他看到的是「删了之后莫名其妙又恢复了」。
+   */
+  const [selectMode, setSelectMode] = useState(false)
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  /** 进选择模式之前用户自己调好的展开状态 —— 退出时原样还回去 */
+  const preSelectExpanded = useRef<Set<string> | null>(null)
+  /** 要删的那批位置。非 null = 确认框开着（里面写清了会删掉什么、物品去哪） */
+  const [deleteTargets, setDeleteTargets] = useState<string[] | null>(null)
 
   /*
    * 展开状态：**先照用户上次调好的来**，没有记录才给默认视角。
@@ -317,25 +326,170 @@ export function Locations() {
     setNameDialog(null)
   }
 
-  const handleDelete = (id: string) => {
-    const loc = derived.index.byId.get(id)
-    if (!loc) return
-    const result = deleteLocation(id)
-    if (result.ok) {
-      notify(t('locations.deleteDone', { name: loc.name }), 'success')
-      if (activeId === id) {
-        setSelected(null)
-        setTouched(true)
+  /* ---------------- 选择模式：勾选 → 删除所选 ---------------- */
+
+  /** 当前树上看得见的那些位置（搜索时就是命中的那些）——「全选」只选看得见的 */
+  const visibleIds = useMemo(() => {
+    const out: string[] = []
+    const walk = (list: TreeNode<Location>[]) => {
+      for (const node of list) {
+        out.push(node.node.id)
+        walk(node.children)
       }
+    }
+    walk(searchView ? searchView.roots : derived.tree)
+    return out
+  }, [searchView, derived.tree])
+
+  const enterSelectMode = () => {
+    /*
+     * 进选择模式先把整棵树展开：要勾的是**深层的某一个**，
+     * 而默认只展开顶层（那是上一轮的改动，见 expandInit 那段）。
+     * 展开状态原样记下来，退出时还回去 —— 挑几个位置不该顺手改掉
+     * 他调好的浏览视图。
+     */
+    preSelectExpanded.current = expanded
+    setExpanded(new Set(derived.flat.map((node) => node.node.id)))
+    setSelectMode(true)
+  }
+
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setChecked(new Set())
+    setDeleteTargets(null)
+    if (preSelectExpanded.current !== null) {
+      setExpanded(preSelectExpanded.current)
+      preSelectExpanded.current = null
+    }
+  }
+
+  const toggleCheck = (id: string) => {
+    setChecked((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  /**
+   * 确认框要说的那几个数 —— 都是**现算**的（`derived` 一改就重算）。
+   *
+   * 「会删掉什么」必须说准：位置树删错不可撤销，而这几种模式之间的差别
+   * （子位置留下 / 子位置一起没了）正是用户唯一需要看懂的地方。
+   */
+  const deletion = useMemo(() => {
+    if (deleteTargets === null) return null
+    const targets = deleteTargets.filter((id) => derived.index.has(id))
+    if (targets.length === 0) return null
+
+    const targetSet = new Set(targets)
+    const closure = new Set<string>()
+    for (const id of targets) {
+      for (const nodeId of derived.index.descendantIds(id)) closure.add(nodeId)
+    }
+
+    const subPlaces = Math.max(0, closure.size - targets.length)
+    const cascadeItems = data.items.filter(
+      (item) => item.locationId !== null && closure.has(item.locationId),
+    ).length
+    const onlyItems = data.items.filter(
+      (item) => item.locationId !== null && targetSet.has(item.locationId),
+    ).length
+    const names = targets.map((id) => derived.index.byId.get(id)?.name ?? '')
+
+    return {
+      targets,
+      names,
+      /** 整棵子树（含自己）会有多少个位置消失 —— cascade 时就是这个数 */
+      subPlaces,
+      cascadeItems,
+      onlyItems,
+      /** 有子位置才需要问「留不留」；没有的话两种说法是同一件事，只弹一个按钮 */
+      needsChoice: subPlaces > 0,
+    }
+  }, [deleteTargets, derived, data])
+
+  // 确认框正文里「N 个子位置、M 件物品」那一段。分隔符也走词典：中文顿号、英文 and。
+  const deleteContents = deletion
+    ? [
+        deletion.subPlaces > 0 ? tc(deletion.subPlaces, 'locations.deleteChildCount') : null,
+        deletion.cascadeItems > 0 ? tc(deletion.cascadeItems, 'locations.deleteItemCount') : null,
+      ]
+        .filter((part): part is string => part !== null)
+        .join(t('locations.deleteJoin'))
+    : ''
+
+  /**
+   * 真的动手删。
+   *
+   * 单条和批量走同一个函数 —— 差别只有「问不问」。**空位置不问**：
+   * 没有子位置、也没有直接挂着的物品时，两种删法结果完全一样，
+   * 摆个确认框只会让人多点一下（用户要的「能直接删除空位置」就是这个意思）。
+   */
+  const applyDelete = (targets: string[], mode: LocationDeleteMode) => {
+    const names = targets.map((id) => derived.index.byId.get(id)?.name ?? '')
+    // 这次会消失的位置（含子位置的模式要把子孙算上）—— 用来判断右边看的那个还在不在
+    const gone = new Set<string>()
+    for (const id of targets) {
+      if (mode === 'cascade') for (const nodeId of derived.index.descendantIds(id)) gone.add(nodeId)
+      else gone.add(id)
+    }
+
+    const result = deleteLocations(targets, mode)
+    if (!result.ok) {
+      notify(result.reason ?? t('locations.deleteFailed'), 'error')
+      setDeleteTargets(null)
       return
     }
-    setDeleteProbe({
-      id,
-      name: loc.name,
-      childCount: result.childCount,
-      itemCount: result.itemCount,
-      reason: result.reason ?? t('locations.deleteFailed'),
-    })
+
+    notify(
+      targets.length === 1
+        ? t('locations.deleteDone', { name: names[0] ?? '' })
+        : tc(result.removedCount, 'locations.deleteManyDone'),
+      'success',
+    )
+
+    /*
+     * 右边正在看的那个位置如果也被删了，就回到「什么都没选」——
+     * 留在那儿只会显示成一张空表，看起来像数据坏了。
+     */
+    if (activeId !== null && gone.has(activeId)) {
+      setSelected(null)
+      setTouched(true)
+    }
+
+    exitSelectMode()
+  }
+
+  const openDeleteDialog = () => {
+    if (checked.size === 0) {
+      notify(t('locations.deleteNothingPicked'), 'info')
+      return
+    }
+    const targets = [...checked].filter((id) => derived.index.has(id))
+    if (targets.length === 0) return
+
+    /*
+     * 有没有「需要交代的东西」：子位置，或者直接挂在这一层上的物品。
+     * 都没有就是空位置 —— 直接删，不弹框。
+     */
+    const hasContent = targets.some(
+      (id) =>
+        derived.index.descendantIds(id).size > 1 ||
+        data.items.some((item) => item.locationId === id),
+    )
+    if (!hasContent) {
+      applyDelete(targets, 'only')
+      return
+    }
+
+    setDeleteTargets(targets)
+  }
+
+  const runDelete = (mode: LocationDeleteMode) => {
+    if (!deletion) return
+    applyDelete(deletion.targets, mode)
   }
 
   /**
@@ -388,19 +542,6 @@ export function Locations() {
     }
     setRenamingId(null)
   }
-
-  // 删除确认框里「还有 N 个子位置、M 件物品」那一段。
-  // 分隔符也走词典：中文是顿号，英文得写成 and。
-  const deleteContents = [
-    deleteProbe && deleteProbe.childCount > 0
-      ? tc(deleteProbe.childCount, 'locations.deleteChildCount')
-      : null,
-    deleteProbe && deleteProbe.itemCount > 0
-      ? tc(deleteProbe.itemCount, 'locations.deleteItemCount')
-      : null,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(t('locations.deleteJoin'))
 
   if (searchParams.get('asset') === 'digital') return <DigitalCategoryBrowser />
 
@@ -456,21 +597,65 @@ export function Locations() {
               />
               <div className="row-between wrap">
                 <span className="tiny dim">
-                  {searching
-                    ? matchedIds.size > 0
-                      ? tc(matchedIds.size, 'locations.searchFound')
-                      : t('locations.searchNone')
-                    : t('locations.expandHint')}
+                  {selectMode
+                    ? checked.size > 0
+                      ? tc(checked.size, 'locations.selectCount')
+                      : t('locations.selectHint')
+                    : searching
+                      ? matchedIds.size > 0
+                        ? tc(matchedIds.size, 'locations.searchFound')
+                        : t('locations.searchNone')
+                      : t('locations.expandHint')}
                 </span>
                 <span className="row" style={{ gap: 'var(--gap-2)' }}>
-                  <Button size="sm" onClick={expandAll} disabled={searching}>
-                    {t('locations.expandAll')}
-                  </Button>
-                  <Button size="sm" onClick={collapseAll} disabled={searching}>
-                    {t('locations.collapseAll')}
-                  </Button>
+                  {selectMode ? (
+                    <>
+                      {/*
+                        选择模式的工具条。删除键只出现在这里 ——
+                        用户要的就是「进入选择界面能选择后再删除」。
+                      */}
+                      <Button
+                        size="sm"
+                        onClick={() => setChecked(new Set(visibleIds))}
+                        disabled={checked.size === visibleIds.length && visibleIds.length > 0}
+                      >
+                        {t('common.selectAll')}
+                      </Button>
+                      <Button size="sm" onClick={() => setChecked(new Set())} disabled={checked.size === 0}>
+                        {t('locations.selectClear')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={openDeleteDialog}
+                        disabled={checked.size === 0}
+                      >
+                        {t('locations.deleteSelected')}
+                      </Button>
+                      <Button size="sm" variant="primary" onClick={exitSelectMode}>
+                        {t('locations.selectDone')}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button size="sm" onClick={expandAll} disabled={searching}>
+                        {t('locations.expandAll')}
+                      </Button>
+                      <Button size="sm" onClick={collapseAll} disabled={searching}>
+                        {t('locations.collapseAll')}
+                      </Button>
+                      <Button size="sm" onClick={enterSelectMode}>
+                        {t('locations.selectMode')}
+                      </Button>
+                    </>
+                  )}
                 </span>
               </div>
+              {selectMode ? (
+                <div className="tiny dim">
+                  {t('locations.selectHintItems', { unassigned: t('status.unassigned') })}
+                </div>
+              ) : null}
             </div>
 
             <TreeView
@@ -493,6 +678,9 @@ export function Locations() {
               counts={counts}
               expanded={effectiveExpanded}
               onToggle={toggleExpanded}
+              selectionMode={selectMode}
+              checkedIds={checked}
+              onToggleCheck={toggleCheck}
               virtualRoot={
                 searching
                   ? null
@@ -508,44 +696,50 @@ export function Locations() {
                * 之所以值得做：给一件东西改归位，原本要「打开物品 → 找位置字段 →
                * 在选择器里翻到那一层」，路径长得不成比例；而位置树本来就摆在
                * 旁边，拖过去是最直接的说法。
+               *
+               * 选择模式下不接拖放：那时鼠标是在挑要删的东西，
+               * 顺手把一件物品挪走是最不该发生的意外。
                */
-              dropTarget={{ mime: ITEM_DRAG_MIME, onDrop: handleDropItem }}
-              renderActions={(node) => (
-                <>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    title={t('locations.addChild')}
-                    onClick={() => openAddDialog(node.id)}
-                  >
-                    <IconPlus size={12} />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    title={t('locations.moveUnder')}
-                    onClick={() => setMoveTarget(node.id)}
-                  >
-                    ↑
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    title={t('common.rename')}
-                    onClick={() => openRenameDialog(node.id)}
-                  >
-                    <IconPencil size={12} />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    title={t('common.delete')}
-                    onClick={() => handleDelete(node.id)}
-                  >
-                    <IconTrash size={12} />
-                  </Button>
-                </>
-              )}
+              dropTarget={selectMode ? null : { mime: ITEM_DRAG_MIME, onDrop: handleDropItem }}
+              /*
+               * 行上的按钮：新建子位置 / 移动 / 改名。
+               *
+               * ⚠️ 这里**没有**删除。用户的原话是「不用直接显示删除键，
+               * 进入选择界面能选择后再删除」—— 位置树删错不可撤销，
+               * 一行上挤四个按钮在手机上尤其容易点错。
+               */
+              renderActions={
+                selectMode
+                  ? undefined
+                  : (node) => (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title={t('locations.addChild')}
+                          onClick={() => openAddDialog(node.id)}
+                        >
+                          <IconPlus size={12} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title={t('locations.moveUnder')}
+                          onClick={() => setMoveTarget(node.id)}
+                        >
+                          ↑
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title={t('common.rename')}
+                          onClick={() => openRenameDialog(node.id)}
+                        >
+                          <IconPencil size={12} />
+                        </Button>
+                      </>
+                    )
+              }
             />
             {searching && matchingItems.length > 0 ? (
               <div className="stack-sm" style={{ marginTop: 'var(--gap-3)' }}>
@@ -796,38 +990,86 @@ export function Locations() {
         counts={counts}
       />
 
-      {/* ---------------- 删除有内容的位置 ---------------- */}
-      <ConfirmDialog
-        open={deleteProbe !== null}
-        title={t('locations.deleteTitle', { name: deleteProbe?.name ?? '' })}
-        danger
-        confirmLabel={t('locations.deleteConfirm')}
-        message={
+      {/*
+        ---------------- 删除：两个选项 ----------------
+
+        用户的原话：「删除一个位置，跳出来，删除该位置，和删除该位置及所有子位置」。
+        所以这里不是一个是 / 否的确认框，而是**两条路**：
+        · 删该位置 —— 子位置保留，往上一层（不至于「删了个大标题，下面全塌成顶层」）
+        · 删该位置及所有子位置
+
+        没有子位置时两种说法是同一件事，那就只留一个按钮 —— 摆两个一模一样的
+        选项只会让人停下来想「这俩有什么区别」，而那正是最不该有的犹豫。
+      */}
+      <Modal
+        open={deletion !== null}
+        title={
+          deletion
+            ? deletion.targets.length === 1
+              ? t('locations.deleteAskTitle', { name: deletion.names[0] ?? '' })
+              : t('locations.deleteAskTitleMany', { count: deletion.targets.length })
+            : ''
+        }
+        onClose={() => setDeleteTargets(null)}
+        maxWidth={460}
+        footer={
           <>
-            {t('locations.deleteBodyLead', { list: deleteContents })}
-            {deleteProbe?.reason ? <><br /><br />{deleteProbe.reason}</> : null}
-            <br />
-            <br />
-            {t('locations.deleteBodyHint', { unassigned: t('status.unassigned') })}
+            <Button onClick={() => setDeleteTargets(null)}>{t('common.cancel')}</Button>
+            {deletion?.needsChoice ? (
+              <>
+                <Button onClick={() => runDelete('only')}>
+                  {deletion.targets.length === 1
+                    ? t('locations.deleteOnlyBtn')
+                    : t('locations.deleteOnlyBtnMany')}
+                </Button>
+                <Button variant="danger" onClick={() => runDelete('cascade')}>
+                  {deletion.targets.length === 1
+                    ? t('locations.deleteCascadeBtn')
+                    : t('locations.deleteCascadeBtnMany')}
+                </Button>
+              </>
+            ) : (
+              <Button variant="danger" onClick={() => runDelete('only')}>
+                {t('common.delete')}
+              </Button>
+            )}
           </>
         }
-        onConfirm={() => {
-          if (!deleteProbe) return
-          const result = deleteLocation(deleteProbe.id, null)
-          if (result.ok) {
-            notify(
-              t('locations.deleteMovedDone', { unassigned: t('status.unassigned') }),
-              'success',
-            )
-            setSelected(null)
-            setTouched(true)
-          } else {
-            notify(result.reason ?? t('locations.deleteFailed'), 'error')
-          }
-          setDeleteProbe(null)
-        }}
-        onCancel={() => setDeleteProbe(null)}
-      />
+      >
+        {deletion ? (
+          <div style={{ fontSize: 'var(--fs-sm)', lineHeight: 1.75, color: 'var(--text-2)' }}>
+            <div>
+              {deletion.targets.length === 1
+                ? t('locations.deleteAskLead', { name: deletion.names[0] ?? '', list: deleteContents })
+                : t('locations.deleteAskLeadMany', {
+                    count: deletion.targets.length,
+                    list: deleteContents,
+                  })}
+            </div>
+            <div className="tiny dim" style={{ marginTop: 'var(--gap-2)' }}>
+              {deletion.needsChoice
+                ? t('locations.deleteOnlyHint', {
+                    places: deletion.subPlaces,
+                    items: deletion.onlyItems,
+                    unassigned: t('status.unassigned'),
+                  })
+                : t('locations.deletePlainHint', {
+                    items: deletion.cascadeItems,
+                    unassigned: t('status.unassigned'),
+                  })}
+            </div>
+            {deletion.needsChoice ? (
+              <div className="tiny dim" style={{ marginTop: 'var(--gap-1)' }}>
+                {t('locations.deleteCascadeHint', {
+                  places: deletion.subPlaces,
+                  items: deletion.cascadeItems,
+                  unassigned: t('status.unassigned'),
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </Modal>
     </>
   )
 }

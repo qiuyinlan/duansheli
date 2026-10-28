@@ -819,6 +819,37 @@
   visibility: hidden;
 }
 
+/*
+ * 选择模式（位置页「选择 → 勾选 → 删除所选」）行首那个勾选框。
+ *
+ * 用系统原生勾选框，不自己画：它本来就被读屏软件念、能被 Tab 到、
+ * 点中了有系统级的反馈 —— 自己画一个圆点这些全得重做一遍。
+ * 颜色跟主题走（accent-color），和这个项目的「不用彩色」也不冲突。
+ */
+.tree-node__check {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  margin: 0 2px 0 4px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/*
+ * 被勾上的那一行。
+ *
+ * 和「正在看这个位置」（`.is-active`，浅色 accent 底 + 左侧细线）**必须**分得开：
+ * 选择模式下这两件事同时存在，一个是「右边在显示它」，一个是「它要被删掉」。
+ * 所以这里用中性灰底（无彩色），危险感留给删除按钮自己。
+ */
+.tree-node__row.is-checked {
+  background: var(--bg-active);
+}
+
+.tree-node__row.is-checked .tree-node__count {
+  color: var(--text-2);
+}
+
 .tree-node__label {
   flex: 1;
   min-width: 0;
@@ -1002,8 +1033,13 @@
   flex: 1;
 }
 
+/*
+ * 按钮换行：位置页那个删除确认框 footer 里有三个按钮
+ * （取消 / 删除该位置 / 删除该位置及所有子位置），手机上挤在一行会溢出。
+ */
 .modal__footer {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--gap-2);
   justify-content: flex-end;
   padding: var(--gap-3) var(--gap-4) calc(var(--gap-4) + var(--safe-bottom));

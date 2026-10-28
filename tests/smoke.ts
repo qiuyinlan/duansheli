@@ -1120,3 +1120,168 @@ await test('图表和列表用同一张顶层色表 —— 同一个分类两处
     )
   }
 })
+
+/* ------------------------------------------------------------------ */
+/* 删除位置：空位置直接删，有子位置时问清楚                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 用户报的原话：「现在位置还是不能直接删除空位置及子位置。删了之后莫名其妙
+ * 又恢复了。删除一个位置，跳出来，删除该位置，和删除该位置及所有子位置。」
+ *
+ * 「又恢复了」的真相不是数据被写回去，而是**子位置被挪到了顶层** ——
+ * 删掉「家 / 卧室」之后，「衣柜」「床头柜」还在，只是变成了顶层，
+ * 在屏幕上看起来就是「删完又冒出来两个」。所以这一组盯着三件事：
+ *   1. 空位置（没有子位置、没有物品）不问，直接删
+ *   2. 「只删这一层」时子位置回到**上一层**，绝不跑到顶层
+ *   3. 「连子位置一起删」时整棵子树都没了，物品一件不丢
+ */
+suite('删除位置：空位置直接删，子位置问清楚留不留')
+
+function deletionFixture(): AppData {
+  const now = new Date().toISOString()
+  const place = (id: string, name: string, parentId: string | null, order: number) => ({
+    id,
+    name,
+    parentId,
+    order,
+    note: '',
+    createdAt: now,
+  })
+  return {
+    ...createSeedData('zh'),
+    locations: [
+      place('loc-home', '家', null, 0),
+      place('loc-bedroom', '卧室', 'loc-home', 0),
+      place('loc-wardrobe', '衣柜', 'loc-bedroom', 0),
+      place('loc-drawer', '第二层抽屉', 'loc-wardrobe', 0),
+      place('loc-empty', '空房间', null, 1),
+    ],
+    items: [
+      item({ id: 'd1', name: '毛衣', locationId: 'loc-bedroom' }),
+      item({ id: 'd2', name: '裤子', locationId: 'loc-wardrobe' }),
+      item({ id: 'd3', name: '袜子', locationId: 'loc-drawer' }),
+    ],
+  }
+}
+
+/** 把 store 摆成「刚打开、数据已就绪」的样子 */
+async function loadDeletionFixture(): Promise<AppData> {
+  const data = deletionFixture()
+  useAppStore.setState({ status: 'ready', error: null, data, derived: createDerived(data) })
+  await flushWrites()
+  return data
+}
+
+await test('★ 空位置直接删（没有子位置、没有物品 → 不用再问「怎么删」）', async () => {
+  await loadDeletionFixture()
+  const result = useAppStore.getState().deleteLocation('loc-empty')
+
+  eq(result.ok, true, '空位置不该被拦下来')
+  eq(useAppStore.getState().derived.index.has('loc-empty'), false, '删完树上就得不剩')
+})
+
+await test('有子位置、又没说怎么删 → 拒绝，并把数量报回来（界面拿它去问用户）', async () => {
+  await loadDeletionFixture()
+  const result = useAppStore.getState().deleteLocation('loc-bedroom')
+
+  eq(result.ok, false, '子位置留不留不能由代码替用户决定')
+  eq(result.childCount, 1, '直接子位置 1 个（衣柜）')
+  eq(result.descendantCount, 2, '全部子孙 2 个（衣柜 + 第二层抽屉）')
+  ok((result.reason ?? '').length > 0, '要给出原因，界面才能说清楚')
+  eq(
+    useAppStore.getState().derived.index.has('loc-bedroom'),
+    true,
+    '被拒绝时一个位置都不许动',
+  )
+})
+
+await test('★ 「删除该位置」：子位置往上一层，不会跑到顶层（用户说的「又恢复了」）', async () => {
+  await loadDeletionFixture()
+  const result = useAppStore.getState().deleteLocation('loc-bedroom', { mode: 'only' })
+
+  eq(result.ok, true)
+  const state = useAppStore.getState()
+  eq(state.derived.index.has('loc-bedroom'), false, '这一层删掉了')
+
+  const wardrobe = must(
+    state.data.locations.find((l) => l.id === 'loc-wardrobe'),
+    '衣柜还在 —— 只删这一层时子位置要保留',
+  )
+  eq(wardrobe.parentId, 'loc-home', '衣柜该挂回「家」，而不是变成顶层')
+
+  const drawer = must(state.data.locations.find((l) => l.id === 'loc-drawer'), '抽屉还在')
+  eq(drawer.parentId, 'loc-wardrobe', '更深的层级关系不动')
+
+  const topLevel = state.data.locations.filter((l) => l.parentId === null).map((l) => l.name)
+  eq(topLevel.join('、'), '家、空房间', `顶层不许凭空多出东西，实际：${topLevel.join('、')}`)
+
+  // 直接挂在这一层的物品回未归位；子位置里的东西留在原处
+  eq(state.data.items.find((i) => i.id === 'd1')?.locationId, null, '毛衣回未归位')
+  eq(state.data.items.find((i) => i.id === 'd2')?.locationId, 'loc-wardrobe', '裤子跟着衣柜走')
+  eq(state.data.items.length, 3, '物品一件都不许少')
+})
+
+await test('★ 「删除该位置及所有子位置」：整棵子树都没了，物品只回未归位', async () => {
+  await loadDeletionFixture()
+  const result = useAppStore.getState().deleteLocation('loc-bedroom', { mode: 'cascade' })
+
+  eq(result.ok, true)
+  const state = useAppStore.getState()
+  const remaining = state.data.locations.map((l) => l.name).sort().join('、')
+  eq(remaining, '家、空房间', `留下来的只有这两条，实际：${remaining}`)
+
+  for (const id of ['d1', 'd2', 'd3']) {
+    eq(state.data.items.find((i) => i.id === id)?.locationId, null, `${id} 回未归位`)
+  }
+  eq(state.data.items.length, 3, '删位置绝不删物品')
+})
+
+await test('★ 批量删除（多选）：勾中的一起删，子位置按 cascade 一起没', async () => {
+  await loadDeletionFixture()
+  const result = useAppStore.getState().deleteLocations(
+    ['loc-bedroom', 'loc-empty'],
+    'cascade',
+  )
+
+  eq(result.ok, true)
+  // 卧室 + 衣柜 + 抽屉 + 空房间
+  eq(result.removedCount, 4, '整棵子树都算在被删的里面')
+  eq(result.itemCount, 3, '三件物品都被挪回未归位')
+
+  const state = useAppStore.getState()
+  eq(state.data.locations.map((l) => l.name).join('、'), '家', '只剩「家」')
+})
+
+await test('批量「只删这些位置」：勾中的层级消失，子位置回到上一层', async () => {
+  await loadDeletionFixture()
+  const result = useAppStore.getState().deleteLocations(['loc-bedroom'], 'only')
+
+  eq(result.ok, true)
+  eq(result.removedCount, 1, '只删这一层')
+  eq(result.movedCount, 1, '衣柜被上移到「家」')
+
+  const state = useAppStore.getState()
+  eq(
+    must(state.data.locations.find((l) => l.id === 'loc-wardrobe'), '衣柜还在').parentId,
+    'loc-home',
+  )
+})
+
+await test('★ 删掉之后落盘，重新读回来还是没有（不会再「莫名其妙恢复」）', async () => {
+  await loadDeletionFixture()
+  useAppStore.getState().deleteLocations(['loc-bedroom'], 'cascade')
+  await flushWrites()
+
+  const persisted = must(await getRepository().load(), '应该能读回持久化数据')
+  eq(
+    persisted.locations.some((l) => l.id === 'loc-bedroom'),
+    false,
+    '盘上也不该再有它',
+  )
+  eq(
+    persisted.locations.some((l) => l.id === 'loc-wardrobe'),
+    false,
+    '子位置同样不该在盘上',
+  )
+})
